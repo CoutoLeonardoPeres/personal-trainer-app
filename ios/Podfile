@@ -1,0 +1,117 @@
+platform :ios, '13.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  # Linkage estático evita 'Flutter/Flutter.h' file not found em plugins ObjC (ex.: share_plus).
+  use_frameworks! :linkage => :static
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    # sqlite3.c no Xcode 16+: MAX/MIN; i64→int; #warning gethostuuid em iOS; vírgula em FK (amalgamação)
+    # Xcode: umbrella gerado pelo CocoaPods usa #import "..." — Clang exige <> em framework headers
+    if target.name == 'share_plus'
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+      end
+    end
+
+    if target.name == 'sqlite3'
+      target.build_configurations.each do |config|
+        cflags = config.build_settings['OTHER_CFLAGS'] || '$(inherited)'
+        cflags = cflags.join(' ') if cflags.is_a?(Array)
+        %w[
+          -UMAX -UMIN
+          -Wno-ambiguous-macro
+          -Wno-shorten-64-to-32
+          -Wno-cpp
+          -Wno-comma
+          -Wno-unreachable-code
+        ].each do |flag|
+          cflags = "#{cflags} #{flag}" unless cflags.include?(flag)
+        end
+        config.build_settings['OTHER_CFLAGS'] = cflags.strip
+        # Evita que #warning do sqlite3.c (ex.: gethostuuid no iOS) vire falha de build
+        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      end
+    end
+  end
+
+  # share_plus: remove ramo morto com keyWindow (iOS mínimo 13; Clang avisa no else inalcançável).
+  share_m = File.expand_path('.symlinks/plugins/share_plus/ios/share_plus/Sources/share_plus/FPPSharePlusPlugin.m', __dir__)
+  if File.exist?(share_m)
+    src = File.read(share_m)
+    old_fn = <<~'OBJC'
+static UIViewController *RootViewController(void) {
+  if (@available(iOS 13, *)) { // UIApplication.keyWindow is deprecated
+    NSSet *scenes = [[UIApplication sharedApplication] connectedScenes];
+    for (UIScene *scene in scenes) {
+      if ([scene isKindOfClass:[UIWindowScene class]]) {
+        NSArray *windows = ((UIWindowScene *)scene).windows;
+        for (UIWindow *window in windows) {
+          if (window.isKeyWindow) {
+            return window.rootViewController;
+          }
+        }
+      }
+    }
+    return nil;
+  } else {
+    return [UIApplication sharedApplication].keyWindow.rootViewController;
+  }
+}
+OBJC
+    new_fn = <<~'OBJC'
+static UIViewController *RootViewController(void) {
+  NSSet *scenes = [[UIApplication sharedApplication] connectedScenes];
+  for (UIScene *scene in scenes) {
+    if ([scene isKindOfClass:[UIWindowScene class]]) {
+      NSArray *windows = ((UIWindowScene *)scene).windows;
+      for (UIWindow *window in windows) {
+        if (window.isKeyWindow) {
+          return window.rootViewController;
+        }
+      }
+    }
+  }
+  return nil;
+}
+OBJC
+    if src.include?('keyWindow.rootViewController')
+      patched = src.sub(old_fn, new_fn)
+      File.write(share_m, patched) if patched != src
+    end
+  end
+end
