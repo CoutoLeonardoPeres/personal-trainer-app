@@ -14,3 +14,14 @@ double workoutScore({
   if (activeDurationSeconds <= 0) return 0;
   return exercisesScoreSum / activeDurationSeconds;
 }
+
+/// Score do treino: soma dos scores dos exercícios ÷ tempo ativo em **minutos**.
+/// Ex.: soma de volumes ÷ (segundos/60).
+double workoutScorePerActiveMinute({
+  required double exercisesScoreSum,
+  required int activeDurationSeconds,
+}) {
+  final minutes = activeDurationSeconds / 60.0;
+  if (minutes <= 0) return 0;
+  return exercisesScoreSum / minutes;
+}

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/ui/app_bottom_nav.dart';
+import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../data/repositories/app_data_repository.dart';
@@ -48,7 +49,7 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,
-      appBar: AppBar(
+      appBar: buildGradientAppBar(
         title: Text(_title(_tab)),
         actions: [
           IconButton(

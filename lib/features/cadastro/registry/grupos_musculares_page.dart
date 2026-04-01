@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
+import '../../../core/widgets/gradient_app_bar.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/repositories/app_data_repository.dart';
@@ -17,7 +18,7 @@ class GruposMuscularesPage extends StatelessWidget {
     final repo = context.watch<AppDataRepository>();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Grupos musculares')),
+      appBar: buildGradientAppBar(title: const Text('Grupos musculares')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(context, repo, null),
         child: const Icon(Icons.add),

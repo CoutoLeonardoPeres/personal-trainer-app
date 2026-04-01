@@ -9,6 +9,9 @@ abstract final class AppColors {
   /// Título da splash (mint do layout de referência).
   static const Color splashMint = Color(0xFF82E0AA);
   static const Color accentPink = Color(0xFFFF4081); // pinkAccent
+  /// Barra superior (AppBar): gradiente rosa → menta (layout de referência).
+  static const Color headerGradientPink = Color(0xFFFF2D78);
+  static const Color headerGradientMint = Color(0xFF70FFAF);
   static const Color textPrimary = Colors.white;
   static const Color textMuted = Color(0xB3FFFFFF);
   static const Color danger = Color(0xFFE53935);

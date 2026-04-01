@@ -1661,6 +1661,21 @@ class $PersonalsTable extends Personals
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isAdminMeta = const VerificationMeta(
+    'isAdmin',
+  );
+  @override
+  late final GeneratedColumn<bool> isAdmin = GeneratedColumn<bool>(
+    'is_admin',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_admin" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1699,6 +1714,7 @@ class $PersonalsTable extends Personals
     email,
     mustChangePassword,
     passwordHash,
+    isAdmin,
     createdAt,
     updatedAt,
   ];
@@ -1810,6 +1826,12 @@ class $PersonalsTable extends Personals
         ),
       );
     }
+    if (data.containsKey('is_admin')) {
+      context.handle(
+        _isAdminMeta,
+        isAdmin.isAcceptableOrUnknown(data['is_admin']!, _isAdminMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1879,6 +1901,10 @@ class $PersonalsTable extends Personals
         DriftSqlType.string,
         data['${effectivePrefix}password_hash'],
       ),
+      isAdmin: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_admin'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1909,6 +1935,9 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
   final String email;
   final bool mustChangePassword;
   final String? passwordHash;
+
+  /// Acesso total aos dados de todos os alunos (calendário, planejamento, cadastro).
+  final bool isAdmin;
   final DateTime createdAt;
   final DateTime updatedAt;
   const PersonalEntity({
@@ -1924,6 +1953,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     required this.email,
     required this.mustChangePassword,
     this.passwordHash,
+    required this.isAdmin,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1946,6 +1976,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     if (!nullToAbsent || passwordHash != null) {
       map['password_hash'] = Variable<String>(passwordHash);
     }
+    map['is_admin'] = Variable<bool>(isAdmin);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1969,6 +2000,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       passwordHash: passwordHash == null && nullToAbsent
           ? const Value.absent()
           : Value(passwordHash),
+      isAdmin: Value(isAdmin),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1994,6 +2026,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       email: serializer.fromJson<String>(json['email']),
       mustChangePassword: serializer.fromJson<bool>(json['mustChangePassword']),
       passwordHash: serializer.fromJson<String?>(json['passwordHash']),
+      isAdmin: serializer.fromJson<bool>(json['isAdmin']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -2014,6 +2047,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       'email': serializer.toJson<String>(email),
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
       'passwordHash': serializer.toJson<String?>(passwordHash),
+      'isAdmin': serializer.toJson<bool>(isAdmin),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -2032,6 +2066,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     String? email,
     bool? mustChangePassword,
     Value<String?> passwordHash = const Value.absent(),
+    bool? isAdmin,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => PersonalEntity(
@@ -2047,6 +2082,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     email: email ?? this.email,
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
     passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
+    isAdmin: isAdmin ?? this.isAdmin,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -2072,6 +2108,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       passwordHash: data.passwordHash.present
           ? data.passwordHash.value
           : this.passwordHash,
+      isAdmin: data.isAdmin.present ? data.isAdmin.value : this.isAdmin,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -2092,6 +2129,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ..write('email: $email, ')
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
+          ..write('isAdmin: $isAdmin, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -2112,6 +2150,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     email,
     mustChangePassword,
     passwordHash,
+    isAdmin,
     createdAt,
     updatedAt,
   );
@@ -2131,6 +2170,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           other.email == this.email &&
           other.mustChangePassword == this.mustChangePassword &&
           other.passwordHash == this.passwordHash &&
+          other.isAdmin == this.isAdmin &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -2148,6 +2188,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
   final Value<String> email;
   final Value<bool> mustChangePassword;
   final Value<String?> passwordHash;
+  final Value<bool> isAdmin;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -2164,6 +2205,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.email = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
+    this.isAdmin = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2181,6 +2223,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     required String email,
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
+    this.isAdmin = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2206,6 +2249,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Expression<String>? email,
     Expression<bool>? mustChangePassword,
     Expression<String>? passwordHash,
+    Expression<bool>? isAdmin,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -2225,6 +2269,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       if (mustChangePassword != null)
         'must_change_password': mustChangePassword,
       if (passwordHash != null) 'password_hash': passwordHash,
+      if (isAdmin != null) 'is_admin': isAdmin,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -2244,6 +2289,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Value<String>? email,
     Value<bool>? mustChangePassword,
     Value<String?>? passwordHash,
+    Value<bool>? isAdmin,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -2261,6 +2307,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       email: email ?? this.email,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       passwordHash: passwordHash ?? this.passwordHash,
+      isAdmin: isAdmin ?? this.isAdmin,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -2308,6 +2355,9 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     if (passwordHash.present) {
       map['password_hash'] = Variable<String>(passwordHash.value);
     }
+    if (isAdmin.present) {
+      map['is_admin'] = Variable<bool>(isAdmin.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2335,6 +2385,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
           ..write('email: $email, ')
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
+          ..write('isAdmin: $isAdmin, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -2499,6 +2550,20 @@ class $StudentsTable extends Students
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _createdByPersonalIdMeta =
+      const VerificationMeta('createdByPersonalId');
+  @override
+  late final GeneratedColumn<String> createdByPersonalId =
+      GeneratedColumn<String>(
+        'created_by_personal_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES personals (id)',
+        ),
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -2540,6 +2605,7 @@ class $StudentsTable extends Students
     cep,
     mustChangePassword,
     passwordHash,
+    createdByPersonalId,
     createdAt,
     updatedAt,
   ];
@@ -2652,6 +2718,15 @@ class $StudentsTable extends Students
         ),
       );
     }
+    if (data.containsKey('created_by_personal_id')) {
+      context.handle(
+        _createdByPersonalIdMeta,
+        createdByPersonalId.isAcceptableOrUnknown(
+          data['created_by_personal_id']!,
+          _createdByPersonalIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2733,6 +2808,10 @@ class $StudentsTable extends Students
         DriftSqlType.string,
         data['${effectivePrefix}password_hash'],
       ),
+      createdByPersonalId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}created_by_personal_id'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -2768,6 +2847,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
   /// Quando true, o app exige troca de senha no próximo acesso.
   final bool mustChangePassword;
   final String? passwordHash;
+
+  /// Personal que cadastrou o aluno — visibilidade dos dados (com admin e o próprio aluno).
+  final String? createdByPersonalId;
   final DateTime createdAt;
   final DateTime updatedAt;
   const StudentEntity({
@@ -2786,6 +2868,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     this.cep,
     required this.mustChangePassword,
     this.passwordHash,
+    this.createdByPersonalId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -2831,6 +2914,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     if (!nullToAbsent || passwordHash != null) {
       map['password_hash'] = Variable<String>(passwordHash);
     }
+    if (!nullToAbsent || createdByPersonalId != null) {
+      map['created_by_personal_id'] = Variable<String>(createdByPersonalId);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -2869,6 +2955,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       passwordHash: passwordHash == null && nullToAbsent
           ? const Value.absent()
           : Value(passwordHash),
+      createdByPersonalId: createdByPersonalId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(createdByPersonalId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -2895,6 +2984,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       cep: serializer.fromJson<String?>(json['cep']),
       mustChangePassword: serializer.fromJson<bool>(json['mustChangePassword']),
       passwordHash: serializer.fromJson<String?>(json['passwordHash']),
+      createdByPersonalId: serializer.fromJson<String?>(
+        json['createdByPersonalId'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -2918,6 +3010,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       'cep': serializer.toJson<String?>(cep),
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
       'passwordHash': serializer.toJson<String?>(passwordHash),
+      'createdByPersonalId': serializer.toJson<String?>(createdByPersonalId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -2939,6 +3032,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     Value<String?> cep = const Value.absent(),
     bool? mustChangePassword,
     Value<String?> passwordHash = const Value.absent(),
+    Value<String?> createdByPersonalId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => StudentEntity(
@@ -2957,6 +3051,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     cep: cep.present ? cep.value : this.cep,
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
     passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
+    createdByPersonalId: createdByPersonalId.present
+        ? createdByPersonalId.value
+        : this.createdByPersonalId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -2983,6 +3080,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       passwordHash: data.passwordHash.present
           ? data.passwordHash.value
           : this.passwordHash,
+      createdByPersonalId: data.createdByPersonalId.present
+          ? data.createdByPersonalId.value
+          : this.createdByPersonalId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -3006,6 +3106,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           ..write('cep: $cep, ')
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
+          ..write('createdByPersonalId: $createdByPersonalId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -3029,6 +3130,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     cep,
     mustChangePassword,
     passwordHash,
+    createdByPersonalId,
     createdAt,
     updatedAt,
   );
@@ -3051,6 +3153,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           other.cep == this.cep &&
           other.mustChangePassword == this.mustChangePassword &&
           other.passwordHash == this.passwordHash &&
+          other.createdByPersonalId == this.createdByPersonalId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -3071,6 +3174,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   final Value<String?> cep;
   final Value<bool> mustChangePassword;
   final Value<String?> passwordHash;
+  final Value<String?> createdByPersonalId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -3090,6 +3194,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     this.cep = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
+    this.createdByPersonalId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3110,6 +3215,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     this.cep = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
+    this.createdByPersonalId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3131,6 +3237,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     Expression<String>? cep,
     Expression<bool>? mustChangePassword,
     Expression<String>? passwordHash,
+    Expression<String>? createdByPersonalId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -3152,6 +3259,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
       if (mustChangePassword != null)
         'must_change_password': mustChangePassword,
       if (passwordHash != null) 'password_hash': passwordHash,
+      if (createdByPersonalId != null)
+        'created_by_personal_id': createdByPersonalId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -3174,6 +3283,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     Value<String?>? cep,
     Value<bool>? mustChangePassword,
     Value<String?>? passwordHash,
+    Value<String?>? createdByPersonalId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -3194,6 +3304,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
       cep: cep ?? this.cep,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       passwordHash: passwordHash ?? this.passwordHash,
+      createdByPersonalId: createdByPersonalId ?? this.createdByPersonalId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -3248,6 +3359,11 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     if (passwordHash.present) {
       map['password_hash'] = Variable<String>(passwordHash.value);
     }
+    if (createdByPersonalId.present) {
+      map['created_by_personal_id'] = Variable<String>(
+        createdByPersonalId.value,
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3278,6 +3394,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
           ..write('cep: $cep, ')
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
+          ..write('createdByPersonalId: $createdByPersonalId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -8959,6 +9076,7 @@ typedef $$PersonalsTableCreateCompanionBuilder =
       required String email,
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
+      Value<bool> isAdmin,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -8977,10 +9095,36 @@ typedef $$PersonalsTableUpdateCompanionBuilder =
       Value<String> email,
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
+      Value<bool> isAdmin,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
     });
+
+final class $$PersonalsTableReferences
+    extends BaseReferences<_$AppDatabase, $PersonalsTable, PersonalEntity> {
+  $$PersonalsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$StudentsTable, List<StudentEntity>>
+  _studentsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.students,
+    aliasName: $_aliasNameGenerator(
+      db.personals.id,
+      db.students.createdByPersonalId,
+    ),
+  );
+
+  $$StudentsTableProcessedTableManager get studentsRefs {
+    final manager = $$StudentsTableTableManager($_db, $_db.students).filter(
+      (f) => f.createdByPersonalId.id.sqlEquals($_itemColumn<String>('id')!),
+    );
+
+    final cache = $_typedResult.readTableOrNull(_studentsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$PersonalsTableFilterComposer
     extends Composer<_$AppDatabase, $PersonalsTable> {
@@ -9051,6 +9195,11 @@ class $$PersonalsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get isAdmin => $composableBuilder(
+    column: $table.isAdmin,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -9060,6 +9209,31 @@ class $$PersonalsTableFilterComposer
     column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> studentsRefs(
+    Expression<bool> Function($$StudentsTableFilterComposer f) f,
+  ) {
+    final $$StudentsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.students,
+      getReferencedColumn: (t) => t.createdByPersonalId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$StudentsTableFilterComposer(
+            $db: $db,
+            $table: $db.students,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$PersonalsTableOrderingComposer
@@ -9131,6 +9305,11 @@ class $$PersonalsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isAdmin => $composableBuilder(
+    column: $table.isAdmin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9195,11 +9374,39 @@ class $$PersonalsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get isAdmin =>
+      $composableBuilder(column: $table.isAdmin, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  Expression<T> studentsRefs<T extends Object>(
+    Expression<T> Function($$StudentsTableAnnotationComposer a) f,
+  ) {
+    final $$StudentsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.students,
+      getReferencedColumn: (t) => t.createdByPersonalId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$StudentsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.students,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$PersonalsTableTableManager
@@ -9213,12 +9420,9 @@ class $$PersonalsTableTableManager
           $$PersonalsTableAnnotationComposer,
           $$PersonalsTableCreateCompanionBuilder,
           $$PersonalsTableUpdateCompanionBuilder,
-          (
-            PersonalEntity,
-            BaseReferences<_$AppDatabase, $PersonalsTable, PersonalEntity>,
-          ),
+          (PersonalEntity, $$PersonalsTableReferences),
           PersonalEntity,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool studentsRefs})
         > {
   $$PersonalsTableTableManager(_$AppDatabase db, $PersonalsTable table)
     : super(
@@ -9245,6 +9449,7 @@ class $$PersonalsTableTableManager
                 Value<String> email = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
+                Value<bool> isAdmin = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -9261,6 +9466,7 @@ class $$PersonalsTableTableManager
                 email: email,
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
+                isAdmin: isAdmin,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -9279,6 +9485,7 @@ class $$PersonalsTableTableManager
                 required String email,
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
+                Value<bool> isAdmin = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -9295,14 +9502,51 @@ class $$PersonalsTableTableManager
                 email: email,
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
+                isAdmin: isAdmin,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$PersonalsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({studentsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (studentsRefs) db.students],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (studentsRefs)
+                    await $_getPrefetchedData<
+                      PersonalEntity,
+                      $PersonalsTable,
+                      StudentEntity
+                    >(
+                      currentTable: table,
+                      referencedTable: $$PersonalsTableReferences
+                          ._studentsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$PersonalsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).studentsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where(
+                            (e) => e.createdByPersonalId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -9317,12 +9561,9 @@ typedef $$PersonalsTableProcessedTableManager =
       $$PersonalsTableAnnotationComposer,
       $$PersonalsTableCreateCompanionBuilder,
       $$PersonalsTableUpdateCompanionBuilder,
-      (
-        PersonalEntity,
-        BaseReferences<_$AppDatabase, $PersonalsTable, PersonalEntity>,
-      ),
+      (PersonalEntity, $$PersonalsTableReferences),
       PersonalEntity,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool studentsRefs})
     >;
 typedef $$StudentsTableCreateCompanionBuilder =
     StudentsCompanion Function({
@@ -9341,6 +9582,7 @@ typedef $$StudentsTableCreateCompanionBuilder =
       Value<String?> cep,
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
+      Value<String?> createdByPersonalId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -9362,6 +9604,7 @@ typedef $$StudentsTableUpdateCompanionBuilder =
       Value<String?> cep,
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
+      Value<String?> createdByPersonalId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -9370,6 +9613,25 @@ typedef $$StudentsTableUpdateCompanionBuilder =
 final class $$StudentsTableReferences
     extends BaseReferences<_$AppDatabase, $StudentsTable, StudentEntity> {
   $$StudentsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $PersonalsTable _createdByPersonalIdTable(_$AppDatabase db) =>
+      db.personals.createAlias(
+        $_aliasNameGenerator(db.students.createdByPersonalId, db.personals.id),
+      );
+
+  $$PersonalsTableProcessedTableManager? get createdByPersonalId {
+    final $_column = $_itemColumn<String>('created_by_personal_id');
+    if ($_column == null) return null;
+    final manager = $$PersonalsTableTableManager(
+      $_db,
+      $_db.personals,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_createdByPersonalIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
 
   static MultiTypedResultKey<$StudentGymsTable, List<StudentGymEntity>>
   _studentGymsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
@@ -9528,6 +9790,29 @@ class $$StudentsTableFilterComposer
     column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$PersonalsTableFilterComposer get createdByPersonalId {
+    final $$PersonalsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.createdByPersonalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableFilterComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<bool> studentGymsRefs(
     Expression<bool> Function($$StudentGymsTableFilterComposer f) f,
@@ -9698,6 +9983,29 @@ class $$StudentsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$PersonalsTableOrderingComposer get createdByPersonalId {
+    final $$PersonalsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.createdByPersonalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableOrderingComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$StudentsTableAnnotationComposer
@@ -9765,6 +10073,29 @@ class $$StudentsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$PersonalsTableAnnotationComposer get createdByPersonalId {
+    final $$PersonalsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.createdByPersonalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<T> studentGymsRefs<T extends Object>(
     Expression<T> Function($$StudentGymsTableAnnotationComposer a) f,
@@ -9857,6 +10188,7 @@ class $$StudentsTableTableManager
           (StudentEntity, $$StudentsTableReferences),
           StudentEntity,
           PrefetchHooks Function({
+            bool createdByPersonalId,
             bool studentGymsRefs,
             bool weekScheduleBlocksRefs,
             bool dayWorkoutsRefs,
@@ -9890,6 +10222,7 @@ class $$StudentsTableTableManager
                 Value<String?> cep = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
+                Value<String?> createdByPersonalId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -9909,6 +10242,7 @@ class $$StudentsTableTableManager
                 cep: cep,
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
+                createdByPersonalId: createdByPersonalId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -9930,6 +10264,7 @@ class $$StudentsTableTableManager
                 Value<String?> cep = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
+                Value<String?> createdByPersonalId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -9949,6 +10284,7 @@ class $$StudentsTableTableManager
                 cep: cep,
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
+                createdByPersonalId: createdByPersonalId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -9963,6 +10299,7 @@ class $$StudentsTableTableManager
               .toList(),
           prefetchHooksCallback:
               ({
+                createdByPersonalId = false,
                 studentGymsRefs = false,
                 weekScheduleBlocksRefs = false,
                 dayWorkoutsRefs = false,
@@ -9974,7 +10311,38 @@ class $$StudentsTableTableManager
                     if (weekScheduleBlocksRefs) db.weekScheduleBlocks,
                     if (dayWorkoutsRefs) db.dayWorkouts,
                   ],
-                  addJoins: null,
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (createdByPersonalId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.createdByPersonalId,
+                                    referencedTable: $$StudentsTableReferences
+                                        ._createdByPersonalIdTable(db),
+                                    referencedColumn: $$StudentsTableReferences
+                                        ._createdByPersonalIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
                   getPrefetchedDataCallback: (items) async {
                     return [
                       if (studentGymsRefs)
@@ -10061,6 +10429,7 @@ typedef $$StudentsTableProcessedTableManager =
       (StudentEntity, $$StudentsTableReferences),
       StudentEntity,
       PrefetchHooks Function({
+        bool createdByPersonalId,
         bool studentGymsRefs,
         bool weekScheduleBlocksRefs,
         bool dayWorkoutsRefs,

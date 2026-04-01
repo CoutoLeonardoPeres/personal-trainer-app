@@ -15,11 +15,24 @@ ThemeData buildAppTheme() {
       surface: AppColors.barBackground,
       error: AppColors.danger,
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
       elevation: 0,
-      foregroundColor: AppColors.textPrimary,
-      systemOverlayStyle: SystemUiOverlayStyle.light,
+      scrolledUnderElevation: 0,
+      foregroundColor: Colors.white,
+      iconTheme: const IconThemeData(color: Colors.white),
+      actionsIconTheme: const IconThemeData(color: Colors.white),
+      titleTextStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+      ),
+      systemOverlayStyle: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
     ),
     dividerTheme: const DividerThemeData(color: green, thickness: 1),
     inputDecorationTheme: InputDecorationTheme(

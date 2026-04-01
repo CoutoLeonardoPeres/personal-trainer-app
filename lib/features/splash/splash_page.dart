@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth/app_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/ui/futuristic_background.dart';
+import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
 import '../shell/main_shell.dart';
 
@@ -21,8 +23,11 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> _boot() async {
+    final db = context.read<AppDatabase>();
+    final session = context.read<AppSession>();
     final repo = context.read<AppDataRepository>();
     await repo.warmUp();
+    await session.bootstrapIfNeeded(db);
     await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed(MainShell.routeName);

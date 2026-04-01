@@ -7,6 +7,7 @@ import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/exercise_video_web_page.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
+import '../../../core/widgets/gradient_app_bar.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/repositories/app_data_repository.dart';
@@ -25,17 +26,7 @@ class ExerciciosPage extends StatelessWidget {
   }
 
   static void _openVideoInApp(BuildContext context, String raw, String title) {
-    if (ExerciseVideoWebPage.normalizeVideoUri(raw) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Endereço de vídeo inválido.')),
-      );
-      return;
-    }
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => ExerciseVideoWebPage(initialUrl: raw, title: title),
-      ),
-    );
+    ExerciseVideoWebPage.showInAppWindow(context, initialUrl: raw, title: title);
   }
 
   Future<void> _addExercise(BuildContext context, AppDataRepository repo) async {
@@ -49,12 +40,11 @@ class ExerciciosPage extends StatelessWidget {
     final repo = context.watch<AppDataRepository>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: buildGradientAppBar(
         title: const Text('Cadastro de exercício'),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            color: AppColors.splashMint,
             tooltip: 'Novo exercício',
             onPressed: () => _addExercise(context, repo),
           ),
@@ -126,9 +116,9 @@ class ExerciciosPage extends StatelessWidget {
                               highlightColor: AppColors.splashMint.withValues(alpha: 0.08),
                             ),
                             child: ExpansionTile(
-                              key: PageStorageKey<String>('mg_${g.id}'),
+                              key: ValueKey<String>('mg_${g.id}'),
                               maintainState: true,
-                              initiallyExpanded: true,
+                              initiallyExpanded: false,
                               tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                               leading: Icon(
                                 Icons.fitness_center_rounded,
@@ -156,7 +146,7 @@ class ExerciciosPage extends StatelessWidget {
                               children: [
                                 if (exercises.isEmpty)
                                   Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.only(bottom: 6),
                                     child: Text(
                                       'Nenhum exercício neste grupo.',
                                       style: TextStyle(
@@ -168,7 +158,7 @@ class ExerciciosPage extends StatelessWidget {
                                 else
                                   for (final e in exercises)
                                     Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.only(bottom: 6),
                                       child: _ExerciseRow(
                                         exercise: e,
                                         videoSubtitle: _videoSubtitle(e),
@@ -310,6 +300,14 @@ class _ExerciseRow extends StatelessWidget {
     this.onOpenAltVideo,
   });
 
+  /// Card mais compacto que o grupo; fontes +30% sobre essa base.
+  static const double _scale = 0.7;
+  static const double _fontBoost = 1.3;
+
+  static const Color _cardBlueFill = Color(0xFF1565C0);
+  static const Color _cardBlueBorder = Color(0xFF42A5F5);
+  static const Color _cardBlueSubtitle = Color(0xFF90CAF9);
+
   final ExerciseEntity exercise;
   final String videoSubtitle;
   final VoidCallback onEdit;
@@ -319,6 +317,15 @@ class _ExerciseRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final padH = 12 * _scale;
+    final padV = 12 * _scale;
+    final radius = 14 * _scale;
+    final titleSize = 15 * _scale * _fontBoost;
+    final subSize = 12 * _scale * _fontBoost;
+    final iconEdit = 22 * _scale;
+    final iconPlay = 28 * _scale;
+    final iconAlt = 24 * _scale;
+
     return Slidable(
       key: ValueKey(exercise.id),
       endActionPane: ActionPane(
@@ -331,26 +338,28 @@ class _ExerciseRow extends StatelessWidget {
             foregroundColor: Colors.white,
             icon: Icons.delete_outline_rounded,
             label: 'Excluir',
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(kRegistrySlidableActionRadius),
-              bottomRight: Radius.circular(kRegistrySlidableActionRadius),
+            borderRadius: BorderRadius.only(
+              topRight: Radius.circular(kRegistrySlidableActionRadius * _scale),
+              bottomRight: Radius.circular(kRegistrySlidableActionRadius * _scale),
             ),
           ),
         ],
       ),
       child: Material(
-        color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(14),
+        color: _cardBlueFill.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(radius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onEdit,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(radius),
+          splashColor: _cardBlueBorder.withValues(alpha: 0.22),
+          highlightColor: _cardBlueBorder.withValues(alpha: 0.12),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            padding: EdgeInsets.symmetric(horizontal: padH, vertical: padV),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(radius),
               border: Border.all(
-                color: AppColors.accentGreen.withValues(alpha: 0.22),
+                color: _cardBlueBorder.withValues(alpha: 0.55),
               ),
             ),
             child: Row(
@@ -362,18 +371,20 @@ class _ExerciseRow extends StatelessWidget {
                     children: [
                       Text(
                         exercise.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.w600,
-                          fontSize: 15,
+                          fontSize: titleSize,
+                          height: 1.2,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4 * _scale),
                       Text(
                         videoSubtitle,
                         style: TextStyle(
-                          color: AppColors.splashMint.withValues(alpha: 0.85),
-                          fontSize: 12,
+                          color: _cardBlueSubtitle.withValues(alpha: 0.95),
+                          fontSize: subSize,
+                          height: 1.25,
                         ),
                       ),
                     ],
@@ -381,30 +392,36 @@ class _ExerciseRow extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: 'Editar',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 40, height: 40),
                   icon: Icon(
                     Icons.edit_outlined,
-                    color: Colors.white.withValues(alpha: 0.85),
-                    size: 22,
+                    color: _cardBlueSubtitle,
+                    size: iconEdit,
                   ),
                   onPressed: onEdit,
                 ),
                 if (onOpenMainVideo != null)
                   IconButton(
                     tooltip: 'Abrir vídeo',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(width: 40, height: 40),
                     icon: Icon(
                       Icons.play_circle_fill_rounded,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      size: 28,
+                      color: _cardBlueSubtitle,
+                      size: iconPlay,
                     ),
                     onPressed: onOpenMainVideo,
                   ),
                 if (onOpenAltVideo != null)
                   IconButton(
                     tooltip: 'Vídeo alternativo',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(width: 40, height: 40),
                     icon: Icon(
                       Icons.video_library_rounded,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      size: 24,
+                      color: _cardBlueSubtitle,
+                      size: iconAlt,
                     ),
                     onPressed: onOpenAltVideo,
                   ),

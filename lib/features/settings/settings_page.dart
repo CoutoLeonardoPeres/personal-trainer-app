@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/auth/app_session.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
+import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -13,11 +16,13 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Configurações')),
+      appBar: buildGradientAppBar(title: const Text('Configurações')),
       body: FuturisticBackground(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            const _SessionProfileSection(),
+            const SizedBox(height: 8),
             ListTile(
               leading: const Icon(Icons.password_rounded, color: AppColors.accentGreen),
               title: const Text('Alterar senha', style: TextStyle(color: AppColors.textPrimary)),
@@ -47,14 +52,18 @@ class SettingsPage extends StatelessWidget {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.article_outlined, color: AppColors.accentGreen),
-              title: const Text('Logs do app', style: TextStyle(color: AppColors.textPrimary)),
-              subtitle: const Text(
-                'Auditoria gravada no SQLite (ações e cadastros).',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            Consumer<AppSession>(
+              builder: (context, session, _) => ListTile(
+                leading: const Icon(Icons.article_outlined, color: AppColors.accentGreen),
+                title: const Text('Logs do app', style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: Text(
+                  session.isAdminPersonal
+                      ? 'Auditoria gravada no SQLite (ações e cadastros).'
+                      : 'Disponível apenas para o perfil administrador.',
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+                onTap: () => _logsSheet(context),
               ),
-              onTap: () => _logsSheet(context),
             ),
           ],
         ),
@@ -113,6 +122,16 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _logsSheet(BuildContext context) async {
+    final session = context.read<AppSession>();
+    if (!session.isAdminPersonal) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Somente administradores podem ver os logs de auditoria.'),
+        ),
+      );
+      return;
+    }
     final repo = context.read<AppDataRepository>();
     final logs = await repo.allAuditLogs();
     final text = logs
@@ -187,6 +206,225 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _sessionRoleLabel(SessionRole r) {
+  switch (r) {
+    case SessionRole.adminPersonal:
+      return 'Administrador';
+    case SessionRole.personalTrainer:
+      return 'Personal';
+    case SessionRole.student:
+      return 'Aluno';
+  }
+}
+
+class _SessionProfileSection extends StatelessWidget {
+  const _SessionProfileSection();
+
+  Future<void> _applyRole(BuildContext context, SessionRole role) async {
+    final session = context.read<AppSession>();
+    final repo = context.read<AppDataRepository>();
+    switch (role) {
+      case SessionRole.adminPersonal:
+        final personals = await repo.watchPersonalsAlphabetical().first;
+        PersonalEntity? pick;
+        for (final p in personals) {
+          if (p.isAdmin) {
+            pick = p;
+            break;
+          }
+        }
+        pick ??= personals.isNotEmpty ? personals.first : null;
+        await session.setSession(
+          role: SessionRole.adminPersonal,
+          personalId: pick?.id,
+          studentId: null,
+        );
+        return;
+      case SessionRole.personalTrainer:
+        final personals = await repo.watchPersonalsAlphabetical().first;
+        if (personals.isEmpty) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Cadastre ao menos um personal.')),
+            );
+          }
+          return;
+        }
+        final preferred = session.personalId;
+        final id = (preferred != null && personals.any((p) => p.id == preferred))
+            ? preferred
+            : personals.first.id;
+        await session.setSession(
+          role: SessionRole.personalTrainer,
+          personalId: id,
+          studentId: null,
+        );
+        return;
+      case SessionRole.student:
+        final students = await repo.watchStudentsForSessionPicker().first;
+        if (students.isEmpty) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Cadastre ao menos um aluno.')),
+            );
+          }
+          return;
+        }
+        final preferred = session.studentId;
+        final id = (preferred != null && students.any((s) => s.id == preferred))
+            ? preferred
+            : students.first.id;
+        await session.setSession(
+          role: SessionRole.student,
+          personalId: null,
+          studentId: id,
+        );
+        return;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<AppSession>();
+    final repo = context.watch<AppDataRepository>();
+
+    return Card(
+      color: AppColors.barBackground.withValues(alpha: 0.94),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Perfil da sessão',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Quem está usando o app neste aparelho (até haver login). Define quais alunos e treinos aparecem.',
+              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.95), fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<SessionRole>(
+              value: session.role,
+              dropdownColor: AppColors.barBackground,
+              decoration: const InputDecoration(
+                labelText: 'Papel',
+                labelStyle: TextStyle(color: AppColors.textMuted),
+              ),
+              style: const TextStyle(color: AppColors.textPrimary),
+              items: SessionRole.values
+                  .map(
+                    (r) => DropdownMenuItem(
+                      value: r,
+                      child: Text(_sessionRoleLabel(r)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (r) async {
+                if (r == null) return;
+                await _applyRole(context, r);
+              },
+            ),
+            if (session.role == SessionRole.personalTrainer) ...[
+              const SizedBox(height: 12),
+              StreamBuilder<List<PersonalEntity>>(
+                stream: repo.watchPersonalsAlphabetical(),
+                builder: (context, snap) {
+                  final list = snap.data ?? [];
+                  if (list.isEmpty) {
+                    return const Text(
+                      'Nenhum personal cadastrado.',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    );
+                  }
+                  final pid = session.personalId;
+                  final effective = (pid != null && list.any((p) => p.id == pid))
+                      ? pid
+                      : list.first.id;
+                  return DropdownButtonFormField<String>(
+                    value: effective,
+                    dropdownColor: AppColors.barBackground,
+                    decoration: const InputDecoration(
+                      labelText: 'Personal logado',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                    ),
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    items: list
+                        .map(
+                          (p) => DropdownMenuItem(
+                            value: p.id,
+                            child: Text(p.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (id) async {
+                      if (id == null) return;
+                      await session.setSession(
+                        role: SessionRole.personalTrainer,
+                        personalId: id,
+                        studentId: null,
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+            if (session.role == SessionRole.student) ...[
+              const SizedBox(height: 12),
+              StreamBuilder<List<StudentEntity>>(
+                stream: repo.watchStudentsForSessionPicker(),
+                builder: (context, snap) {
+                  final list = snap.data ?? [];
+                  if (list.isEmpty) {
+                    return const Text(
+                      'Nenhum aluno cadastrado.',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    );
+                  }
+                  final sid = session.studentId;
+                  final effective = (sid != null && list.any((s) => s.id == sid))
+                      ? sid
+                      : list.first.id;
+                  return DropdownButtonFormField<String>(
+                    value: effective,
+                    dropdownColor: AppColors.barBackground,
+                    decoration: const InputDecoration(
+                      labelText: 'Aluno logado',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                    ),
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    items: list
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (id) async {
+                      if (id == null) return;
+                      await session.setSession(
+                        role: SessionRole.student,
+                        personalId: null,
+                        studentId: id,
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),

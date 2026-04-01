@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/auth/app_session.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../domain/scoring.dart' as scoring;
 import '../local/app_database.dart';
@@ -16,17 +17,109 @@ const _uuid = Uuid();
 Expression<bool> _dayWorkoutNotCancelled($DayWorkoutsTable t) =>
     t.status.equals('cancelled').not();
 
+/// Uma linha por exercício: evita o mesmo [exerciseId] repetido no treino do dia
+/// (lista na modal do calendário e demais leituras).
+List<DayWorkoutExerciseEntity> _uniqueDayWorkoutLinesByExerciseId(
+  List<DayWorkoutExerciseEntity> lines,
+) {
+  final seen = <String>{};
+  return [
+    for (final line in lines)
+      if (seen.add(line.exerciseId)) line,
+  ];
+}
+
+/// Preserva a primeira ocorrência de cada exercício ao montar o snapshot do dia.
+List<WeekScheduleRow> _uniqueWeekScheduleRowsByExerciseId(
+  List<WeekScheduleRow> rows,
+) {
+  final seen = <String>{};
+  return [
+    for (final r in rows)
+      if (seen.add(r.item.exerciseId)) r,
+  ];
+}
+
 /// Repositório central: CRUD local, auditoria e fila para Supabase (segundo plano).
 class AppDataRepository {
   AppDataRepository(
-    this._db, {
+    this._db,
+    this._session, {
     RemoteSyncService? remoteSync,
   }) : _remote = remoteSync ?? const NoOpRemoteSyncService();
 
   final AppDatabase _db;
+  final AppSession _session;
   final RemoteSyncService _remote;
 
   AppDatabase get db => _db;
+  AppSession get session => _session;
+
+  Future<StudentEntity?> getStudentById(String id) {
+    return (_db.select(_db.students)..where((s) => s.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  Future<void> requireStudentAccess(String studentId) async {
+    final s = await getStudentById(studentId);
+    if (s == null || !_session.canAccessStudent(s)) {
+      throw ArgumentError('Sem permissão para acessar os dados deste aluno.');
+    }
+  }
+
+  Future<DayWorkoutEntity?> _dayWorkoutRow(String id) {
+    return (_db.select(_db.dayWorkouts)..where((w) => w.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  Future<void> _requireAccessForDayWorkoutId(String dayWorkoutId) async {
+    final w = await _dayWorkoutRow(dayWorkoutId);
+    if (w == null) {
+      throw ArgumentError('Treino não encontrado.');
+    }
+    await requireStudentAccess(w.studentId);
+  }
+
+  Future<void> _requireAccessForDayWorkoutLineId(String lineId) async {
+    final row = await (_db.select(_db.dayWorkoutExercises)
+          ..where((x) => x.id.equals(lineId)))
+        .getSingleOrNull();
+    if (row == null) {
+      throw ArgumentError('Linha de exercício não encontrada.');
+    }
+    await _requireAccessForDayWorkoutId(row.dayWorkoutId);
+  }
+
+  List<StudentEntity> _visibleStudents(List<StudentEntity> all) {
+    switch (_session.role) {
+      case SessionRole.adminPersonal:
+        return all;
+      case SessionRole.personalTrainer:
+        final pid = _session.personalId;
+        if (pid == null) return [];
+        return all.where((s) => s.createdByPersonalId == pid).toList();
+      case SessionRole.student:
+        final sid = _session.studentId;
+        if (sid == null) return [];
+        return all.where((s) => s.id == sid).toList();
+    }
+  }
+
+  Future<List<DayWorkoutEntity>> _visibleDayWorkouts(
+    List<DayWorkoutEntity> raw,
+  ) async {
+    if (_session.role == SessionRole.adminPersonal) return raw;
+    final ids = raw.map((e) => e.studentId).toSet().toList();
+    if (ids.isEmpty) return raw;
+    final students = await (_db.select(_db.students)
+          ..where((s) => s.id.isIn(ids)))
+        .get();
+    final byId = {for (final s in students) s.id: s};
+    return raw.where((w) {
+      final s = byId[w.studentId];
+      return s != null && _session.canAccessStudent(s);
+    }).toList();
+  }
 
   Future<void> warmUp() async {
     await _db.customSelect('SELECT 1').get();
@@ -181,9 +274,16 @@ class AppDataRepository {
     required String email,
     bool mustChangePassword = true,
     String? passwordHash,
+    bool? isAdmin,
   }) async {
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
+    final PersonalEntity? prevPersonal = id != null
+        ? await (_db.select(_db.personals)..where((p) => p.id.equals(sid)))
+            .getSingleOrNull()
+        : null;
+    final effectiveIsAdmin =
+        isAdmin ?? prevPersonal?.isAdmin ?? false;
     await _db.into(_db.personals).insertOnConflictUpdate(
           PersonalsCompanion.insert(
             id: sid,
@@ -198,6 +298,7 @@ class AppDataRepository {
             email: email,
             mustChangePassword: Value(mustChangePassword),
             passwordHash: Value(passwordHash),
+            isAdmin: Value(effectiveIsAdmin),
             createdAt: Value(now),
             updatedAt: Value(now),
           ),
@@ -213,10 +314,21 @@ class AppDataRepository {
 
   Stream<List<StudentEntity>> watchStudentsAlphabetical() {
     return (_db.select(_db.students)..orderBy([(t) => OrderingTerm.asc(t.name)]))
-        .watch();
+        .watch()
+        .map(_visibleStudents);
+  }
+
+  /// Lista completa de alunos para trocar sessão (apenas admin); demais perfis usam a lista filtrada.
+  Stream<List<StudentEntity>> watchStudentsForSessionPicker() {
+    if (_session.isAdminPersonal) {
+      return (_db.select(_db.students)..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .watch();
+    }
+    return watchStudentsAlphabetical();
   }
 
   Future<List<String>> gymIdsForStudent(String studentId) async {
+    await requireStudentAccess(studentId);
     final rows = await (_db.select(_db.studentGyms)
           ..where((t) => t.studentId.equals(studentId)))
         .get();
@@ -241,8 +353,31 @@ class AppDataRepository {
     bool mustChangePassword = true,
     String? passwordHash,
   }) async {
+    if (_session.isStudent) {
+      if (id == null || id != _session.studentId) {
+        throw ArgumentError('Sem permissão para alterar este cadastro.');
+      }
+    } else if (id != null) {
+      await requireStudentAccess(id);
+    } else if (_session.isPersonalTrainer && _session.personalId == null) {
+      throw ArgumentError('Sessão de personal sem identificação.');
+    }
+
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
+    final StudentEntity? prev = id != null
+        ? await (_db.select(_db.students)..where((s) => s.id.equals(sid)))
+            .getSingleOrNull()
+        : null;
+    String? ownerId = prev?.createdByPersonalId;
+    if (prev == null) {
+      if (_session.isPersonalTrainer) {
+        ownerId = _session.personalId;
+      } else if (_session.isAdminPersonal) {
+        ownerId = null;
+      }
+    }
+
     await _db.transaction(() async {
       await _db.into(_db.students).insertOnConflictUpdate(
             StudentsCompanion.insert(
@@ -261,6 +396,7 @@ class AppDataRepository {
               cep: Value(cep),
               mustChangePassword: Value(mustChangePassword),
               passwordHash: Value(passwordHash),
+              createdByPersonalId: Value(ownerId),
               createdAt: Value(now),
               updatedAt: Value(now),
             ),
@@ -278,6 +414,10 @@ class AppDataRepository {
   }
 
   Future<void> deleteStudent(String id) async {
+    if (_session.isStudent) {
+      throw ArgumentError('Sem permissão para excluir aluno.');
+    }
+    await requireStudentAccess(id);
     await (_db.delete(_db.studentGyms)..where((t) => t.studentId.equals(id)))
         .go();
     await (_db.delete(_db.students)..where((t) => t.id.equals(id))).go();
@@ -356,13 +496,23 @@ class AppDataRepository {
         .watch();
   }
 
-  Future<void> addExerciseToWorkoutGroup({
+  /// Retorna `false` se [exerciseId] já existir neste grupo (não insere duplicata).
+  Future<bool> addExerciseToWorkoutGroup({
     required String workoutGroupId,
     required String exerciseId,
     int? lastReps,
     int? lastSets,
     double? lastLoadKg,
   }) async {
+    final dup = await (_db.select(_db.workoutGroupExercises)
+          ..where(
+            (t) =>
+                t.workoutGroupId.equals(workoutGroupId) &
+                t.exerciseId.equals(exerciseId),
+          ))
+        .get();
+    if (dup.isNotEmpty) return false;
+
     final rows = await (_db.select(_db.workoutGroupExercises)
           ..where((t) => t.workoutGroupId.equals(workoutGroupId)))
         .get();
@@ -383,6 +533,7 @@ class AppDataRepository {
           ),
         );
     await _audit('add_exercise', 'workout_group', entityId: workoutGroupId);
+    return true;
   }
 
   Future<void> updateWorkoutGroupExerciseLine({
@@ -410,11 +561,17 @@ class AppDataRepository {
   }
 
   Stream<List<AuditLogEntity>> watchAuditLogsDesc() {
+    if (!_session.isAdminPersonal) {
+      return Stream.value(const <AuditLogEntity>[]);
+    }
     return (_db.select(_db.auditLogs)..orderBy([(t) => OrderingTerm.desc(t.at)]))
         .watch();
   }
 
-  Future<List<AuditLogEntity>> allAuditLogs() {
+  Future<List<AuditLogEntity>> allAuditLogs() async {
+    if (!_session.isAdminPersonal) {
+      return const <AuditLogEntity>[];
+    }
     return (_db.select(_db.auditLogs)..orderBy([(t) => OrderingTerm.desc(t.at)]))
         .get();
   }
@@ -428,7 +585,8 @@ class AppDataRepository {
               t.dayDate.isBiggerOrEqualValue(start) &
               t.dayDate.isSmallerThanValue(end) &
               _dayWorkoutNotCancelled(t)))
-        .watch();
+        .watch()
+        .asyncMap(_visibleDayWorkouts);
   }
 
   Stream<List<DayWorkoutEntity>> watchWorkoutsBetween(
@@ -440,7 +598,8 @@ class AppDataRepository {
               t.dayDate.isBiggerOrEqualValue(fromInclusive) &
               t.dayDate.isSmallerThanValue(toExclusive) &
               _dayWorkoutNotCancelled(t)))
-        .watch();
+        .watch()
+        .asyncMap(_visibleDayWorkouts);
   }
 
   // ——— Planejamento: semana (bloco + itens agendados) ———
@@ -477,7 +636,8 @@ class AppDataRepository {
   Stream<List<WeekScheduleRow>> watchWeekScheduleRows({
     required String studentId,
     required DateTime weekMonday,
-  }) {
+  }) async* {
+    await requireStudentAccess(studentId);
     final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
     final q = _db.select(_db.weekScheduleItems).join([
       innerJoin(
@@ -495,26 +655,27 @@ class AppDataRepository {
       )
       ..orderBy([OrderingTerm.asc(_db.weekScheduleItems.sortOrder)]);
 
-    return q.watch().map(
-          (rows) => rows
-              .map(
-                (row) => WeekScheduleRow(
-                  item: row.readTable(_db.weekScheduleItems),
-                  exerciseName: row.readTable(_db.exercises).name,
-                ),
-              )
-              .toList(),
-        );
+    await for (final rows in q.watch()) {
+      yield rows
+          .map(
+            (row) => WeekScheduleRow(
+              item: row.readTable(_db.weekScheduleItems),
+              exerciseName: row.readTable(_db.exercises).name,
+            ),
+          )
+          .toList();
+    }
   }
 
   /// Treinos no calendário (programados / iniciados / concluídos) dentro da semana [monday, monday+7).
   Stream<List<DayWorkoutEntity>> watchStudentWeekDayWorkouts({
     required String studentId,
     required DateTime weekMonday,
-  }) {
+  }) async* {
+    await requireStudentAccess(studentId);
     final start = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
     final end = start.add(const Duration(days: 7));
-    return (_db.select(_db.dayWorkouts)
+    final stream = (_db.select(_db.dayWorkouts)
           ..where(
             (w) =>
                 w.studentId.equals(studentId) &
@@ -524,6 +685,9 @@ class AppDataRepository {
           )
           ..orderBy([(w) => OrderingTerm.asc(w.dayDate)]))
         .watch();
+    await for (final list in stream) {
+      yield list;
+    }
   }
 
   Future<void> addExercisesToWeekSchedule({
@@ -531,6 +695,7 @@ class AppDataRepository {
     required DateTime weekMonday,
     required List<String> exerciseIds,
   }) async {
+    await requireStudentAccess(studentId);
     if (exerciseIds.isEmpty) return;
     final blockId = await _getOrCreateWeekBlock(studentId, weekMonday);
     final existing = await (_db.select(_db.weekScheduleItems)
@@ -566,6 +731,7 @@ class AppDataRepository {
     required DateTime weekMonday,
     required String workoutGroupId,
   }) async {
+    await requireStudentAccess(studentId);
     final blockId = await _getOrCreateWeekBlock(studentId, weekMonday);
     final lines = await (_db.select(_db.workoutGroupExercises)
           ..where((t) => t.workoutGroupId.equals(workoutGroupId))
@@ -614,6 +780,16 @@ class AppDataRepository {
     required int reps,
     double? loadKg,
   }) async {
+    final item = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.id.equals(itemId)))
+        .getSingleOrNull();
+    if (item == null) return;
+    final block = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.id.equals(item.blockId)))
+        .getSingleOrNull();
+    if (block == null) return;
+    await requireStudentAccess(block.studentId);
+
     final needsDetail = sets <= 0 || reps <= 0;
     await (_db.update(_db.weekScheduleItems)..where((i) => i.id.equals(itemId))).write(
           WeekScheduleItemsCompanion(
@@ -627,12 +803,22 @@ class AppDataRepository {
   }
 
   Future<void> deleteWeekScheduleItem(String itemId) async {
+    final item = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.id.equals(itemId)))
+        .getSingleOrNull();
+    if (item == null) return;
+    final block = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.id.equals(item.blockId)))
+        .getSingleOrNull();
+    if (block == null) return;
+    await requireStudentAccess(block.studentId);
+
     final now = DateTime.now();
     await (_db.update(_db.dayWorkouts)..where((d) => d.weekItemId.equals(itemId))).write(
           DayWorkoutsCompanion(
             status: const Value('cancelled'),
             weekItemId: const Value(null),
-            timerResumeAt: const Value.absent(),
+            timerResumeAt: const Value(null),
             updatedAt: Value(now),
           ),
         );
@@ -646,6 +832,7 @@ class AppDataRepository {
     required String studentId,
     required DateTime weekMonday,
   }) async {
+    await requireStudentAccess(studentId);
     final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
     final q = _db.select(_db.weekScheduleItems).join([
       innerJoin(
@@ -688,16 +875,18 @@ class AppDataRepository {
       if (ok) okStudents.add(b.studentId);
     }
     if (okStudents.isEmpty) return [];
-    return (_db.select(_db.students)
+    final list = await (_db.select(_db.students)
           ..where((s) => s.id.isIn(okStudents.toList()))
           ..orderBy([(s) => OrderingTerm.asc(s.name)]))
         .get();
+    return _visibleStudents(list);
   }
 
   Future<List<ProgrammableBundle>> getProgrammableBundles(
     String studentId,
     DateTime day,
   ) async {
+    await requireStudentAccess(studentId);
     final monday = normalizeMonday(day);
     final rows = await loadWeekScheduleRows(studentId: studentId, weekMonday: monday);
     final valid = rows
@@ -730,6 +919,7 @@ class AppDataRepository {
 
   /// Nome do grupo de treino vinculado ao dia (quando programado a partir de um grupo).
   Future<String?> getDayWorkoutGroupBadgeLabel(DayWorkoutEntity w) async {
+    await requireStudentAccess(w.studentId);
     final gid = w.sourceWorkoutGroupId;
     if (gid == null || gid.isEmpty) return null;
     final g = await (_db.select(_db.workoutGroups)
@@ -745,7 +935,10 @@ class AppDataRepository {
     required List<WeekScheduleRow> rows,
     String? sourceWorkoutGroupId,
   }) async {
+    await requireStudentAccess(studentId);
     if (rows.isEmpty) throw ArgumentError('rows vazio');
+    final uniqueRows = _uniqueWeekScheduleRowsByExerciseId(rows);
+    if (uniqueRows.isEmpty) throw ArgumentError('rows vazio');
     final dayOnly = DateTime(day.year, day.month, day.day);
     if (isCalendarDateBeforeToday(dayOnly)) {
       throw ArgumentError('Não é possível programar treino em data passada.');
@@ -768,7 +961,7 @@ class AppDataRepository {
             ),
           );
       var order = 0;
-      for (final r in rows) {
+      for (final r in uniqueRows) {
         final i = r.item;
         order++;
         await _db.into(_db.dayWorkoutExercises).insert(
@@ -788,29 +981,44 @@ class AppDataRepository {
     return wid;
   }
 
-  Future<DayWorkoutEntity?> getDayWorkout(String id) {
-    return (_db.select(_db.dayWorkouts)..where((w) => w.id.equals(id)))
-        .getSingleOrNull();
+  Future<DayWorkoutEntity?> getDayWorkout(String id) async {
+    final w = await _dayWorkoutRow(id);
+    if (w == null) return null;
+    final s = await getStudentById(w.studentId);
+    if (s == null || !_session.canAccessStudent(s)) return null;
+    return w;
   }
 
   Stream<DayWorkoutEntity?> watchDayWorkout(String id) {
     return (_db.select(_db.dayWorkouts)..where((w) => w.id.equals(id)))
         .watch()
-        .map((list) => list.singleOrNull);
+        .map((list) => list.singleOrNull)
+        .asyncMap((w) async {
+      if (w == null) return null;
+      final s = await getStudentById(w.studentId);
+      if (s == null || !_session.canAccessStudent(s)) return null;
+      return w;
+    });
   }
 
-  Stream<List<DayWorkoutExerciseEntity>> watchDayWorkoutExercises(String dayWorkoutId) {
-    return (_db.select(_db.dayWorkoutExercises)
+  Stream<List<DayWorkoutExerciseEntity>> watchDayWorkoutExercises(
+    String dayWorkoutId,
+  ) async* {
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
+    yield* (_db.select(_db.dayWorkoutExercises)
           ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-        .watch();
+        .watch()
+        .map(_uniqueDayWorkoutLinesByExerciseId);
   }
 
-  Future<List<DayWorkoutExerciseEntity>> getDayWorkoutExercises(String dayWorkoutId) {
-    return (_db.select(_db.dayWorkoutExercises)
+  Future<List<DayWorkoutExerciseEntity>> getDayWorkoutExercises(String dayWorkoutId) async {
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
+    final raw = await (_db.select(_db.dayWorkoutExercises)
           ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
         .get();
+    return _uniqueDayWorkoutLinesByExerciseId(raw);
   }
 
   /// Acrescenta uma série executada (JSON). Não altera [reps] prescrito da linha.
@@ -819,6 +1027,7 @@ class AppDataRepository {
     double? loadKg,
     required int reps,
   }) async {
+    await _requireAccessForDayWorkoutLineId(lineId);
     final row = await (_db.select(_db.dayWorkoutExercises)
           ..where((x) => x.id.equals(lineId)))
         .getSingleOrNull();
@@ -833,27 +1042,87 @@ class AppDataRepository {
       ...existing,
       DayWorkoutPerformedSet(loadKg: loadKg, reps: reps),
     ];
+    await _persistDayWorkoutPerformedSets(lineId, row, next);
+    await _audit('append_set', 'day_workout_exercise', entityId: lineId);
+  }
+
+  Future<void> _persistDayWorkoutPerformedSets(
+    String lineId,
+    DayWorkoutExerciseEntity row,
+    List<DayWorkoutPerformedSet> next,
+  ) async {
     final volumeScore = DayWorkoutPerformedSetCodec.totalVolumeScore(next);
+    final newLoadKg = next.isEmpty
+        ? row.loadKg
+        : (next.last.loadKg ?? row.loadKg);
     await (_db.update(_db.dayWorkoutExercises)..where((x) => x.id.equals(lineId)))
         .write(
       DayWorkoutExercisesCompanion(
         performedSetsJson: Value(DayWorkoutPerformedSetCodec.encode(next)),
-        loadKg: Value(loadKg ?? row.loadKg),
         exerciseScore: Value(volumeScore),
+        loadKg: Value(newLoadKg),
       ),
     );
-    await _audit('append_set', 'day_workout_exercise', entityId: lineId);
+  }
+
+  /// Remove a série executada no índice [performedIndex] (0-based na lista JSON).
+  Future<void> removeDayWorkoutExercisePerformedSetAt({
+    required String lineId,
+    required int performedIndex,
+  }) async {
+    await _requireAccessForDayWorkoutLineId(lineId);
+    final row = await (_db.select(_db.dayWorkoutExercises)
+          ..where((x) => x.id.equals(lineId)))
+        .getSingleOrNull();
+    if (row == null) {
+      throw ArgumentError('Linha de exercício não encontrada.');
+    }
+    final existing = DayWorkoutPerformedSetCodec.decode(row.performedSetsJson);
+    if (performedIndex < 0 || performedIndex >= existing.length) {
+      throw ArgumentError('Índice de série inválido.');
+    }
+    final next = [...existing]..removeAt(performedIndex);
+    await _persistDayWorkoutPerformedSets(lineId, row, next);
+    await _audit('remove_set', 'day_workout_exercise', entityId: lineId);
+  }
+
+  /// Atualiza carga/reps da série executada no índice [performedIndex] (0-based).
+  Future<void> updateDayWorkoutExercisePerformedSetAt({
+    required String lineId,
+    required int performedIndex,
+    double? loadKg,
+    required int reps,
+  }) async {
+    if (reps < 1) {
+      throw ArgumentError('Repetições deve ser ≥ 1.');
+    }
+    await _requireAccessForDayWorkoutLineId(lineId);
+    final row = await (_db.select(_db.dayWorkoutExercises)
+          ..where((x) => x.id.equals(lineId)))
+        .getSingleOrNull();
+    if (row == null) {
+      throw ArgumentError('Linha de exercício não encontrada.');
+    }
+    final existing = DayWorkoutPerformedSetCodec.decode(row.performedSetsJson);
+    if (performedIndex < 0 || performedIndex >= existing.length) {
+      throw ArgumentError('Índice de série inválido.');
+    }
+    final next = [...existing];
+    next[performedIndex] = DayWorkoutPerformedSet(loadKg: loadKg, reps: reps);
+    await _persistDayWorkoutPerformedSets(lineId, row, next);
+    await _audit('update_set', 'day_workout_exercise', entityId: lineId);
   }
 
   /// Cancela treino programado (troca no calendário): linha e exercícios permanecem no BD.
   Future<bool> deleteProgrammedDayWorkout(String id) async {
-    final w = await getDayWorkout(id);
+    await _requireAccessForDayWorkoutId(id);
+    final w = await _dayWorkoutRow(id);
     if (w == null) return false;
     if (w.status != 'programmed') return false;
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
           DayWorkoutsCompanion(
             status: const Value('cancelled'),
-            timerResumeAt: const Value.absent(),
+            timerResumeAt: const Value(null),
             updatedAt: Value(DateTime.now()),
           ),
         );
@@ -862,7 +1131,8 @@ class AppDataRepository {
   }
 
   Future<void> startDayWorkout(String id) async {
-    final cur = await getDayWorkout(id);
+    await _requireAccessForDayWorkoutId(id);
+    final cur = await _dayWorkoutRow(id);
     if (cur == null || cur.status != 'programmed') return;
     final now = DateTime.now();
     await (_db.update(_db.dayWorkouts)..where((w) => w.id.equals(id))).write(
@@ -877,13 +1147,15 @@ class AppDataRepository {
   }
 
   Future<void> pauseDayWorkout(String id) async {
-    final w = await getDayWorkout(id);
+    await _requireAccessForDayWorkoutId(id);
+    final w = await _dayWorkoutRow(id);
     if (w == null || w.status != 'started' || w.timerResumeAt == null) return;
     final add = DateTime.now().difference(w.timerResumeAt!).inSeconds;
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
           DayWorkoutsCompanion(
             activeDurationSeconds: Value(w.activeDurationSeconds + add),
-            timerResumeAt: const Value.absent(),
+            // `Value.absent()` não altera a coluna; é preciso NULL para pausar o cronômetro.
+            timerResumeAt: const Value(null),
             updatedAt: Value(DateTime.now()),
           ),
         );
@@ -891,7 +1163,8 @@ class AppDataRepository {
   }
 
   Future<void> resumeDayWorkout(String id) async {
-    final w = await getDayWorkout(id);
+    await _requireAccessForDayWorkoutId(id);
+    final w = await _dayWorkoutRow(id);
     if (w == null || w.status != 'started' || w.timerResumeAt != null) return;
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
           DayWorkoutsCompanion(
@@ -913,27 +1186,32 @@ class AppDataRepository {
   }
 
   Future<void> completeDayWorkout(String id) async {
-    final before = await getDayWorkout(id);
+    await _requireAccessForDayWorkoutId(id);
+    final before = await _dayWorkoutRow(id);
     if (before == null || before.status != 'started') return;
     if (before.timerResumeAt != null) {
       await pauseDayWorkout(id);
     }
-    final w = await getDayWorkout(id);
+    final w = await _dayWorkoutRow(id);
     if (w == null) return;
     final exercises = await getDayWorkoutExercises(id);
     var sum = 0.0;
     for (final e in exercises) {
+      final performedVol = DayWorkoutPerformedSetCodec.totalVolumeScore(
+        DayWorkoutPerformedSetCodec.decode(e.performedSetsJson),
+      );
       final load = e.loadKg ?? 0;
-      final exScore =
-          e.sets * scoring.setScore(loadKg: load, reps: e.reps);
+      final prescribed = e.sets * scoring.setScore(loadKg: load, reps: e.reps);
+      final exScore = performedVol > 0 ? performedVol : prescribed;
       sum += exScore;
       await (_db.update(_db.dayWorkoutExercises)..where((x) => x.id.equals(e.id)))
           .write(DayWorkoutExercisesCompanion(exerciseScore: Value(exScore)));
     }
     final active = w.activeDurationSeconds;
-    final ws = scoring.workoutScore(
+    final activeClamped = active > 0 ? active : 1;
+    final ws = scoring.workoutScorePerActiveMinute(
       exercisesScoreSum: sum,
-      activeDurationSeconds: active > 0 ? active : 1,
+      activeDurationSeconds: activeClamped,
     );
     final now = DateTime.now();
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(

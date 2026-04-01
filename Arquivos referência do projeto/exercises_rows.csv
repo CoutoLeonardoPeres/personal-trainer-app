@@ -1,0 +1,599 @@
+id,nome,grupo_muscular,link_video,alternativa,link_video_alternativa,trainer_id,created_at
+1,Supino Reto com Barra,Peitoral,https://youtu.be/pCPyqW60Wuk?si=yqssmMewKnEOJ95A,Supino Reto com Barra,https://youtu.be/pCPyqW60Wuk?si=yqssmMewKnEOJ95A,1,2025-11-24 11:59:16.821277+00
+2,Supino Convergente,Peitoral,https://youtube.com/shorts/wVilY6j8R90?si=jSQ_ZCZgPHILCrkB,Supino Convergente,https://youtube.com/shorts/wVilY6j8R90?si=jSQ_ZCZgPHILCrkB,1,2025-11-24 12:01:31.721374+00
+3,Desenvolvimento Convergente,Ombros,https://youtube.com/shorts/VFbijwqdsTU?si=QINUM9x5vBRJDUf0,Desenvolvimento Convergente,https://youtube.com/shorts/VFbijwqdsTU?si=QINUM9x5vBRJDUf0,1,2025-11-24 12:03:13.575745+00
+4,Tríceps Pulley,Tríceps,https://youtube.com/shorts/5PPKThQuR3M?si=zsed4oD0s0hZy9iz,Tríceps Pulley,https://youtube.com/shorts/5PPKThQuR3M?si=zsed4oD0s0hZy9iz,1,2025-11-24 12:04:50.499372+00
+5,Mesa Flexora,Coxas Posterior,https://youtube.com/shorts/IXg1PQ_5gmw?si=AVhnutfNZVJDLOu0,Mesa Flexora,https://youtube.com/shorts/IXg1PQ_5gmw?si=AVhnutfNZVJDLOu0,1,2025-11-24 12:06:08.394086+00
+6,Cadeira Flexora,Coxas Posterior,https://youtube.com/shorts/T46yKiz8laY?si=5zxpvrd9qsNG7Ay_,Cadeira Flexora,https://youtube.com/shorts/T46yKiz8laY?si=5zxpvrd9qsNG7Ay_,1,2025-11-24 12:07:26.538947+00
+7,Panturrilhas no Leg Press Horizontal,Panturrilhas,https://youtube.com/shorts/83e3vyu0_XE?si=BsnF3ZZoBJiXKl91,Panturrilhas no Leg Press Horizontal,https://youtube.com/shorts/83e3vyu0_XE?si=BsnF3ZZoBJiXKl91,1,2025-11-24 12:09:30.551461+00
+8,Cadeira Abdutora,Glúteos,https://youtube.com/shorts/nabhYLtz8Gg?si=nDg_kqeLeRMne320,Cadeira Abdutora,https://youtube.com/shorts/nabhYLtz8Gg?si=nDg_kqeLeRMne320,1,2025-11-24 12:10:31.296047+00
+9,Abdominal Rolo,Abdômen,https://youtube.com/shorts/DWFt7uGwJFQ?si=6esP9EvsbeUSCkBo,Abdominal Rolo,https://youtube.com/shorts/DWFt7uGwJFQ?si=6esP9EvsbeUSCkBo,1,2025-11-24 12:12:48.840552+00
+10,Abdominal Reto Máquina,Abdômen,https://youtube.com/shorts/YSKWgY_47L4?si=9o_-Og3WuFx1QiDR,Abdominal Reto Máquina,https://youtube.com/shorts/YSKWgY_47L4?si=9o_-Og3WuFx1QiDR,1,2025-11-24 12:14:16.621991+00
+11,Remada Cavalo Pronada,Dorsal,https://youtube.com/shorts/6NBBrNhX3kA?si=R7Wz4Ci-c8qzfLyp,Remada Cavalo Pronada,https://youtube.com/shorts/6NBBrNhX3kA?si=R7Wz4Ci-c8qzfLyp,1,2025-11-24 12:15:32.902945+00
+12,Remada Convergente Pronada,Dorsal,https://youtube.com/shorts/WNNlh4-fnMg?si=HXTFfXmSaEoFR2V0,Remada Convergente Pronada,https://youtube.com/shorts/WNNlh4-fnMg?si=HXTFfXmSaEoFR2V0,1,2025-11-24 12:16:54.563659+00
+13,Squad Machine Agachamento Máquina,Coxas,https://youtube.com/shorts/tZ5rRI1mKts?si=eCvN57hRKbHMPvx4,Squad Machine Agachamento Máquina,https://youtube.com/shorts/tZ5rRI1mKts?si=eCvN57hRKbHMPvx4,1,2025-11-24 12:18:55.779113+00
+14,Agachamento Hack,Coxas,https://youtu.be/5Ix3fjf4w9o?si=30Gmp9RpDWj7Lkbu,Agachamento Hack,https://youtu.be/5Ix3fjf4w9o?si=30Gmp9RpDWj7Lkbu,1,2025-11-24 12:20:04.543465+00
+15,Leg Press Horizontal,Coxas,https://youtu.be/JxwOJQ9KG8E?si=vVpeEdu4_ks4T0sW,Leg Press Horizontal,https://youtu.be/JxwOJQ9KG8E?si=vVpeEdu4_ks4T0sW,1,2025-11-24 12:21:21.133339+00
+16,Supino 45⁰ com Halter,Peitoral,https://youtube.com/shorts/1lcMaxNgoec?si=lR-Qi5Q_7w1VbBAH,Supino 45⁰ com Halter,https://youtube.com/shorts/1lcMaxNgoec?si=lR-Qi5Q_7w1VbBAH,1,2025-11-24 12:22:36.413466+00
+17,Supino Reto com Halter,Peitoral,https://youtu.be/YiP-Zhk5YMk?si=4mU5Vl-iIxQ-XJPx,Supino Reto com Halter,https://youtu.be/YiP-Zhk5YMk?si=4mU5Vl-iIxQ-XJPx,1,2025-11-24 12:24:38.14054+00
+18,Voador,Peitoral,https://youtube.com/shorts/MENdoLpyj7c?si=m8u-bWQVzV353660,Voador,https://youtube.com/shorts/MENdoLpyj7c?si=m8u-bWQVzV353660,1,2025-11-24 12:25:45.732268+00
+19,Desenvolvimento Máquina,Peitoral,https://youtube.com/shorts/uh0oZorifmM?si=R84lanmXTE11bMDM,Desenvolvimento Máquina,https://youtube.com/shorts/uh0oZorifmM?si=R84lanmXTE11bMDM,1,2025-11-24 12:26:55.741706+00
+20,Elevação Frontal na Polia Baixa,Ombros,https://youtube.com/shorts/3BVXcDJlU0g?si=mx6zq9LtKixZwuQd,Elevação Frontal na Polia Baixa,https://youtube.com/shorts/3BVXcDJlU0g?si=mx6zq9LtKixZwuQd,1,2025-11-24 12:28:13.159941+00
+21,Tríceps Mergulho Máquina,Tríceps,https://youtube.com/shorts/jmznZ45g8jc?si=D0X9QFaP9Egj4k_H,Tríceps Mergulho Máquina,https://youtube.com/shorts/jmznZ45g8jc?si=D0X9QFaP9Egj4k_H,1,2025-11-24 12:30:45.744617+00
+22,Pulley Alto Aberto Pronado,Dorsal,https://youtube.com/shorts/fDrY7ccdYRo?si=SOUm5QGQbH0Z1a7J,Pulley Alto Aberto Pronado,https://youtube.com/shorts/fDrY7ccdYRo?si=SOUm5QGQbH0Z1a7J,1,2025-11-24 12:31:56.710561+00
+23,Pulley Alto Articulado Pronado,Dorsal,https://youtube.com/shorts/PmHjeQR0TX8?si=uXoAag_yaZtEQic4,Pulley Alto Articulado Pronado,https://youtube.com/shorts/PmHjeQR0TX8?si=uXoAag_yaZtEQic4,1,2025-11-24 12:33:18.686513+00
+24,Remada Articulada Pronada,Dorsal,https://youtube.com/shorts/oE2jSe_HM18?si=FLMWRebryGeft5cl,Remada Articulada Pronada,https://youtube.com/shorts/oE2jSe_HM18?si=FLMWRebryGeft5cl,1,2025-11-24 12:34:24.66678+00
+25,Voador Invertido,Ombros,https://youtube.com/shorts/7qWQ0RDsVEs?si=WyRGFbiIbGqatYDI,Voador Invertido,https://youtube.com/shorts/7qWQ0RDsVEs?si=WyRGFbiIbGqatYDI,1,2025-11-24 12:35:24.092601+00
+26,Encolhimento de Ombros com Halteres,Trapézio,https://youtube.com/shorts/xYk3w0V3GWM?si=K_QDB3ZdgOxgesK7,Encolhimento de Ombros com Halteres,https://youtube.com/shorts/xYk3w0V3GWM?si=K_QDB3ZdgOxgesK7,1,2025-11-24 12:36:49.452356+00
+27,Rosca Direta com Barra W,Bíceps,https://youtube.com/shorts/ojlJslnaae4?si=uM_sV7XRqUTQ1kjc,Rosca Direta com Barra W,https://youtube.com/shorts/ojlJslnaae4?si=uM_sV7XRqUTQ1kjc,1,2025-11-24 12:39:22.043787+00
+28,Rosca Direta com Halter,Bíceps,https://youtube.com/shorts/hZrvPQz-0f8?si=FSscb_7QYtc_Lu_C,Rosca Direta com Halter,https://youtube.com/shorts/hZrvPQz-0f8?si=FSscb_7QYtc_Lu_C,1,2025-11-24 12:40:22.316163+00
+29,Abdominal Infra Banco Declinado Pernas Flexionadas,Abdômen,https://youtube.com/shorts/c54PpzF8iEU?si=nNw8z5U-jRNYZFsK,Abdominal Infra Banco Declinado Pernas Flexionadas,https://youtube.com/shorts/c54PpzF8iEU?si=nNw8z5U-jRNYZFsK,1,2025-11-24 12:42:01.565977+00
+30,Afundo Smith,Coxas,https://youtube.com/shorts/DsveOsxNBYE?si=c6g_7e6HFBnktvo7,Afundo Smith,https://youtube.com/shorts/DsveOsxNBYE?si=c6g_7e6HFBnktvo7,1,2025-11-24 12:43:09.138796+00
+31,Leg Press 45⁰ Pés Afastados,Coxas,https://youtube.com/shorts/QKOi1aGh9MA?si=nR6G9z2ZPj4Lqq_m,Leg Press 45⁰ Pés Afastados,https://youtube.com/shorts/QKOi1aGh9MA?si=nR6G9z2ZPj4Lqq_m,1,2025-11-24 12:44:21.987963+00
+32,Cadeira Extensora,Coxas,https://youtube.com/shorts/u68RNdfZymA?si=U43QAzppAbi3-IDG,Cadeira Extensora,https://youtube.com/shorts/u68RNdfZymA?si=U43QAzppAbi3-IDG,1,2025-11-24 12:45:24.579715+00
+33,Cadeira Flexora,Coxas Posterior,https://youtube.com/shorts/MqhoP1kWMA8?si=dgawwXHvwFq1MCZr,Cadeira Flexora,https://youtube.com/shorts/MqhoP1kWMA8?si=dgawwXHvwFq1MCZr,1,2025-11-24 12:46:19.67474+00
+34,Supino com Máquina sentado,Peitoral,https://youtube.com/shorts/2awX3rTGa1k?si=mu8WQ-Y3uynXEPH5,Supino com Máquina sentado,https://youtube.com/shorts/2awX3rTGa1k?si=mu8WQ-Y3uynXEPH5,1,2025-11-26 18:33:18.833092+00
+35,Tríceps Testa Polia,Tríceps,https://youtube.com/shorts/sb7dx0Ob9Ig?si=Y2DUIdkQY_wLhyjD,Tríceps Testa Polia,https://youtube.com/shorts/sb7dx0Ob9Ig?si=Y2DUIdkQY_wLhyjD,1,2025-11-26 18:43:03.089078+00
+36,Elevacao Lateral Polia Baixa,Ombros,https://youtube.com/shorts/08F4SWOlR38?si=_SxuE06d0OYpD_xM,Elevacao Lateral Polia Baixa,https://youtube.com/shorts/08F4SWOlR38?si=_SxuE06d0OYpD_xM,1,2025-11-26 19:23:16.230853+00
+37,Elevação Lateral com Halteres,Ombros,https://youtube.com/shorts/yURmeIEl1Fg?si=QouojRNNV-e0eGta,Elevação Lateral com Halteres,https://youtube.com/shorts/yURmeIEl1Fg?si=QouojRNNV-e0eGta,1,2025-11-26 19:24:29.900576+00
+38,Crucifixo com Halteres - Banco declinado,Peitoral,https://youtube.com/shorts/V1qKLrizG24?si=S40IUJJqAoHcOG1Z,Crucifixo com Halteres - Banco declinado,https://youtube.com/shorts/V1qKLrizG24?si=S40IUJJqAoHcOG1Z,1,2025-11-27 16:38:03.788573+00
+39,Crucifixo em Pé com Elástico,Peitoral,https://youtu.be/dMRu397UJUM?si=xIJYcrKQmkqFcWdh,Crucifixo em Pé com Elástico,https://youtu.be/dMRu397UJUM?si=xIJYcrKQmkqFcWdh,1,2025-11-27 16:39:41.301564+00
+40,Crucifixo em Pe no Cross Over,Peitoral,https://youtube.com/shorts/mYNg8lt53RI?si=OV4KMhQdyN12P4Xp,Crucifixo em Pe no Cross Over,https://youtube.com/shorts/mYNg8lt53RI?si=OV4KMhQdyN12P4Xp,1,2025-11-27 16:41:59.45851+00
+41,Crucifixo com Halter,Peitoral,https://youtube.com/shorts/NdPsC7tjGao?si=4H9e1Xzhalzufvto,Crucifixo com Halter,https://youtube.com/shorts/NdPsC7tjGao?si=4H9e1Xzhalzufvto,1,2025-11-27 16:43:13.622904+00
+42,Crucifixo Inclinado C/ Halteres no Banco,Peitoral,https://youtube.com/shorts/wkUemXl4vFI?si=lMfoGXhFZrXH3Xlb,Crucifixo Inclinado C/ Halteres no Banco,https://youtube.com/shorts/wkUemXl4vFI?si=lMfoGXhFZrXH3Xlb,1,2025-11-27 16:45:33.34938+00
+43,Crucifixo Inclinado com Banco no Cross Over,Peitoral,https://youtube.com/shorts/SNocSqyJYm8?si=2RUsLulQmd8d8lQm,Crucifixo Inclinado com Banco no Cross Over,https://youtube.com/shorts/SNocSqyJYm8?si=2RUsLulQmd8d8lQm,1,2025-11-27 16:47:45.54636+00
+44,Crucifixo na Polia Alta,Peitoral,https://youtube.com/shorts/_hdQD_E3deE?si=37D6J2-Hkg2qz9lR,Crucifixo na Polia Alta,https://youtube.com/shorts/_hdQD_E3deE?si=37D6J2-Hkg2qz9lR,1,2025-11-27 16:48:38.142595+00
+45,Crucifixo Reto com Banco Cross over,Peitoral,https://youtube.com/shorts/oGtTNkHoiR8?si=nX16A_-hnzLJRohf,Crucifixo Reto com Banco Cross over,https://youtube.com/shorts/oGtTNkHoiR8?si=nX16A_-hnzLJRohf,1,2025-11-27 16:49:28.808257+00
+46,Flexão de Braços,Peitoral,https://youtube.com/shorts/IfZ0N3KeZuc?si=IKn3zMDsmH_25j4m,Flexão de Braços,https://youtube.com/shorts/IfZ0N3KeZuc?si=IKn3zMDsmH_25j4m,1,2025-11-27 16:51:10.536939+00
+58,Abdução de Quadril Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+64,Afundo Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+66,Passada Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+67,Glúteo no Cabo,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+68,Glúteo no Cabo Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+69,Abdução no Cabo,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+70,Abdução no Cabo Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+71,Kickback,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+72,Kickback Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+73,Agachamento com Barra,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+74,Agachamento Frontal,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+76,Agachamento no Smith,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+77,Agachamento com Peso,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+78,Agachamento Goblet,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+79,Agachamento com Salto e Peso,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+80,Elevação Pélvica com Peso,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+81,Elevação Pélvica com Barra,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+82,Ponte de Glúteos com Peso,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+83,Extensão de Quadril com Anilha,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+84,Abdução com Faixa Elástica,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+85,Abdução com Anilha,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+86,Glúteo 4 Apoios,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+87,Glúteo 4 Apoios Unilateral,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+88,Agachamento Isométrico,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+89,Ponte de Glúteos Isométrica,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+90,Elevação Pélvica Isométrica,Glúteos,,,,1,2025-11-27 20:25:05.068191+00
+104,Leg Press Unilateral,Coxas,,,,1,2025-11-27 20:25:38.955797+00
+261,Hack Squat,Glúteos,,,,1,2025-11-27 20:35:29.499354+00
+262,Hack Squat Unilateral,Glúteos,,,,1,2025-11-27 20:35:29.499354+00
+266,Panturrilha em Pé,Panturrilhas,,,,1,2025-11-27 20:35:29.499354+00
+267,Panturrilha Sentado,Panturrilhas,,,,1,2025-11-27 20:35:29.499354+00
+268,Panturrilha no Leg Press,Panturrilhas,,,,1,2025-11-27 20:35:29.499354+00
+314,Agachamento,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+315,Agachamento Sumo,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+316,Agachamento Búlgaro,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+318,Elevação Pélvica,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+319,Elevação Pélvica Unilateral,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+320,Ponte de Glúteos,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+321,Ponte de Glúteos Unilateral,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+322,Extensão de Quadril,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+323,Extensão de Quadril Unilateral,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+324,Abdução de Quadril,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+325,Abdução de Quadril com Canel,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+326,Adução de Quadril,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+327,Adução de Quadril com Canel,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+328,Coice com Cabo,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+329,Coice com Canel,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+330,Glúteo Máquina,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+331,Glúteo Quatro Apoios,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+332,Glúteo Quatro Apoios com Canel,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+333,Glúteo no Banco,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+334,Glúteo no Banco com Canel,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+335,Stiff,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+339,Levantamento Terra Romeno,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+340,Good Morning,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+341,Afundo,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+342,Afundo com Salto,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+343,Afundo Búlgaro,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+344,Passada,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+345,Passada com Halteres,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+346,Passada com Barra,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+347,Passada com Anilha,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+348,Passada no Smith,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+349,Passada no Cabo,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+350,Passada Elevada,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+351,Passada Elevada com Halteres,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+352,Passada Elevada com Barra,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+353,Passada Elevada com Anilha,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+354,Passada Elevada no Smith,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+355,Passada Elevada no Cabo,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+357,Cadeira Adutora,Glúteos,,,,1,2025-11-27 20:46:09.117371+00
+358,Leg Press,Coxas,,,,1,2025-11-27 20:46:09.117371+00
+1827,Crucifixo Declinado C/ Halteres no Banco,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1829,Crucifixo Em Pé no Cross Over,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1833,Crucifixo na Polia,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1837,Flexão de Braços com Apoio,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1838,Peck Deck,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1839,Supino Declinado C/ Halteres,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1840,Supino Declinado Máquina,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1842,Supino Iinclinado com Barra,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1843,Supino Inclinado Barra,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1844,Supino Inclinado com Halteres,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1845,Supino Inclinado Smith,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1846,Supino Máquina Sentado,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1847,Supino 45º MÁQ,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1850,Supino Reto Hammer,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1851,Supino Reto no Smith,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+1853,Abdominal Canivete,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1854,Abdominal com Corda na Polia Em Pé,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1855,Abdominal ROLO,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1856,Abdominal reto Máquina (Sentado),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1857,Abdominal lateral máquina (Sentado),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1858,Abdominal reza em polia alta,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1859,Abdominal Infra no Banco Declinado com Pernas Estendidas...,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1860,Abdominal Infra no Banco Declinado com Pernas Flexionadas...,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1861,Abdominal Infra no Solo com as Pernas Flexionadas,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1862,Abdominal Infra no Solo com Pernas Estendidas,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1863,Abdominal Infra Paralelas com Pernas Estendidas,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1864,Abdominal Infra Paralelas com Pernas Flexionadas,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1865,Abdominal Infra Suspenso Pernas Estendidas,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1866,Abdominal Infra Suspenso Pernas Flexionadas,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1867,Abdominal infra no solo (joelhos fletidos),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1868,Abdominal remador,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1869,Abdominal máquina deitado,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1870,Abdominal máquina sentado (lateral),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1871,Abdominal Oblíquo Alternado Bola Suíça,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1872,Abdominal Oblíquo Alternado com Pedalada,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1873,Abdominal Oblíquo Alternado Solo,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1874,Abdominal Obliquo Barra Fixa (PENDULO),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1875,Abdominal Oblíquo Unilateral na Polia Alta,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1876,Abdominal Oblíquo Unilateral na Polia Baixa,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1877,Abdominal Prancha Isométrica,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1878,Abdominal Supra Bola Suíça,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1879,Abdominal Supra em banco delcinado  com rotação,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1880,Abdominal Supra em banco delcinado,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1881,Abdominal Supra Solo,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1882,Flexão Lateral de Tronco Banco Lombar,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1883,abdominal na meia bola (bozu),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+1884,Rotação externa em polia 45º,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1885,Prancha Isometrica Lateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1886,Rotação externa com halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1887,Abdução de Quadril com Caneleira Unilateral (cachorrinho),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1888,Abdução de Quadril Máquina,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1889,Abdução de Quadril Máquina com Corpo a Frente,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1890,Abdução de Quadril em Polia Baixa Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1891,abdução de quadril com joelho dobrado deitado de lado (cachorrinho deitado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1892,Adução de Quadril com Caneleira joelho estendido,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1893,Adução de Quadril deitado de lado com caneleira (joelho estendido),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1894,Adução de Quadril em Polia Baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1895,Abdução de Quadril com Caneleira Unilateral (deitado de lado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1896,Afundo com Banco no Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1897,Afundo com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1898,Afundo com Caneleira,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1899,Afundo com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1900,Afundo no Step,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1901,Agachamento Búlgaro SEM CARGA,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1902,Agachamento Livre com barra (abduzido),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1903,FLEXÃO NORDICA,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1904,Agachamento com Halteres,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1905,Agachamento com Salto,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1906,Agachamento Frontal C/ Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1907,Agachamento Frontal Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1909,Agachamento hack convergente,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1910,Agachamento Lateral Alternado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1911,Agachamento Livre com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1912,Agachamento na Plataforma Instável,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1913,Agachamento no Meio Bosu,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1914,AGACHAMENTO BÚLGARO  COM HALTER,Coxas,https://youtube.com/shorts/dcaQAVRtRk8?si=P90XZP44IDK5Q9-M,AGACHAMENTO BÚLGARO COM HALTER,https://youtube.com/shorts/dcaQAVRtRk8?si=P90XZP44IDK5Q9-M,1,2025-11-27 21:29:29.700806+00
+1915,Agachamento nos Discos de Equilíbrio,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1916,Agachamento Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1917,Agachamento Sumo com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1918,Agachamento Sumo com Halter (Step),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1919,Agachamento Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1920,Agachamento Unilateral com Step,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1921,Avanço Alternado com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1922,Abdução de quadril em polia baixa (diagonal),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1924,Cadeira Extensora Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1926,Cadeira Flexora Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1927,Elevação pélvica com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1928,Elevação pélvica máquina,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1929,Elevação de Quadril Solo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1930,Elevação de Quadril Solo Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1931,Flexão de Joelhos com Caneleira,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1932,Flexora Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1933,Extensão de quadril com caneleira 4 apoios (joelho estentdido),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1934,Extensão de quadril com caneleira 4 apoios (joelho fletido),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1935,Gluteo 4 Apoios no Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1936,Glúteos Coice na Polia,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1937,Glúteos Coice Unilateral com Caneleira Em Pé,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1938,Leg Press 45 Pés Afastados,Coxas,,,,1,2025-11-27 21:29:29.700806+00
+1939,Leg Press 45 Pés Proximos,Coxas,,,,1,2025-11-27 21:29:29.700806+00
+1940,Leg Press 45 Unilateral,Coxas,,,,1,2025-11-27 21:29:29.700806+00
+1941,Leg Press 90º,Coxas,,,,1,2025-11-27 21:29:29.700806+00
+1943,Leg Press Horizontal Unilateral,Coxas,,,,1,2025-11-27 21:29:29.700806+00
+1944,Levantamento Terra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1945,Levantamento Terra Sumo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1947,Mesa Flexora Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1948,Panturrilha no Hack,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1949,Panturrilha no Leg Press 45,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1950,Panturrilha no Leg Press Horizontal,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1951,Panturrilha no Smith,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1952,Panturrilha no Step (sem carga),Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1953,Panturrilha Sentado Máquina,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1954,Panturrilha Unilateral no Hack,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1955,Panturrilha Unilateral no Leg Horizontal,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1956,Panturrilha Unilateral no Leg Press 45,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1957,Panturrilha Unilateral no Smith,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1958,Panturrilha Unilateral no Step,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1959,Passada Unilateral Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1960,Panturrilhas no hack articulado (invertido),Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1961,panturrilhas burrinho,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+1962,Prancha Isométrica Alta Alternando Membros,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1963,Stiff reverso,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1964,Stiff Unilateral com barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1965,Stiff com Halteres,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1966,Stiff na Polia Baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1967,Stiff no Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1968,Stiff Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1969,Subida Caixote no Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1970,Subida Frontal Unilateral no Step,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1971,Subida Lateral Unilateral no Step,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1972,Subida no Caixote com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1973,Subida no Caixote com Caneleira,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1974,Subida no Caixote com Halteres,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1975,Abdução Ombros,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1976,Gluteo 4 apoios máquina,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1977,Desenvolvimento a Frente Sentado com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1978,Desenvolvimento Arnold,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1979,Desenvolvimento com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1980,Desenvolvimento com Barra por Trás,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1981,Desenvolvimento com Halter Em Pé,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1982,Desenvolvimento com Halter Sentado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1983,Desenvolvimento Supinado com Halter em pé,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1984,Desenvolvimento com Halteres sentado,Ombros,,,,1,2025-11-27 21:29:29.700806+00
+1986,Desenvolvimento no Smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1987,Desenvolvimento militar Sentado com Barra (frente),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1988,Desenvolvimento Unilateral com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1989,Desenvolvimento militar Sentado com Barra (nuca),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1990,Extensão de quadril máq,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1991,Elevação Frontal Alternada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1992,Elevação Frontal com Barra (PRONADA),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1993,Elevação Frontal com Barra (SUPINADA),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1994,Elevação Frontal com Halter Sentado (neutra),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1995,Elevação frontal com halteres,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1996,Elevação Frontal Inversa Em Pé com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1997,Ele posterior de ombros  banco 35º c halter (neutro),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1998,Extensão de ombros em banco 35º com halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+1999,Ele posterior de ombros  banco 35º c halter (pronado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2000,Elevação Frontal Isometria Sentado com Halteres (Pegada Neutra)...,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2001,Elevação Frontal Isometria alternada com Halteres (Pegada Pronada)...,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2003,Elevação Frontal na Polia Baixa Pegada Pronada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2004,Elevação Frontal na Polia com Corda,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2005,Elevação Frontal Neutra Em Pé com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2006,Elevação Frontal Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2007,Elevação Frontal Unilateral Isometria com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2008,Elevação Lateral Em Pé com Halter (neutro),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2009,Elevação Lateral com Halter (supinada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2010,Elevação Lateral com Halter sentado (supinado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2011,Elevação Lateral I com Haltere sentado (pronado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2012,Elevacão Lateral com halter em Pé (pronado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2013,Elevação Lateral Unilateral C/ Halteres,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2014,Elevação Lateral em Polia Baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2015,Elevação lateral com halter sentado (neutro),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2016,Encolhimento de Ombros Barra Livre,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2017,Encolhimento de Ombros C/ Halteres,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2018,elevação lateral em polia baixa com o corpo levemente inclinado,Ombros,,,,1,2025-11-27 21:29:29.700806+00
+2019,Encolhimento de Ombros Máquina,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2020,Encolhimento de Ombros no Smith Pela Frente,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2021,Encolhimento no Smith (por trás),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2022,Escápular no Rolo Elevação de Ombros c/ Cotovelos Flexionados,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2023,Escápular no Rolo Flexão/Extensão de Ombro c/ Cotovelos Estendidos Alternado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2024,Escápular no Rolo Flexão/Extensão Ombros Bilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2025,Posterior de Ombro na Polia,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2026,Banco Lombar Isometria,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2027,Barra Fixa (Pull up) Aberta Frontal,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2028,Barra Fixa (Pull up) Fechada Supinada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2029,Barra Fixa (Pull up) no Graviton,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2030,Barra Livre Neutra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2031,Barra Livre Supinada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2032,Corda Naval,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2033,Corda Naval Simultânea,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2034,Crucifixo Inverso com Halter no Banco Inclinado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2035,Crucifixo Inverso Máquina,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2036,Crucifixo Inverso no Cross Over,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2037,Crucifixo Inverso Unilateral no Cross Over,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2038,Crucifixo Invertido Banco Inclinado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2039,Crucifixo Invertido na Polia,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2040,Extensão de Lombar,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2041,Extensão de Quadril Banco,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2042,Remada Convergente 2 (supinada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2043,Remada Convergente 2 (pronada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2044,Hiperextensao de Lombar Solo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2045,Hiperextensao de Lombar Solo C/ Isometria,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2046,Remada Convergente 2 (neutra),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2047,Pulldown na Polia Alta com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2048,Pulldown na Polia Alta com Corda,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2049,Pullover,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2050,Pullover com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2051,Puxador (Pulldown) Frente Aberto Supinado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2052,Puxador (Pulldown) Frente Barra Romana,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2053,Puxador (Pulldown) Frente Pronado Fechado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2054,Puxador (Pulldown) Frente Supinado Fechado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2055,Puxador (Pulldown) Frente Triangulo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2056,Remada Aberta com Halteres no Banco Inclinado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2057,Remada Alta com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2058,Remada Alta com Halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2059,Remada Alta na Polia Baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2060,Remada Baixa Aberta Pronada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2061,Remada Baixa Supinada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2062,Remada C/ Halteres Pegada Neutra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2063,Remada C/ Halteres Pegada Pronada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2064,Remada C/ Halteres Pegada Supinada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2065,Remada Cavalo (pronado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2066,Remada Cavalo (neutro),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2067,Remada Corda Polia Média,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2068,Remada Curvada Pegada Pronada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2069,Remada Curvadacom barra (Supinada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2070,Remada Convergente 1 (neutra),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2071,Remada Convergente 2,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2072,Remada Alta no Smith (mãos afastadas),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2073,Remada Convergente 1 (supinada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2074,Remada Convergente 1 (pronada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2075,Remada Máquina Pegada Supinada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2076,Remada na Polia Baixa Aberta Pronada com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2077,Remada Convergente 1 (unilateral neutra),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2078,Remada na Polia Baixa com Triangulo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2079,Remada na Polia Baixa Supinada com Barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2080,Remada na Polia Baixa Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2081,Remada Unilateral C/ Halteres pegada neutra (serrote),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2082,Remada Unilateral Halter - Pegada Pronada (Serrote),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2083,Remada Unilateral Halter - Pegada Supinada (Serrote),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2084,Remada Unilateral na Polia Baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2085,Rosca Alternada Banco Inclinado,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2086,Rosca Alternada Em Pe,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2087,Rosca Alternada na Polia Baixa,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2088,Rosca Alternada Sentado,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2089,Rosca Biceps Simultaneo na Polia Alta,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2090,Rosca Concentrada,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2091,Rosca Concentrada com Halteres,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2092,Rosca de Punho com Barra Sentado Pronada,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2093,Rosca de Punho com Barra Sentado Supinada,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2094,Rosca Direta Barra Reta,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2095,Rosca Direta Barra W,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2096,Rosca Direta em polia baixa (barra reta),Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2098,Rosca Direta com Halter Banco 45,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2099,Rosca Direta com Trx,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2100,Rosca Direta na Polia (Barra Reta),Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2101,Rosca Direta na Polia (Barra W),Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2102,Rosca Direta Sentado com Halter,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2103,Rosca Martelo Alternada com Halter,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2104,Rosca Martelo Alternado Sentado,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2105,Rosca Martelo com Barra H,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2106,Rosca Martelo com halter em pe,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2107,Rosca Martelo Sentado,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2108,Rosca em Polia Baixa com Corda,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2109,Rosca Scott com Barra Reta,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2110,Rosca Scott com Barra W,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2111,Rosca Scott com Halteres,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2112,Rosca Scott Máquina,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2113,Rosca Scott Unilateral com Halter,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2114,Rosca Simultânea na Polia Baixa,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2115,Rosca Unilateral com Trx,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2116,Rosca Unilateral Em Pé com Halter,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2117,Rosca Unilateral na Polia Baixa,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2118,Tríceps Mergulho no Banco,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2119,Tríceps Coice com Halter,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2121,Triceps Coice em Pé,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2122,Triceps corda,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2123,Tríceps mergulho máquina,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2124,Triceps Coice Unilateral na Polia Baixa,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2125,Tríceps Francês,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2127,Tríceps Francês com Barra em Pé,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2128,Triceps Frances com Barra Sentado,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2129,Tríceps Francês com Elástico,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2130,Tríceps Francês com Halter em Pé,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2131,Tríceps Francês na Polia com Barra,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2132,Tríceps Francês na Polia com Corda,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2133,Triceps Frances Unilateral C/ Halter em Pé,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2134,Triceps Frances Unilateral C/ Halter Sentado,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2135,Tríceps Francês Unilateral na Polia,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2136,Tríceps Invertido polia alta,"Tríceps
+",,,,1,2025-11-27 21:29:29.700806+00
+2137,Triceps na Polia Barra V,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2138,Tríceps pulley polia alta,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2139,Tríceps na Polia com Barra,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2140,Tríceps na Polia com Corda,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2141,Tríceps nas Paralelas,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2142,Triceps Paralela Máquina,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2143,Triceps Paralelas no Graviton,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2144,Tríceps Supinado com Barra,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2145,Tríceps Supinado com Halter,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2146,Triceps invertido,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2147,Tríceps Testa Barra no Banco Inclinado,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2148,Tríceps Testa Barra W - Banco Inclinado,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2149,Triceps Testa C/ Halteres,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2150,Triceps Testa com barra,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2151,Tríceps Testa com Barra W,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2152,Tríceps testa com Halter no Banco inclinado,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2153,Tríceps Testa com Trx,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2154,Tríceps Testa Corda Unilateral Polia,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2155,Tríceps Testa na Polia,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2156,Tríceps Testa na Polia com Corda,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2157,Tríceps Testa Unilateral com Halter,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2158,Tríceps Unilateral - Banda Elástica,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2159,Tríceps Unilateral - Faixa Elástica,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2160,Triceps Unilateral na Polia Alta Pegada Neutra,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2161,Triceps Unilateral na Polia Alta Pegada Pronada,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2162,Triceps Unilateral na Polia Alta Pegada Supinada,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2163,Rosca Inversa com Barra,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2164,Rosca Inversa Em Pé com Halter,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2165,Rosca Inversa na Polia Baixa,Bíceps,,,,1,2025-11-27 21:29:29.700806+00
+2166,Tríceps Invertido na Polia com Barra,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2167,Bicicleta Horizontal,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2168,Bicicleta Normal,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2169,Bike Spinning,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2170,Escada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2171,Escalada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2172,Esteira,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2173,Esteira Caminhada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2174,Esteira com Inclinação,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2175,Esteira Hiit,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2176,Esteira Sprint,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2177,Esteira Trote,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2178,Polichinelo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2179,Polichinelo Frontal,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2180,Pular Corda,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2181,Skipping Alto,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2182,Skipping com Step,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2183,Transport,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2184,Abdominal prancha com rotação de quadril,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2185,Abdominal Escalador,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2187,Abdominal Obliquo em banco delcinado,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2188,Abdominal Obliquo Em Pé,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2189,Abdominal Tesoura,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2190,ABDUÇÃO DE QUADRIL COM ELEVAÇÃO PÉLVICA COM ELASTICO,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2191,Abdução Decúbito Lateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2192,Abdução Decúbito Lateral MMII Flexionados,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2193,Abdução em Pé,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2194,Abdução DE QUADRIL DEITADO COM ELASTICO,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2195,Abdução Sentada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2196,Adução Decúbito Lateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2197,Afundo - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2198,Afundo - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2199,Agachamento + Abdução Alternado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2200,Agachamento - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2201,Agachamento - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2202,Agachamento Isometrico + Abdução,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2203,Bíceps Alternado - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2204,Bíceps Alternado - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2205,Bíceps Concentrado - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2206,Bíceps Concentrado - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2207,Bíceps em pé - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2208,Bíceps em pé - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2209,Biceps Martelo Sentado - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2210,Biceps Martelo Sentado - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2211,Crucifixo - Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2212,Crucifixo - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2213,Crucifixo Inverso - Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2214,Crucifixo Inverso - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2215,Desenvolvimento - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2216,Desenvolvimento - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2217,Deslocamento Lateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2218,Elevação de Ombros - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2219,Elevação Frontal - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2220,Elevação Frontal - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2221,Elevação Lateral - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2222,Elevação Lateral - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2223,Encolhimento de Ombros - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2224,Extensão de Joelho Unilateral Sentado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2225,Extensão de Quadril em Polia baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2226,Flexão de Joelho Decúbito Ventral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2227,Flexão de Quadril em Pé,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2228,Flexão de Quadril MI Estendido,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2229,Flexão de Quadril MI Flexionado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2230,Gluteo 4 Apoios - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2231,Glúteo 4 Apoios com Coice,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2232,Glúteo 4 Apoios MI Estendido,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2233,Glúteo 4 Apoios MI Flexionado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2234,Glutos 4 Apoios - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2235,Pancha + Flexão de Quadril,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2236,Prancha + Remada,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2237,Prancha c/ Abdução,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2238,Pulldown - Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2239,Pulldown - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2240,Remada Aberta em Pé- Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2241,Remada Aberta em Pé- Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2242,Remada Aberta Sentado - Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2243,"Remada ""T""",Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2244,Remada Curvada em Pé - Elástico,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2245,Remada Curvada em Pé - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2246,Remada Fechada em Pé - Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2247,Remada Fechada em Pé - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2248,Remada Fechada Sentado - Banda Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2249,Remada Fechada Sentado - Faixa Elástica,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2250,Remada Fechada Unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2251,Supino em Pé - Banda Elástica,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+2252,Supino em Pé - Faixa Elástica,"Peitoral
+",,,,1,2025-11-27 21:29:29.700806+00
+2253,afundo máq (guiada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2254,hack articulado invertido,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2255,agachamento bulgaro (guiada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2256,agachamento pêndulo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2257,panturrilha em pe maq 2,Panturrilhas,,,,1,2025-11-27 21:29:29.700806+00
+2259,Tríceps Francês - Banda Elástica,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2260,Tríceps Francês - Faixa Elástica,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2264,Agachamento Smith (pés abduzidos),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2265,Afundo no smith,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2266,Leg press 45º (pés abduzidos),Coxas,,,,1,2025-11-27 21:29:29.700806+00
+2267,Pulley alto articulado (pronado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2268,Remada articulada  (neutra),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2269,Remada baixa triângulo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2271,Stiff com halter,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2272,Stiff com barra,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2273,Cadeira abdutora,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2275,Cross over em polia baixa (mono articular),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2276,Cross over em polia baixa (muti  articular),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2277,Cross over em polia alta (multi articular),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2279,Remada articuladas (supinada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2280,Remada articulada (pronada),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2281,Pulley alto supinado unilateral,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2282,Pulley alto triângulo,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2283,Pull down com barra (pronado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2284,Pull down com corda (neutro),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2285,Pull down com barra (supinado),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2286,Voador (pack deck),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2289,Pulley alto supinado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2290,Pulley alto aberto pronado,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2291,Abdominal com elevação de quadril (joelhos fletidos),Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2292,Establização com toque lateral com bozu,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2293,agachamento lateral no bozu,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2294,Remada articulada com rotação de punho,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2295,Cross over invertido em polias altas,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2296,Cross over invertido em polias média,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2297,Cross over invertido em polias baixa,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2298,Rotação externa de ombro em polia média,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2300,Pulley alto articulado (neutro),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2301,voador invertido,Ombros,,,,1,2025-11-27 21:29:29.700806+00
+2302,squad machine (agachamento máq),Coxas,,,,1,2025-11-27 21:29:29.700806+00
+2303,afundo máq,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2304,supino 45 com barra,Peitoral,,,,1,2025-11-27 21:29:29.700806+00
+2305,Abdominal máq rotaty,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2306,Stiff na máquina,Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2307,Abdominal twist,Abdômen,,,,1,2025-11-27 21:29:29.700806+00
+2308,triceps frances na polia alta,Tríceps,,,,1,2025-11-27 21:29:29.700806+00
+2309,BIKE (in door),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2310,BIKE ( ao ar livre),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2311,ESCADA (in door),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2312,CAMINHADA (ao ar livre),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2313,CORRIDA (ao ar livre),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2314,CAMINHADA (esteira),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2315,CORRIDA (esteira),Glúteos,,,,1,2025-11-27 21:29:29.700806+00
+2748,Supino maquina deitado,"Peitoral
+",,,,1,2025-11-27 21:30:35.450855+00
+2753,Cadeira adutora,Glúteos,,,,1,2025-11-27 21:30:35.450855+00
+2768,Cross over em polia alta ( mono articular),Glúteos,,,,1,2025-11-27 21:30:35.450855+00
+2894,AGACHAMENTO BULGAR COM HALTER,Glúteos,,,,1,2025-11-27 21:42:12.90983+00
+3106,Triceps Frances C/ Halter Sentado,Tríceps,,,,1,2025-11-27 21:42:12.90983+00
+3166,Abdominal Infra Bike,Abdômen,,,,1,2025-11-27 21:42:12.90983+00
+3254,Cadeira abdutora 45ºgraus,Glúteos,,,,1,2025-11-27 21:42:12.90983+00
+3268,Supino declinado com barra,"Peitoral
+",,,,1,2025-11-27 21:42:12.90983+00

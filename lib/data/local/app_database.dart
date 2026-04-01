@@ -4,8 +4,37 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
+
+import 'exercise_seed_defaults.dart';
 
 part 'app_database.g.dart';
+
+/// Nomes padrão de grupos musculares (cadastro de exercícios).
+const kDefaultMuscleGroupNames = <String>[
+  'Ombros',
+  'Coxas',
+  'Coxas Posterior',
+  'Bíceps',
+  'Tríceps',
+  'Dorsal',
+  'Abdômen',
+  'Peitoral',
+  'Panturrilhas',
+  'Glúteos',
+  'Trapézio',
+  'Glúteo',
+  'Antebraço',
+  'Lombar',
+  'Coxas Interno',
+  'HITT',
+  'Alongamento',
+  'Mobilidade',
+  'Aeróbico',
+  'Funcional',
+  'Elástico e Faixas',
+  'Treino em Casa',
+];
 
 // ——— Cadastros ———
 
@@ -69,6 +98,9 @@ class Personals extends Table {
   BoolColumn get mustChangePassword =>
       boolean().withDefault(const Constant(true))();
   TextColumn get passwordHash => text().nullable()();
+
+  /// Acesso total aos dados de todos os alunos (calendário, planejamento, cadastro).
+  BoolColumn get isAdmin => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -91,10 +123,15 @@ class Students extends Table {
   TextColumn get city => text().nullable()();
   TextColumn get stateUf => text().nullable()();
   TextColumn get cep => text().nullable()();
+
   /// Quando true, o app exige troca de senha no próximo acesso.
   BoolColumn get mustChangePassword =>
       boolean().withDefault(const Constant(true))();
   TextColumn get passwordHash => text().nullable()();
+
+  /// Personal que cadastrou o aluno — visibilidade dos dados (com admin e o próprio aluno).
+  TextColumn get createdByPersonalId =>
+      text().nullable().references(Personals, #id)();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -175,8 +212,7 @@ class WeekScheduleItems extends Table {
   IntColumn get sets => integer().withDefault(const Constant(0))();
   IntColumn get reps => integer().withDefault(const Constant(0))();
   RealColumn get loadKg => real().nullable()();
-  BoolColumn get needsDetail =>
-      boolean().withDefault(const Constant(false))();
+  BoolColumn get needsDetail => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -188,17 +224,21 @@ class DayWorkouts extends Table {
   TextColumn get id => text()();
   TextColumn get studentId => text().references(Students, #id)();
   DateTimeColumn get dayDate => dateTime()();
+
   /// scheduled | programmed | started | completed | cancelled (cancelado = permanece no BD)
   TextColumn get status => text()();
   TextColumn get weekItemId => text().nullable()();
-  IntColumn get activeDurationSeconds => integer().withDefault(const Constant(0))();
+  IntColumn get activeDurationSeconds =>
+      integer().withDefault(const Constant(0))();
   RealColumn get workoutScore => real().nullable()();
   DateTimeColumn get startedAt => dateTime().nullable()();
   DateTimeColumn get completedAt => dateTime().nullable()();
+
   /// Quando não nulo, o cronômetro está correndo desde este instante (tempo ativo acumulado em [activeDurationSeconds]).
   DateTimeColumn get timerResumeAt => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
   /// Quando veio de um grupo ao programar no calendário — exibe o nome do grupo na folha.
   TextColumn get sourceWorkoutGroupId => text().nullable()();
 
@@ -216,6 +256,7 @@ class DayWorkoutExercises extends Table {
   IntColumn get reps => integer()();
   RealColumn get loadKg => real().nullable()();
   RealColumn get exerciseScore => real().nullable()();
+
   /// JSON: lista `[{ "loadKg": 20.0, "reps": 15 }, ...]` — séries executadas (modal Adicionar série).
   TextColumn get performedSetsJson => text().nullable()();
 
@@ -260,45 +301,126 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 9;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
   /// após atualizações do app. Ao subir [schemaVersion], acrescente blocos `if (from < N)`.
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) async {
-          await m.createAll();
-        },
-        onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            await m.addColumn(personals, personals.mustChangePassword);
-            await m.addColumn(personals, personals.passwordHash);
-          }
-          if (from < 3) {
-            await m.addColumn(dayWorkouts, dayWorkouts.timerResumeAt);
-          }
-          if (from < 4) {
-            await m.addColumn(dayWorkouts, dayWorkouts.sourceWorkoutGroupId);
-          }
-          if (from < 5) {
-            await m.addColumn(
-              dayWorkoutExercises,
-              dayWorkoutExercises.performedSetsJson,
-            );
-          }
-        },
-        beforeOpen: (details) async {
-          await customStatement('PRAGMA foreign_keys = ON;');
-        },
-      );
+    onCreate: (m) async {
+      await m.createAll();
+      await _seedMuscleGroupsFromDefaults();
+      await _seedExercisesFromDefaults();
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(personals, personals.mustChangePassword);
+        await m.addColumn(personals, personals.passwordHash);
+      }
+      if (from < 3) {
+        await m.addColumn(dayWorkouts, dayWorkouts.timerResumeAt);
+      }
+      if (from < 4) {
+        await m.addColumn(dayWorkouts, dayWorkouts.sourceWorkoutGroupId);
+      }
+      if (from < 5) {
+        await m.addColumn(
+          dayWorkoutExercises,
+          dayWorkoutExercises.performedSetsJson,
+        );
+      }
+      if (from < 6) {
+        await m.addColumn(personals, personals.isAdmin);
+        await m.addColumn(students, students.createdByPersonalId);
+        await customStatement(
+          'UPDATE personals SET is_admin = 1 WHERE id = '
+          '(SELECT id FROM personals ORDER BY created_at ASC LIMIT 1) '
+          'AND (SELECT COUNT(*) FROM personals) >= 1;',
+        );
+        await customStatement(
+          'UPDATE students SET created_by_personal_id = '
+          '(SELECT id FROM personals ORDER BY created_at ASC LIMIT 1) '
+          'WHERE created_by_personal_id IS NULL '
+          'AND (SELECT COUNT(*) FROM personals) = 1;',
+        );
+      }
+      if (from < 7) {
+        await _seedMuscleGroupsFromDefaults();
+      }
+      if (from < 9) {
+        await _seedExercisesFromDefaults();
+      }
+    },
+    beforeOpen: (details) async {
+      await customStatement('PRAGMA foreign_keys = ON;');
+    },
+  );
+
+  /// Insere grupos musculares do [kDefaultMuscleGroupNames] se ainda não existir linha com o mesmo [name].
+  Future<void> _seedMuscleGroupsFromDefaults() async {
+    const uuid = Uuid();
+    for (final name in kDefaultMuscleGroupNames) {
+      final existing = await (select(
+        muscleGroups,
+      )..where((t) => t.name.equals(name))).getSingleOrNull();
+      if (existing != null) continue;
+      await into(
+        muscleGroups,
+      ).insert(MuscleGroupsCompanion.insert(id: uuid.v4(), name: name));
+    }
+  }
+
+  static Value<String?> _optionalSeedText(String? s) {
+    final t = s?.trim();
+    if (t == null || t.isEmpty) return const Value(null);
+    return Value(t);
+  }
+
+  /// Insere ou atualiza exercícios de [kDefaultExerciseSeeds] (vínculo ao grupo por nome).
+  /// Na migração v9+, preenche vídeos e alternativa em registros já existentes (mesmo nome).
+  Future<void> _seedExercisesFromDefaults() async {
+    const uuid = Uuid();
+    final now = DateTime.now();
+    for (final seed in kDefaultExerciseSeeds) {
+      final mg = await (select(
+        muscleGroups,
+      )..where((t) => t.name.equals(seed.muscleGroupName))).getSingleOrNull();
+      if (mg == null) continue;
+      final existing = await (select(
+        exercises,
+      )..where((t) => t.name.equals(seed.name))).getSingleOrNull();
+      final v = _optionalSeedText(seed.videoUrl);
+      final alt = _optionalSeedText(seed.alternativeName);
+      final altV = _optionalSeedText(seed.alternativeVideoUrl);
+      if (existing == null) {
+        await into(exercises).insert(
+          ExercisesCompanion.insert(
+            id: uuid.v4(),
+            name: seed.name,
+            muscleGroupId: mg.id,
+            videoUrl: v,
+            alternativeNote: alt,
+            alternativeVideoUrl: altV,
+          ),
+        );
+      } else {
+        await (update(exercises)..where((t) => t.id.equals(existing.id))).write(
+          ExercisesCompanion(
+            videoUrl: v,
+            alternativeNote: alt,
+            alternativeVideoUrl: altV,
+            updatedAt: Value(now),
+          ),
+        );
+      }
+    }
+  }
 
   static QueryExecutor _openConnection() {
     return driftDatabase(
       name: 'app_personal',
-      native: DriftNativeOptions(
-        databaseDirectory: _getDirectory,
-      ),
+      native: DriftNativeOptions(databaseDirectory: _getDirectory),
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
+import '../../../core/widgets/gradient_app_bar.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/repositories/app_data_repository.dart';
@@ -16,7 +17,7 @@ class PersonaisPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final repo = context.watch<AppDataRepository>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Personais')),
+      appBar: buildGradientAppBar(title: const Text('Personais')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _form(context, repo, null),
         child: const Icon(Icons.add),
@@ -66,6 +67,7 @@ class PersonaisPage extends StatelessWidget {
     final cidade = TextEditingController(text: x?.city ?? '');
     final email = TextEditingController(text: x?.email ?? '');
     String? uf = x?.stateUf;
+    var isAdmin = x?.isAdmin ?? false;
 
     showAppModalSheet<void>(
       context: context,
@@ -115,6 +117,20 @@ class PersonaisPage extends StatelessWidget {
               'Senha provisória: enviar por e-mail quando o serviço de e-mail estiver configurado.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
             ),
+            const SizedBox(height: kCadastroFieldGap),
+            SwitchListTile.adaptive(
+              value: isAdmin,
+              onChanged: (v) => setSt(() => isAdmin = v),
+              title: const Text(
+                'Administrador do app',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
+              subtitle: const Text(
+                'Vê todos os alunos e registros; demais personais só veem os próprios alunos.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              activeThumbColor: AppColors.accentGreen,
+            ),
             const SizedBox(height: 20),
             AppPrimaryButton(
               label: x == null ? 'Salvar personal' : 'Atualizar personal',
@@ -136,6 +152,7 @@ class PersonaisPage extends StatelessWidget {
                   email: email.text.trim(),
                   mustChangePassword: x?.mustChangePassword ?? true,
                   passwordHash: x?.passwordHash,
+                  isAdmin: isAdmin,
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
               },

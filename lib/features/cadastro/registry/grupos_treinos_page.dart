@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
+import '../../../core/widgets/gradient_app_bar.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/repositories/app_data_repository.dart';
@@ -16,7 +17,7 @@ class GruposTreinosPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final repo = context.watch<AppDataRepository>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Grupos de treinos')),
+      appBar: buildGradientAppBar(title: const Text('Grupos de treinos')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _groupForm(context, repo, null),
         child: const Icon(Icons.add),
@@ -122,23 +123,52 @@ class _GroupExercisesBody extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: StreamBuilder<List<ExerciseEntity>>(
-            stream: repo.watchExercisesAlphabetical(),
-            builder: (context, snap) {
-              final ex = snap.data ?? [];
-              return DropdownButtonFormField<String>(
-                hint: const Text('Adicionar exercício', style: TextStyle(color: AppColors.textMuted)),
-                dropdownColor: AppColors.barBackground,
-                style: const TextStyle(color: AppColors.textPrimary),
-                items: [
-                  for (final e in ex)
-                    DropdownMenuItem(value: e.id, child: Text(e.name)),
-                ],
-                onChanged: (id) async {
-                  if (id == null) return;
-                  await repo.addExerciseToWorkoutGroup(
-                    workoutGroupId: group.id,
-                    exerciseId: id,
+          child: StreamBuilder<List<WorkoutGroupExerciseEntity>>(
+            stream: repo.watchGroupExercises(group.id),
+            builder: (context, snapLines) {
+              final inGroup = {for (final l in snapLines.data ?? []) l.exerciseId};
+              return StreamBuilder<List<ExerciseEntity>>(
+                stream: repo.watchExercisesAlphabetical(),
+                builder: (context, snap) {
+                  final ex = snap.data ?? [];
+                  final available = ex.where((e) => !inGroup.contains(e.id)).toList();
+                  if (available.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'Todos os exercícios cadastrados já estão neste grupo.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                      ),
+                    );
+                  }
+                  return DropdownButtonFormField<String>(
+                    key: ValueKey(inGroup.length),
+                    hint: const Text(
+                      'Adicionar exercício',
+                      style: TextStyle(color: AppColors.textMuted),
+                    ),
+                    dropdownColor: AppColors.barBackground,
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    items: [
+                      for (final e in available)
+                        DropdownMenuItem(value: e.id, child: Text(e.name)),
+                    ],
+                    onChanged: (id) async {
+                      if (id == null) return;
+                      final ok = await repo.addExerciseToWorkoutGroup(
+                        workoutGroupId: group.id,
+                        exerciseId: id,
+                      );
+                      if (!context.mounted) return;
+                      if (!ok) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Este exercício já está neste grupo.'),
+                          ),
+                        );
+                      }
+                    },
                   );
                 },
               );

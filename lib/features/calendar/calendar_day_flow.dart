@@ -5,12 +5,12 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../core/ui/app_modal_sheet.dart';
+import '../../core/ui/futuristic_background.dart';
 import '../../core/widgets/app_form_fields.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/programmable_bundle.dart';
 import '../../data/models/week_schedule_row.dart';
 import '../../data/repositories/app_data_repository.dart';
-import 'calendar_active_workout_sheet.dart';
 import 'calendar_day_exercises_sheet.dart';
 
 /// Fluxo do dia: programar a partir da semana, iniciar treino, timer, trocar programado.
@@ -22,7 +22,8 @@ class CalendarDayFlow {
   ) async {
     final repo = context.read<AppDataRepository>();
     final day = DateTime(date.year, date.month, date.day);
-    final label = '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
+    final label =
+        '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
 
     if (dayWorkouts.isEmpty && isCalendarDateBeforeToday(day)) {
       if (context.mounted) {
@@ -61,66 +62,74 @@ class CalendarDayFlow {
     final students = await repo.getStudentsWithProgrammableWeek(day);
     if (!context.mounted) return;
 
-    await showModalBottomSheet<void>(
+    await showAppModalSheet<void>(
       context: context,
-      backgroundColor: AppColors.barBackground,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+      title: label,
+      builder: (ctx, scroll) => FuturisticBackground(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+              child: Text(
+                'Sem treino neste dia. Escolha um aluno com planejamento válido na semana (séries e repetições preenchidas) para programar.',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 14,
+                  height: 1.45,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Sem treino neste dia. Escolha um aluno com itens agendados na semana para programar.',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                ),
-                const SizedBox(height: 16),
-                if (students.isEmpty)
-                  const Text(
-                    'Nenhum aluno tem treinos agendados válidos (séries/reps) nesta semana.',
-                    style: TextStyle(color: AppColors.textMuted),
-                  )
-                else
-                  SizedBox(
-                    height: MediaQuery.sizeOf(ctx).height * 0.4,
-                    child: ListView.separated(
+              ),
+            ),
+            Expanded(
+              child: students.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: Text(
+                          'Nenhum aluno tem treinos agendados válidos nesta semana.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: scroll,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
                       itemCount: students.length,
-                      separatorBuilder: (_, index) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final s = students[i];
-                        return ListTile(
-                          title: Text(
-                            s.name,
-                            style: const TextStyle(color: AppColors.textPrimary),
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _DayModalStudentCard(
+                            name: s.name,
+                            subtitle: 'Toque para escolher o que programar',
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              final bundles = await repo.getProgrammableBundles(
+                                s.id,
+                                day,
+                              );
+                              if (!context.mounted) return;
+                              await _pickBundleAndProgram(
+                                context,
+                                repo,
+                                s.id,
+                                day,
+                                bundles,
+                              );
+                            },
                           ),
-                          trailing: const Icon(Icons.chevron_right, color: AppColors.accentGreen),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            final bundles = await repo.getProgrammableBundles(s.id, day);
-                            if (!context.mounted) return;
-                            await _pickBundleAndProgram(context, repo, s.id, day, bundles);
-                          },
                         );
                       },
                     ),
-                  ),
-              ],
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
@@ -133,7 +142,9 @@ class CalendarDayFlow {
   ) async {
     if (bundles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não há treinos prontos para programar nesta semana.')),
+        const SnackBar(
+          content: Text('Não há treinos prontos para programar nesta semana.'),
+        ),
       );
       return;
     }
@@ -146,54 +157,30 @@ class CalendarDayFlow {
       return;
     }
 
-    await showModalBottomSheet<void>(
+    await showAppModalSheet<void>(
       context: context,
-      backgroundColor: AppColors.barBackground,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'O que programar para este dia?',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+      title: 'O que programar?',
+      builder: (ctx, scroll) => FuturisticBackground(
+        child: ListView.builder(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+          itemCount: bundles.length,
+          itemBuilder: (_, i) {
+            final b = bundles[i];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _DayModalBundleCard(
+                title: b.title,
+                exerciseCount: b.rows.length,
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _reviewSnapshotModal(context, repo, studentId, day, b);
+                },
               ),
-              SizedBox(
-                height: MediaQuery.sizeOf(ctx).height * 0.45,
-                child: ListView.separated(
-                  itemCount: bundles.length,
-                  separatorBuilder: (_, index) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final b = bundles[i];
-                    return ListTile(
-                      title: Text(
-                        b.title,
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        '${b.rows.length} exercício(s)',
-                        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                      ),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await _reviewSnapshotModal(context, repo, studentId, day, b);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -221,7 +208,9 @@ class CalendarDayFlow {
           } on ArgumentError catch (e) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(e.message ?? 'Não foi possível programar.')),
+                SnackBar(
+                  content: Text(e.message ?? 'Não foi possível programar.'),
+                ),
               );
             }
             return;
@@ -250,172 +239,87 @@ class CalendarDayFlow {
     for (final w in dayWorkouts) {
       byStudent.putIfAbsent(w.studentId, () => []).add(w);
     }
-    final sids = byStudent.keys.toList()..sort((a, b) => (nameMap[a] ?? a).compareTo(nameMap[b] ?? b));
+    final sids = byStudent.keys.toList()
+      ..sort((a, b) => (nameMap[a] ?? a).compareTo(nameMap[b] ?? b));
 
     if (!context.mounted) return;
 
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.barBackground,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Alunos com treino neste dia',
-                  style: TextStyle(color: AppColors.accentGreen, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: MediaQuery.sizeOf(ctx).height * 0.42,
-                  child: ListView.separated(
-                    itemCount: sids.length,
-                    separatorBuilder: (_, index) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final sid = sids[i];
-                      final name = nameMap[sid] ?? sid;
-                      final n = byStudent[sid]!.length;
-                      return ListTile(
-                        title: Text(
-                          name,
-                          style: const TextStyle(color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          '$n treino(s)',
-                          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                        ),
-                        onTap: () async {
-                          Navigator.pop(ctx);
-                          await _sheetStudentWorkouts(
-                            context,
-                            repo,
-                            day,
-                            name,
-                            byStudent[sid]!,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+    Future<void> openStudentWorkout(String studentKey) async {
+      final list = byStudent[studentKey]!;
+      final w = _pickPrimaryWorkoutForDay(list);
+      await _onWorkoutSelected(context, repo, day, w);
+    }
 
-  static Future<void> _sheetStudentWorkouts(
-    BuildContext context,
-    AppDataRepository repo,
-    DateTime day,
-    String studentName,
-    List<DayWorkoutEntity> workouts,
-  ) async {
-    int order(String s) => switch (s) {
-          'programmed' => 0,
-          'started' => 1,
-          'completed' => 2,
-          _ => 3,
-        };
-    workouts.sort((a, b) {
-      final c = order(a.status).compareTo(order(b.status));
-      if (c != 0) return c;
-      return a.id.compareTo(b.id);
-    });
-
-    await showModalBottomSheet<void>(
+    await showAppModalSheet<void>(
       context: context,
-      backgroundColor: AppColors.barBackground,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  studentName,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+      title: label,
+      builder: (ctx, scroll) => FuturisticBackground(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 6, 20, 12),
+              child: Text(
+                'Alunos com treino neste dia',
+                style: TextStyle(
+                  color: AppColors.accentGreen,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  letterSpacing: 0.2,
                 ),
               ),
-              SizedBox(
-                height: MediaQuery.sizeOf(ctx).height * 0.4,
-                child: ListView.separated(
-                  itemCount: workouts.length,
-                  separatorBuilder: (_, index) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final w = workouts[i];
-                    return ListTile(
-                      leading: Icon(
-                        _statusIcon(w.status),
-                        color: _statusColor(w.status),
-                      ),
-                      title: Text(
-                        _statusLabel(w.status),
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
-                      subtitle: w.workoutScore != null
-                          ? Text(
-                              'Score: ${w.workoutScore!.toStringAsFixed(2)}',
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                            )
-                          : null,
+            ),
+            Expanded(
+              child: ListView.builder(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                itemCount: sids.length,
+                itemBuilder: (_, i) {
+                  final sid = sids[i];
+                  final name = nameMap[sid] ?? sid;
+                  final n = byStudent[sid]!.length;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _DayModalStudentCard(
+                      name: name,
+                      subtitle: n == 1
+                          ? 'Toque para abrir o treino'
+                          : '$n treinos no dia — abre o prioritário (em andamento → programado → concluído)',
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await _onWorkoutSelected(context, repo, day, w);
+                        if (!context.mounted) return;
+                        await openStudentWorkout(sid);
                       },
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  static IconData _statusIcon(String s) => switch (s) {
-        'completed' => Icons.check_circle_outline,
-        'started' => Icons.play_circle_outline,
-        'programmed' => Icons.event_note,
-        _ => Icons.circle_outlined,
-      };
-
-  static Color _statusColor(String s) => switch (s) {
-        'completed' => AppColors.accentGreen,
-        'started' => AppColors.accentPink,
-        'programmed' => AppColors.calendarIncomplete,
-        _ => AppColors.textMuted,
-      };
-
-  static String _statusLabel(String s) => switch (s) {
-        'completed' => 'Concluído',
-        'started' => 'Em andamento',
-        'programmed' => 'Programado',
-        _ => s,
-      };
+  /// Qual treino abrir quando há vários no mesmo dia: andamento → programado → concluído.
+  static DayWorkoutEntity _pickPrimaryWorkoutForDay(
+    List<DayWorkoutEntity> workouts,
+  ) {
+    if (workouts.length == 1) return workouts.first;
+    int priority(String s) => switch (s) {
+      'started' => 0,
+      'programmed' => 1,
+      'completed' => 2,
+      _ => 3,
+    };
+    final sorted = List<DayWorkoutEntity>.from(workouts)
+      ..sort((a, b) {
+        final c = priority(a.status).compareTo(priority(b.status));
+        if (c != 0) return c;
+        return a.id.compareTo(b.id);
+      });
+    return sorted.first;
+  }
 
   static Future<void> _onWorkoutSelected(
     BuildContext context,
@@ -423,109 +327,230 @@ class CalendarDayFlow {
     DateTime day,
     DayWorkoutEntity w,
   ) async {
-    if (w.status == 'completed') {
-      showActiveWorkoutSheet(context, w.id);
-      return;
-    }
-    if (w.status == 'started') {
-      showActiveWorkoutSheet(context, w.id);
-      return;
-    }
-    if (w.status == 'programmed') {
-      final students = await repo.watchStudentsAlphabetical().first;
-      var studentName = 'Aluno';
-      for (final s in students) {
-        if (s.id == w.studentId) {
-          studentName = s.name;
-          break;
-        }
+    final students = await repo.watchStudentsAlphabetical().first;
+    var studentName = 'Aluno';
+    for (final s in students) {
+      if (s.id == w.studentId) {
+        studentName = s.name;
+        break;
       }
-      if (!context.mounted) return;
-      final badge = await repo.getDayWorkoutGroupBadgeLabel(w);
-      if (!context.mounted) return;
-      await showProgrammedDayExercisesSheet(
-        context: context,
+    }
+    if (!context.mounted) return;
+    final badge = await repo.getDayWorkoutGroupBadgeLabel(w);
+    if (!context.mounted) return;
+
+    Future<void> Function(BuildContext sheetContext)? onSwap;
+    if (w.status == 'programmed') {
+      onSwap = (sheetCtx) => _runSwapWorkoutFromSheet(
+        sheetContext: sheetCtx,
+        parentContext: context,
         repo: repo,
-        workout: w,
-        studentName: studentName,
         day: day,
-        workoutBadgeLabel: badge,
-        programmedStartWorkout: (sheetCtx) => _runProgrammedStartOrSwapDialog(
-          sheetContext: sheetCtx,
-          parentContext: context,
-          repo: repo,
-          day: day,
-          workout: w,
-        ),
+        workout: w,
       );
     }
+
+    await showProgrammedDayExercisesSheet(
+      context: context,
+      repo: repo,
+      workout: w,
+      studentName: studentName,
+      day: day,
+      workoutBadgeLabel: badge,
+      onSwapWorkout: onSwap,
+    );
   }
 
-  static Future<void> _runProgrammedStartOrSwapDialog({
+  /// Substitui o treino programado: fecha a sheet, apaga o dia e abre escolha de bundle.
+  static Future<void> _runSwapWorkoutFromSheet({
     required BuildContext sheetContext,
     required BuildContext parentContext,
     required AppDataRepository repo,
     required DateTime day,
     required DayWorkoutEntity workout,
   }) async {
-    final pastDay = isCalendarDateBeforeToday(day);
-    final action = await showDialog<String>(
-      context: sheetContext,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: const Text(
-          'Iniciar treino',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: Text(
-          pastDay
-              ? 'Deseja iniciar o treino agora? O cronômetro será ativado.'
-              : 'Deseja iniciar o treino agora ou substituí-lo por outro treino da semana?',
-          style: const TextStyle(color: AppColors.textMuted),
-        ),
-        actions: [
-          if (!pastDay)
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 'swap'),
-              child: const Text('Substituir'),
+    if (isCalendarDateBeforeToday(day)) {
+      if (parentContext.mounted) {
+        ScaffoldMessenger.of(parentContext).showSnackBar(
+          const SnackBar(
+            content: Text('Não é possível substituir treino em data passada.'),
+          ),
+        );
+      }
+      return;
+    }
+    final ok = await repo.deleteProgrammedDayWorkout(workout.id);
+    if (!parentContext.mounted) return;
+    if (!ok) return;
+    if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+    final bundles = await repo.getProgrammableBundles(workout.studentId, day);
+    if (!parentContext.mounted) return;
+    await _pickBundleAndProgram(
+      parentContext,
+      repo,
+      workout.studentId,
+      day,
+      bundles,
+    );
+  }
+}
+
+/// Card de aluno nas modais do dia (calendário).
+class _DayModalStudentCard extends StatelessWidget {
+  const _DayModalStudentCard({
+    required this.name,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final String name;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FuturisticCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.splashMint.withValues(alpha: 0.22),
+                  const Color(0xFF26C6DA).withValues(alpha: 0.12),
+                ],
+              ),
+              border: Border.all(
+                color: AppColors.splashMint.withValues(alpha: 0.5),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.splashMint.withValues(alpha: 0.15),
+                  blurRadius: 10,
+                ),
+              ],
             ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, 'start'),
-            child: const Text('Iniciar'),
+            child: const Padding(
+              padding: EdgeInsets.all(12),
+              child: Icon(
+                Icons.person_rounded,
+                color: AppColors.splashMint,
+                size: 26,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.accentGreen.withValues(alpha: 0.9),
+            size: 28,
           ),
         ],
       ),
     );
-    if (action == null) return;
-    if (action == 'start') {
-      await repo.startDayWorkout(workout.id);
-      if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-      if (parentContext.mounted) {
-        showActiveWorkoutSheet(parentContext, workout.id);
-      }
-      return;
-    }
-    if (action == 'swap') {
-      if (isCalendarDateBeforeToday(day)) {
-        if (parentContext.mounted) {
-          ScaffoldMessenger.of(parentContext).showSnackBar(
-            const SnackBar(
-              content: Text('Não é possível substituir treino em data passada.'),
-            ),
-          );
-        }
-        return;
-      }
-      final ok = await repo.deleteProgrammedDayWorkout(workout.id);
-      if (!parentContext.mounted) return;
-      if (!ok) return;
-      if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-      final bundles = await repo.getProgrammableBundles(workout.studentId, day);
-      if (!parentContext.mounted) return;
-      await _pickBundleAndProgram(parentContext, repo, workout.studentId, day, bundles);
-    }
   }
+}
 
+/// Card de bloco (grupo / avulsos) ao programar o dia.
+class _DayModalBundleCard extends StatelessWidget {
+  const _DayModalBundleCard({
+    required this.title,
+    required this.exerciseCount,
+    required this.onTap,
+  });
+
+  final String title;
+  final int exerciseCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FuturisticCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.accentPink.withValues(alpha: 0.2),
+                  AppColors.accentGreen.withValues(alpha: 0.12),
+                ],
+              ),
+              border: Border.all(
+                color: AppColors.accentPink.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(
+                Icons.layers_rounded,
+                color: AppColors.accentPink.withValues(alpha: 0.95),
+                size: 26,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$exerciseCount exercício${exerciseCount == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.accentGreen.withValues(alpha: 0.9),
+            size: 28,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProgramSnapshotEditor extends StatefulWidget {
@@ -558,9 +583,9 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
         .map((r) => TextEditingController(text: '${r.item.reps}'))
         .toList();
     _loads = widget.bundle.rows
-        .map((r) => TextEditingController(
-              text: r.item.loadKg?.toString() ?? '',
-            ))
+        .map(
+          (r) => TextEditingController(text: r.item.loadKg?.toString() ?? ''),
+        )
         .toList();
   }
 
@@ -617,8 +642,12 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
                             child: TextField(
                               controller: _sets[i],
                               keyboardType: TextInputType.number,
-                              style: const TextStyle(color: AppColors.textPrimary),
-                              decoration: const InputDecoration(labelText: 'Séries *'),
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'Séries *',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -626,17 +655,28 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
                             child: TextField(
                               controller: _reps[i],
                               keyboardType: TextInputType.number,
-                              style: const TextStyle(color: AppColors.textPrimary),
-                              decoration: const InputDecoration(labelText: 'Reps *'),
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'Reps *',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: TextField(
                               controller: _loads[i],
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: const TextStyle(color: AppColors.textPrimary),
-                              decoration: const InputDecoration(labelText: 'kg'),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'kg',
+                              ),
                             ),
                           ),
                         ],
@@ -662,7 +702,9 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
                 if (s == null || re == null || s <= 0 || re <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Preencha séries e repetições (> 0) em todos os exercícios.'),
+                      content: Text(
+                        'Preencha séries e repetições (> 0) em todos os exercícios.',
+                      ),
                     ),
                   );
                   return;
@@ -675,7 +717,12 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
                   loadKg: Value(l),
                   needsDetail: false,
                 );
-                out.add(WeekScheduleRow(item: newItem, exerciseName: orig.exerciseName));
+                out.add(
+                  WeekScheduleRow(
+                    item: newItem,
+                    exerciseName: orig.exerciseName,
+                  ),
+                );
               }
               await widget.onConfirm(out);
             },

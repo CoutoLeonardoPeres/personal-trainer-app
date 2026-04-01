@@ -200,10 +200,9 @@ class _PlanningPageState extends State<PlanningPage> {
                                 },
                               ),
                               const SizedBox(height: 20),
-                              _sectionTitle('Treinos programados / em andamento'),
                               StreamBuilder<List<DayWorkoutEntity>>(
                                 key: ValueKey(
-                                  'prog-$studentId-${pageMonday.toIso8601String()}',
+                                  'week-workouts-$studentId-${pageMonday.toIso8601String()}',
                                 ),
                                 stream: repo.watchStudentWeekDayWorkouts(
                                   studentId: studentId,
@@ -211,47 +210,48 @@ class _PlanningPageState extends State<PlanningPage> {
                                 ),
                                 builder: (context, snap) {
                                   final all = snap.data ?? [];
-                                  final list = all
+                                  final programmed = all
                                       .where((w) =>
                                           w.status == 'programmed' ||
                                           w.status == 'started')
                                       .toList();
-                                  if (list.isEmpty) {
-                                    return _emptyHint(
-                                      'Nada programado no calendário para esta semana.',
-                                    );
-                                  }
-                                  return Column(
-                                    children: [
-                                      for (final w in list) _dayWorkoutTile(w),
-                                    ],
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 20),
-                              _sectionTitle('Treinos concluídos'),
-                              StreamBuilder<List<DayWorkoutEntity>>(
-                                key: ValueKey(
-                                  'done-$studentId-${pageMonday.toIso8601String()}',
-                                ),
-                                stream: repo.watchStudentWeekDayWorkouts(
-                                  studentId: studentId,
-                                  weekMonday: pageMonday,
-                                ),
-                                builder: (context, snap) {
-                                  final all = snap.data ?? [];
-                                  final list = all
+                                  final completed = all
                                       .where((w) => w.status == 'completed')
                                       .toList();
-                                  if (list.isEmpty) {
-                                    return _emptyHint(
-                                      'Nenhum treino concluído nesta semana.',
-                                    );
-                                  }
                                   return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
                                     children: [
-                                      for (final w in list)
-                                        _dayWorkoutTile(w, showScore: true),
+                                      _sectionTitle(
+                                        'Treinos programados / em andamento',
+                                      ),
+                                      if (programmed.isEmpty)
+                                        _emptyHint(
+                                          'Nada programado no calendário para esta semana.',
+                                        )
+                                      else
+                                        Column(
+                                          children: [
+                                            for (final w in programmed)
+                                              _dayWorkoutTile(w),
+                                          ],
+                                        ),
+                                      const SizedBox(height: 20),
+                                      _sectionTitle('Treinos concluídos'),
+                                      if (completed.isEmpty)
+                                        _emptyHint(
+                                          'Nenhum treino concluído nesta semana.',
+                                        )
+                                      else
+                                        Column(
+                                          children: [
+                                            for (final w in completed)
+                                              _dayWorkoutTile(
+                                                w,
+                                                showScore: true,
+                                              ),
+                                          ],
+                                        ),
                                     ],
                                   );
                                 },

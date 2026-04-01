@@ -128,32 +128,17 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
                         const SizedBox(width: 12),
                         OutlinedButton.icon(
                           onPressed: () async {
-                            final ok = await showDialog<bool>(
+                            final ok = await tryCompleteDayWorkoutWithIncompletePrompt(
                               context: context,
-                              builder: (ctx) => AlertDialog(
-                                backgroundColor: AppColors.barBackground,
-                                title: const Text(
-                                  'Concluir treino?',
-                                  style: TextStyle(color: AppColors.textPrimary),
-                                ),
-                                content: const Text(
-                                  'O score será calculado com base nas cargas, repetições e tempo ativo.',
-                                  style: TextStyle(color: AppColors.textMuted),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('Cancelar'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text('Concluir'),
-                                  ),
-                                ],
-                              ),
+                              repo: repo,
+                              dayWorkoutId: w.id,
                             );
-                            if (ok == true && context.mounted) {
-                              await repo.completeDayWorkout(w.id);
+                            if (ok && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Treino concluído. Score atualizado.'),
+                                ),
+                              );
                             }
                           },
                           icon: const Icon(Icons.flag_rounded),
@@ -198,7 +183,9 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
                                       line: line,
                                       exerciseName: baseName,
                                       exercise: meta,
+                                      expandable: true,
                                       workoutStatus: w.status,
+                                      workoutPaused: w.timerResumeAt == null,
                                       useAlternative: useAlt,
                                       onToggleAlternative:
                                           calendarExerciseHasAlternative(meta)
@@ -208,6 +195,7 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
                                                             false);
                                                   })
                                               : null,
+                                      performedSetsRepo: repo,
                                     ),
                                   );
                                 },
@@ -289,6 +277,7 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
                             line: line,
                             exerciseName: baseName,
                             exercise: meta,
+                            expandable: true,
                             workoutStatus: w.status,
                             useAlternative: useAlt,
                             onToggleAlternative:
@@ -299,6 +288,7 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
                                                   false);
                                         })
                                     : null,
+                            performedSetsRepo: repo,
                           ),
                         );
                       },

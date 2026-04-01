@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/auth/app_session.dart';
 import '../core/theme/app_theme.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/app_data_repository.dart';
@@ -18,17 +19,25 @@ class PersonalTrainerApp extends StatelessWidget {
           create: (_) => AppDatabase(),
           dispose: (_, db) => db.close(),
         ),
-        ProxyProvider<AppDatabase, AppDataRepository>(
-          update: (_, db, _) => AppDataRepository(db),
+        ChangeNotifierProvider<AppSession>(
+          create: (_) => AppSession(),
         ),
       ],
-      child: MaterialApp(
-        title: 'Personal Trainer',
-        debugShowCheckedModeBanner: false,
-        theme: buildAppTheme(),
-        home: const SplashPage(),
-        routes: {
-          MainShell.routeName: (_) => const MainShell(),
+      child: Consumer<AppSession>(
+        builder: (context, session, _) {
+          final db = context.read<AppDatabase>();
+          return Provider<AppDataRepository>.value(
+            value: AppDataRepository(db, session),
+            child: MaterialApp(
+              title: 'Personal Trainer',
+              debugShowCheckedModeBanner: false,
+              theme: buildAppTheme(),
+              home: const SplashPage(),
+              routes: {
+                MainShell.routeName: (_) => const MainShell(),
+              },
+            ),
+          );
         },
       ),
     );
