@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/br_input_formatters.dart';
 import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
@@ -41,6 +43,7 @@ class PersonaisPage extends StatelessWidget {
               itemBuilder: (_, i) {
                 final e = list[i];
                 return SwipeableRegistryCard(
+                  slidableKey: e.id,
                   title: e.name,
                   subtitle: e.email,
                   onEdit: () => _form(context, repo, e),
@@ -59,12 +62,17 @@ class PersonaisPage extends StatelessWidget {
 
   void _form(BuildContext context, AppDataRepository repo, PersonalEntity? x) {
     final name = TextEditingController(text: x?.name ?? '');
-    final cpf = TextEditingController(text: x?.cpf ?? '');
+    final cpf = TextEditingController(
+      text: brFormatCpfDisplay(x?.cpf ?? ''),
+    );
     final reg = TextEditingController(text: x?.professionalRegistry ?? '');
     final rua = TextEditingController(text: x?.street ?? '');
     final num = TextEditingController(text: x?.number ?? '');
     final comp = TextEditingController(text: x?.complement ?? '');
     final cidade = TextEditingController(text: x?.city ?? '');
+    final cep = TextEditingController(
+      text: brFormatCepDisplay(x?.cep ?? ''),
+    );
     final email = TextEditingController(text: x?.email ?? '');
     String? uf = x?.stateUf;
     var isAdmin = x?.isAdmin ?? false;
@@ -79,7 +87,13 @@ class PersonaisPage extends StatelessWidget {
           children: [
             AppTextField(controller: name, label: 'Nome', required: true),
             const SizedBox(height: kCadastroFieldGap),
-            AppTextField(controller: cpf, label: 'CPF', required: true),
+            AppTextField(
+              controller: cpf,
+              label: 'CPF',
+              required: true,
+              keyboardType: TextInputType.number,
+              inputFormatters: [BrCpfInputFormatter()],
+            ),
             const SizedBox(height: kCadastroFieldGap),
             AppTextField(controller: reg, label: 'Registro profissional', required: true),
             const SizedBox(height: kCadastroFieldGap),
@@ -89,7 +103,13 @@ class PersonaisPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: AppTextField(controller: num, label: 'Número', required: true),
+                  child: AppTextField(
+                    controller: num,
+                    label: 'Número',
+                    required: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -99,6 +119,15 @@ class PersonaisPage extends StatelessWidget {
             ),
             const SizedBox(height: kCadastroFieldGap),
             AppTextField(controller: cidade, label: 'Cidade', required: true),
+            const SizedBox(height: kCadastroFieldGap),
+            AppTextField(
+              controller: cep,
+              label: 'CEP',
+              required: true,
+              hint: '00000-000',
+              keyboardType: TextInputType.number,
+              inputFormatters: [BrCepInputFormatter()],
+            ),
             const SizedBox(height: kCadastroFieldGap),
             BrazilStateDropdown(
               valueUf: uf,
@@ -139,16 +168,35 @@ class PersonaisPage extends StatelessWidget {
                 if (name.text.trim().isEmpty || cpf.text.trim().isEmpty || uf == null) {
                   return;
                 }
+                final cpfDigits = brDigitsOnly(cpf.text);
+                if (cpfDigits.length != 11) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('CPF deve ter 11 dígitos.')),
+                    );
+                  }
+                  return;
+                }
+                final cepDigits = brDigitsOnly(cep.text);
+                if (cepDigits.length != 8) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('CEP deve ter 8 dígitos.')),
+                    );
+                  }
+                  return;
+                }
                 await repo.upsertPersonal(
                   id: x?.id,
                   name: name.text.trim(),
-                  cpf: cpf.text.trim(),
+                  cpf: cpfDigits,
                   professionalRegistry: reg.text.trim(),
                   street: rua.text.trim(),
                   number: num.text.trim(),
                   complement: comp.text.trim().isEmpty ? null : comp.text.trim(),
                   city: cidade.text.trim(),
                   stateUf: uf!,
+                  cep: cepDigits,
                   email: email.text.trim(),
                   mustChangePassword: x?.mustChangePassword ?? true,
                   passwordHash: x?.passwordHash,

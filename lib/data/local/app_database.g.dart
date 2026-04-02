@@ -1627,6 +1627,15 @@ class $PersonalsTable extends Personals
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _cepMeta = const VerificationMeta('cep');
+  @override
+  late final GeneratedColumn<String> cep = GeneratedColumn<String>(
+    'cep',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _emailMeta = const VerificationMeta('email');
   @override
   late final GeneratedColumn<String> email = GeneratedColumn<String>(
@@ -1711,6 +1720,7 @@ class $PersonalsTable extends Personals
     complement,
     city,
     stateUf,
+    cep,
     email,
     mustChangePassword,
     passwordHash,
@@ -1799,6 +1809,12 @@ class $PersonalsTable extends Personals
       );
     } else if (isInserting) {
       context.missing(_stateUfMeta);
+    }
+    if (data.containsKey('cep')) {
+      context.handle(
+        _cepMeta,
+        cep.isAcceptableOrUnknown(data['cep']!, _cepMeta),
+      );
     }
     if (data.containsKey('email')) {
       context.handle(
@@ -1889,6 +1905,10 @@ class $PersonalsTable extends Personals
         DriftSqlType.string,
         data['${effectivePrefix}state_uf'],
       )!,
+      cep: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cep'],
+      ),
       email: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}email'],
@@ -1932,6 +1952,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
   final String? complement;
   final String city;
   final String stateUf;
+  final String? cep;
   final String email;
   final bool mustChangePassword;
   final String? passwordHash;
@@ -1950,6 +1971,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     this.complement,
     required this.city,
     required this.stateUf,
+    this.cep,
     required this.email,
     required this.mustChangePassword,
     this.passwordHash,
@@ -1971,6 +1993,9 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     }
     map['city'] = Variable<String>(city);
     map['state_uf'] = Variable<String>(stateUf);
+    if (!nullToAbsent || cep != null) {
+      map['cep'] = Variable<String>(cep);
+    }
     map['email'] = Variable<String>(email);
     map['must_change_password'] = Variable<bool>(mustChangePassword);
     if (!nullToAbsent || passwordHash != null) {
@@ -1995,6 +2020,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           : Value(complement),
       city: Value(city),
       stateUf: Value(stateUf),
+      cep: cep == null && nullToAbsent ? const Value.absent() : Value(cep),
       email: Value(email),
       mustChangePassword: Value(mustChangePassword),
       passwordHash: passwordHash == null && nullToAbsent
@@ -2023,6 +2049,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       complement: serializer.fromJson<String?>(json['complement']),
       city: serializer.fromJson<String>(json['city']),
       stateUf: serializer.fromJson<String>(json['stateUf']),
+      cep: serializer.fromJson<String?>(json['cep']),
       email: serializer.fromJson<String>(json['email']),
       mustChangePassword: serializer.fromJson<bool>(json['mustChangePassword']),
       passwordHash: serializer.fromJson<String?>(json['passwordHash']),
@@ -2044,6 +2071,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       'complement': serializer.toJson<String?>(complement),
       'city': serializer.toJson<String>(city),
       'stateUf': serializer.toJson<String>(stateUf),
+      'cep': serializer.toJson<String?>(cep),
       'email': serializer.toJson<String>(email),
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
       'passwordHash': serializer.toJson<String?>(passwordHash),
@@ -2063,6 +2091,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     Value<String?> complement = const Value.absent(),
     String? city,
     String? stateUf,
+    Value<String?> cep = const Value.absent(),
     String? email,
     bool? mustChangePassword,
     Value<String?> passwordHash = const Value.absent(),
@@ -2079,6 +2108,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     complement: complement.present ? complement.value : this.complement,
     city: city ?? this.city,
     stateUf: stateUf ?? this.stateUf,
+    cep: cep.present ? cep.value : this.cep,
     email: email ?? this.email,
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
     passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
@@ -2101,6 +2131,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           : this.complement,
       city: data.city.present ? data.city.value : this.city,
       stateUf: data.stateUf.present ? data.stateUf.value : this.stateUf,
+      cep: data.cep.present ? data.cep.value : this.cep,
       email: data.email.present ? data.email.value : this.email,
       mustChangePassword: data.mustChangePassword.present
           ? data.mustChangePassword.value
@@ -2126,6 +2157,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ..write('complement: $complement, ')
           ..write('city: $city, ')
           ..write('stateUf: $stateUf, ')
+          ..write('cep: $cep, ')
           ..write('email: $email, ')
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
@@ -2147,6 +2179,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     complement,
     city,
     stateUf,
+    cep,
     email,
     mustChangePassword,
     passwordHash,
@@ -2167,6 +2200,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           other.complement == this.complement &&
           other.city == this.city &&
           other.stateUf == this.stateUf &&
+          other.cep == this.cep &&
           other.email == this.email &&
           other.mustChangePassword == this.mustChangePassword &&
           other.passwordHash == this.passwordHash &&
@@ -2185,6 +2219,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
   final Value<String?> complement;
   final Value<String> city;
   final Value<String> stateUf;
+  final Value<String?> cep;
   final Value<String> email;
   final Value<bool> mustChangePassword;
   final Value<String?> passwordHash;
@@ -2202,6 +2237,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.complement = const Value.absent(),
     this.city = const Value.absent(),
     this.stateUf = const Value.absent(),
+    this.cep = const Value.absent(),
     this.email = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
@@ -2220,6 +2256,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.complement = const Value.absent(),
     required String city,
     required String stateUf,
+    this.cep = const Value.absent(),
     required String email,
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
@@ -2246,6 +2283,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Expression<String>? complement,
     Expression<String>? city,
     Expression<String>? stateUf,
+    Expression<String>? cep,
     Expression<String>? email,
     Expression<bool>? mustChangePassword,
     Expression<String>? passwordHash,
@@ -2265,6 +2303,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       if (complement != null) 'complement': complement,
       if (city != null) 'city': city,
       if (stateUf != null) 'state_uf': stateUf,
+      if (cep != null) 'cep': cep,
       if (email != null) 'email': email,
       if (mustChangePassword != null)
         'must_change_password': mustChangePassword,
@@ -2286,6 +2325,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Value<String?>? complement,
     Value<String>? city,
     Value<String>? stateUf,
+    Value<String?>? cep,
     Value<String>? email,
     Value<bool>? mustChangePassword,
     Value<String?>? passwordHash,
@@ -2304,6 +2344,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       complement: complement ?? this.complement,
       city: city ?? this.city,
       stateUf: stateUf ?? this.stateUf,
+      cep: cep ?? this.cep,
       email: email ?? this.email,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       passwordHash: passwordHash ?? this.passwordHash,
@@ -2346,6 +2387,9 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     if (stateUf.present) {
       map['state_uf'] = Variable<String>(stateUf.value);
     }
+    if (cep.present) {
+      map['cep'] = Variable<String>(cep.value);
+    }
     if (email.present) {
       map['email'] = Variable<String>(email.value);
     }
@@ -2382,6 +2426,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
           ..write('complement: $complement, ')
           ..write('city: $city, ')
           ..write('stateUf: $stateUf, ')
+          ..write('cep: $cep, ')
           ..write('email: $email, ')
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
@@ -4428,6 +4473,17 @@ class $WorkoutGroupExercisesTable extends WorkoutGroupExercises
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _lastRepsTextMeta = const VerificationMeta(
+    'lastRepsText',
+  );
+  @override
+  late final GeneratedColumn<String> lastRepsText = GeneratedColumn<String>(
+    'last_reps_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _lastSetsMeta = const VerificationMeta(
     'lastSets',
   );
@@ -4447,6 +4503,7 @@ class $WorkoutGroupExercisesTable extends WorkoutGroupExercises
     sortOrder,
     lastLoadKg,
     lastReps,
+    lastRepsText,
     lastSets,
   ];
   @override
@@ -4506,6 +4563,15 @@ class $WorkoutGroupExercisesTable extends WorkoutGroupExercises
         lastReps.isAcceptableOrUnknown(data['last_reps']!, _lastRepsMeta),
       );
     }
+    if (data.containsKey('last_reps_text')) {
+      context.handle(
+        _lastRepsTextMeta,
+        lastRepsText.isAcceptableOrUnknown(
+          data['last_reps_text']!,
+          _lastRepsTextMeta,
+        ),
+      );
+    }
     if (data.containsKey('last_sets')) {
       context.handle(
         _lastSetsMeta,
@@ -4548,6 +4614,10 @@ class $WorkoutGroupExercisesTable extends WorkoutGroupExercises
         DriftSqlType.int,
         data['${effectivePrefix}last_reps'],
       ),
+      lastRepsText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_reps_text'],
+      ),
       lastSets: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}last_sets'],
@@ -4568,7 +4638,10 @@ class WorkoutGroupExerciseEntity extends DataClass
   final String exerciseId;
   final int sortOrder;
   final double? lastLoadKg;
+
+  /// Legado (número inteiro); preferir [lastRepsText] para faixas como «12-15».
   final int? lastReps;
+  final String? lastRepsText;
   final int? lastSets;
   const WorkoutGroupExerciseEntity({
     required this.id,
@@ -4577,6 +4650,7 @@ class WorkoutGroupExerciseEntity extends DataClass
     required this.sortOrder,
     this.lastLoadKg,
     this.lastReps,
+    this.lastRepsText,
     this.lastSets,
   });
   @override
@@ -4591,6 +4665,9 @@ class WorkoutGroupExerciseEntity extends DataClass
     }
     if (!nullToAbsent || lastReps != null) {
       map['last_reps'] = Variable<int>(lastReps);
+    }
+    if (!nullToAbsent || lastRepsText != null) {
+      map['last_reps_text'] = Variable<String>(lastRepsText);
     }
     if (!nullToAbsent || lastSets != null) {
       map['last_sets'] = Variable<int>(lastSets);
@@ -4610,6 +4687,9 @@ class WorkoutGroupExerciseEntity extends DataClass
       lastReps: lastReps == null && nullToAbsent
           ? const Value.absent()
           : Value(lastReps),
+      lastRepsText: lastRepsText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastRepsText),
       lastSets: lastSets == null && nullToAbsent
           ? const Value.absent()
           : Value(lastSets),
@@ -4628,6 +4708,7 @@ class WorkoutGroupExerciseEntity extends DataClass
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       lastLoadKg: serializer.fromJson<double?>(json['lastLoadKg']),
       lastReps: serializer.fromJson<int?>(json['lastReps']),
+      lastRepsText: serializer.fromJson<String?>(json['lastRepsText']),
       lastSets: serializer.fromJson<int?>(json['lastSets']),
     );
   }
@@ -4641,6 +4722,7 @@ class WorkoutGroupExerciseEntity extends DataClass
       'sortOrder': serializer.toJson<int>(sortOrder),
       'lastLoadKg': serializer.toJson<double?>(lastLoadKg),
       'lastReps': serializer.toJson<int?>(lastReps),
+      'lastRepsText': serializer.toJson<String?>(lastRepsText),
       'lastSets': serializer.toJson<int?>(lastSets),
     };
   }
@@ -4652,6 +4734,7 @@ class WorkoutGroupExerciseEntity extends DataClass
     int? sortOrder,
     Value<double?> lastLoadKg = const Value.absent(),
     Value<int?> lastReps = const Value.absent(),
+    Value<String?> lastRepsText = const Value.absent(),
     Value<int?> lastSets = const Value.absent(),
   }) => WorkoutGroupExerciseEntity(
     id: id ?? this.id,
@@ -4660,6 +4743,7 @@ class WorkoutGroupExerciseEntity extends DataClass
     sortOrder: sortOrder ?? this.sortOrder,
     lastLoadKg: lastLoadKg.present ? lastLoadKg.value : this.lastLoadKg,
     lastReps: lastReps.present ? lastReps.value : this.lastReps,
+    lastRepsText: lastRepsText.present ? lastRepsText.value : this.lastRepsText,
     lastSets: lastSets.present ? lastSets.value : this.lastSets,
   );
   WorkoutGroupExerciseEntity copyWithCompanion(
@@ -4678,6 +4762,9 @@ class WorkoutGroupExerciseEntity extends DataClass
           ? data.lastLoadKg.value
           : this.lastLoadKg,
       lastReps: data.lastReps.present ? data.lastReps.value : this.lastReps,
+      lastRepsText: data.lastRepsText.present
+          ? data.lastRepsText.value
+          : this.lastRepsText,
       lastSets: data.lastSets.present ? data.lastSets.value : this.lastSets,
     );
   }
@@ -4691,6 +4778,7 @@ class WorkoutGroupExerciseEntity extends DataClass
           ..write('sortOrder: $sortOrder, ')
           ..write('lastLoadKg: $lastLoadKg, ')
           ..write('lastReps: $lastReps, ')
+          ..write('lastRepsText: $lastRepsText, ')
           ..write('lastSets: $lastSets')
           ..write(')'))
         .toString();
@@ -4704,6 +4792,7 @@ class WorkoutGroupExerciseEntity extends DataClass
     sortOrder,
     lastLoadKg,
     lastReps,
+    lastRepsText,
     lastSets,
   );
   @override
@@ -4716,6 +4805,7 @@ class WorkoutGroupExerciseEntity extends DataClass
           other.sortOrder == this.sortOrder &&
           other.lastLoadKg == this.lastLoadKg &&
           other.lastReps == this.lastReps &&
+          other.lastRepsText == this.lastRepsText &&
           other.lastSets == this.lastSets);
 }
 
@@ -4727,6 +4817,7 @@ class WorkoutGroupExercisesCompanion
   final Value<int> sortOrder;
   final Value<double?> lastLoadKg;
   final Value<int?> lastReps;
+  final Value<String?> lastRepsText;
   final Value<int?> lastSets;
   final Value<int> rowid;
   const WorkoutGroupExercisesCompanion({
@@ -4736,6 +4827,7 @@ class WorkoutGroupExercisesCompanion
     this.sortOrder = const Value.absent(),
     this.lastLoadKg = const Value.absent(),
     this.lastReps = const Value.absent(),
+    this.lastRepsText = const Value.absent(),
     this.lastSets = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -4746,6 +4838,7 @@ class WorkoutGroupExercisesCompanion
     this.sortOrder = const Value.absent(),
     this.lastLoadKg = const Value.absent(),
     this.lastReps = const Value.absent(),
+    this.lastRepsText = const Value.absent(),
     this.lastSets = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -4758,6 +4851,7 @@ class WorkoutGroupExercisesCompanion
     Expression<int>? sortOrder,
     Expression<double>? lastLoadKg,
     Expression<int>? lastReps,
+    Expression<String>? lastRepsText,
     Expression<int>? lastSets,
     Expression<int>? rowid,
   }) {
@@ -4768,6 +4862,7 @@ class WorkoutGroupExercisesCompanion
       if (sortOrder != null) 'sort_order': sortOrder,
       if (lastLoadKg != null) 'last_load_kg': lastLoadKg,
       if (lastReps != null) 'last_reps': lastReps,
+      if (lastRepsText != null) 'last_reps_text': lastRepsText,
       if (lastSets != null) 'last_sets': lastSets,
       if (rowid != null) 'rowid': rowid,
     });
@@ -4780,6 +4875,7 @@ class WorkoutGroupExercisesCompanion
     Value<int>? sortOrder,
     Value<double?>? lastLoadKg,
     Value<int?>? lastReps,
+    Value<String?>? lastRepsText,
     Value<int?>? lastSets,
     Value<int>? rowid,
   }) {
@@ -4790,6 +4886,7 @@ class WorkoutGroupExercisesCompanion
       sortOrder: sortOrder ?? this.sortOrder,
       lastLoadKg: lastLoadKg ?? this.lastLoadKg,
       lastReps: lastReps ?? this.lastReps,
+      lastRepsText: lastRepsText ?? this.lastRepsText,
       lastSets: lastSets ?? this.lastSets,
       rowid: rowid ?? this.rowid,
     );
@@ -4816,6 +4913,9 @@ class WorkoutGroupExercisesCompanion
     if (lastReps.present) {
       map['last_reps'] = Variable<int>(lastReps.value);
     }
+    if (lastRepsText.present) {
+      map['last_reps_text'] = Variable<String>(lastRepsText.value);
+    }
     if (lastSets.present) {
       map['last_sets'] = Variable<int>(lastSets.value);
     }
@@ -4834,6 +4934,7 @@ class WorkoutGroupExercisesCompanion
           ..write('sortOrder: $sortOrder, ')
           ..write('lastLoadKg: $lastLoadKg, ')
           ..write('lastReps: $lastReps, ')
+          ..write('lastRepsText: $lastRepsText, ')
           ..write('lastSets: $lastSets, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -9073,6 +9174,7 @@ typedef $$PersonalsTableCreateCompanionBuilder =
       Value<String?> complement,
       required String city,
       required String stateUf,
+      Value<String?> cep,
       required String email,
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
@@ -9092,6 +9194,7 @@ typedef $$PersonalsTableUpdateCompanionBuilder =
       Value<String?> complement,
       Value<String> city,
       Value<String> stateUf,
+      Value<String?> cep,
       Value<String> email,
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
@@ -9177,6 +9280,11 @@ class $$PersonalsTableFilterComposer
 
   ColumnFilters<String> get stateUf => $composableBuilder(
     column: $table.stateUf,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cep => $composableBuilder(
+    column: $table.cep,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9290,6 +9398,11 @@ class $$PersonalsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get cep => $composableBuilder(
+    column: $table.cep,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get email => $composableBuilder(
     column: $table.email,
     builder: (column) => ColumnOrderings(column),
@@ -9360,6 +9473,9 @@ class $$PersonalsTableAnnotationComposer
 
   GeneratedColumn<String> get stateUf =>
       $composableBuilder(column: $table.stateUf, builder: (column) => column);
+
+  GeneratedColumn<String> get cep =>
+      $composableBuilder(column: $table.cep, builder: (column) => column);
 
   GeneratedColumn<String> get email =>
       $composableBuilder(column: $table.email, builder: (column) => column);
@@ -9446,6 +9562,7 @@ class $$PersonalsTableTableManager
                 Value<String?> complement = const Value.absent(),
                 Value<String> city = const Value.absent(),
                 Value<String> stateUf = const Value.absent(),
+                Value<String?> cep = const Value.absent(),
                 Value<String> email = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
@@ -9463,6 +9580,7 @@ class $$PersonalsTableTableManager
                 complement: complement,
                 city: city,
                 stateUf: stateUf,
+                cep: cep,
                 email: email,
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
@@ -9482,6 +9600,7 @@ class $$PersonalsTableTableManager
                 Value<String?> complement = const Value.absent(),
                 required String city,
                 required String stateUf,
+                Value<String?> cep = const Value.absent(),
                 required String email,
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
@@ -9499,6 +9618,7 @@ class $$PersonalsTableTableManager
                 complement: complement,
                 city: city,
                 stateUf: stateUf,
+                cep: cep,
                 email: email,
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
@@ -11328,6 +11448,7 @@ typedef $$WorkoutGroupExercisesTableCreateCompanionBuilder =
       Value<int> sortOrder,
       Value<double?> lastLoadKg,
       Value<int?> lastReps,
+      Value<String?> lastRepsText,
       Value<int?> lastSets,
       Value<int> rowid,
     });
@@ -11339,6 +11460,7 @@ typedef $$WorkoutGroupExercisesTableUpdateCompanionBuilder =
       Value<int> sortOrder,
       Value<double?> lastLoadKg,
       Value<int?> lastReps,
+      Value<String?> lastRepsText,
       Value<int?> lastSets,
       Value<int> rowid,
     });
@@ -11430,6 +11552,11 @@ class $$WorkoutGroupExercisesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get lastRepsText => $composableBuilder(
+    column: $table.lastRepsText,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get lastSets => $composableBuilder(
     column: $table.lastSets,
     builder: (column) => ColumnFilters(column),
@@ -11511,6 +11638,11 @@ class $$WorkoutGroupExercisesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get lastRepsText => $composableBuilder(
+    column: $table.lastRepsText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get lastSets => $composableBuilder(
     column: $table.lastSets,
     builder: (column) => ColumnOrderings(column),
@@ -11585,6 +11717,11 @@ class $$WorkoutGroupExercisesTableAnnotationComposer
 
   GeneratedColumn<int> get lastReps =>
       $composableBuilder(column: $table.lastReps, builder: (column) => column);
+
+  GeneratedColumn<String> get lastRepsText => $composableBuilder(
+    column: $table.lastRepsText,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get lastSets =>
       $composableBuilder(column: $table.lastSets, builder: (column) => column);
@@ -11681,6 +11818,7 @@ class $$WorkoutGroupExercisesTableTableManager
                 Value<int> sortOrder = const Value.absent(),
                 Value<double?> lastLoadKg = const Value.absent(),
                 Value<int?> lastReps = const Value.absent(),
+                Value<String?> lastRepsText = const Value.absent(),
                 Value<int?> lastSets = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkoutGroupExercisesCompanion(
@@ -11690,6 +11828,7 @@ class $$WorkoutGroupExercisesTableTableManager
                 sortOrder: sortOrder,
                 lastLoadKg: lastLoadKg,
                 lastReps: lastReps,
+                lastRepsText: lastRepsText,
                 lastSets: lastSets,
                 rowid: rowid,
               ),
@@ -11701,6 +11840,7 @@ class $$WorkoutGroupExercisesTableTableManager
                 Value<int> sortOrder = const Value.absent(),
                 Value<double?> lastLoadKg = const Value.absent(),
                 Value<int?> lastReps = const Value.absent(),
+                Value<String?> lastRepsText = const Value.absent(),
                 Value<int?> lastSets = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkoutGroupExercisesCompanion.insert(
@@ -11710,6 +11850,7 @@ class $$WorkoutGroupExercisesTableTableManager
                 sortOrder: sortOrder,
                 lastLoadKg: lastLoadKg,
                 lastReps: lastReps,
+                lastRepsText: lastRepsText,
                 lastSets: lastSets,
                 rowid: rowid,
               ),

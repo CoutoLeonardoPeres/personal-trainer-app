@@ -3,6 +3,19 @@ platform :ios, '13.0'
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
+# Xcode 15+: evita que fases de build tratem artefatos em `build/ios/...` como "stale" /
+# fora dos root paths permitidos (ex.: share_plus.framework após trocar pods ou limpar mal).
+install! 'cocoapods', :disable_input_output_paths => true
+
+# Se aparecer: Stale file '.../build/ios/Debug-iphoneos/path_provider_foundation/
+# path_provider_foundation_privacy.bundle' is located outside of the allowed root paths
+# — é cache misturando Flutter (pasta build/ do projeto) com DerivedData do Xcode.
+# 1) Na raiz do projeto:  bash scripts/ios_clean_stale_build.sh
+# 2) Só use ios/Runner.xcworkspace (não o .xcodeproj).
+# 3) Xcode → Settings → Locations → Derived Data: "Default" (evita caminho legacy).
+# 4) Depois do clean: Product → Clean Build Folder (⇧⌘K).
+# 5) Preferir `flutter run` / `flutter build ios` em vez de Archive direto no Xcode, se possível.
+
 project 'Runner', {
   'Debug' => :debug,
   'Profile' => :release,
@@ -30,7 +43,8 @@ target 'Runner' do
   # Estático: em Xcode 16+ com frameworks dinâmicos, headers Swift dos plugins
   # (`@import Flutter`) costumam falhar com "module 'Flutter' not found".
   use_frameworks! :linkage => :static
-  use_modular_headers!
+  # Sem use_modular_headers!: com ele, o módulo app_links expõe app_links-Swift.h com
+  # @import Flutter e o Clang falha ("module 'Flutter' not found") ao compilar o Runner.
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
@@ -46,6 +60,10 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      # Evita "module 'Flutter' not found" ao compilar app_links-Swift.h / @import app_links no Runner.
+      config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+      # Menos verificação de módulo Swift: reduz atrito com privacy bundles dos plugins no Xcode 16+.
+      config.build_settings['SWIFT_VERIFY_EMITTED_MODULE_INTERFACE'] = 'NO'
     end
 
     # sqlite3.c no Xcode 16+: MAX/MIN; i64→int; #warning gethostuuid em iOS; vírgula em FK (amalgamação)
@@ -78,13 +96,69 @@ post_install do |installer|
   end
 
   installer.aggregate_targets.each do |aggregate_target|
-    aggregate_target.user_project.native_targets.each do |t|
+    project = aggregate_target.user_project
+    next unless project
+
+    # Flutter.xcframework no Runner: GeneratedPluginRegistrant.m usa @import app_links →
+    # app_links-Swift.h com @import Flutter; sem isto o Clang dá "module 'Flutter' not found"
+    # (Pods-Runner.xcconfig só lista os pods, não o engine).
+    flutter_root = nil
+    gen = File.expand_path(File.join(__dir__, 'Flutter', 'Generated.xcconfig'))
+    if File.exist?(gen)
+      File.foreach(gen) do |line|
+        m = line.match(/^FLUTTER_ROOT=(.*)$/)
+        if m
+          flutter_root = m[1].strip
+          break
+        end
+      end
+    end
+    engine_debug = flutter_root && File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios', 'Flutter.xcframework')
+    engine_release = flutter_root && File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios-release', 'Flutter.xcframework')
+
+    project.native_targets.each do |t|
       next unless t.name == 'Runner'
+
+      # Xcode 15+: com disable_input_output_paths, [CP] Copy Pods Resources nao tem outputs;
+      # silencia o aviso com alwaysOutOfDate (= desliga dependency analysis no Xcode).
+      t.build_phases.each do |phase|
+        next unless phase.respond_to?(:name) && phase.name == '[CP] Copy Pods Resources'
+        phase.always_out_of_date = '1' if phase.respond_to?(:always_out_of_date=)
+      end
 
       t.build_configurations.each do |config|
         config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+
+        use_debug_engine = config.name == 'Debug'
+        xcf = use_debug_engine ? engine_debug : engine_release
+        next unless xcf && Dir.exist?(xcf)
+
+        Dir.children(xcf).sort.each do |child|
+          next if child.start_with?('.')
+          full = File.join(xcf, child)
+          next unless File.directory?(full)
+
+          if child.end_with?('-simulator')
+            k = 'FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]'
+            cur = config.build_settings[k] || '$(inherited)'
+            cur = cur.join(' ') if cur.is_a?(Array)
+            next if cur.include?(full)
+
+            config.build_settings[k] = "\"#{full}\" #{cur}".strip
+          elsif child.start_with?('ios-')
+            k = 'FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]'
+            cur = config.build_settings[k] || '$(inherited)'
+            cur = cur.join(' ') if cur.is_a?(Array)
+            next if cur.include?(full)
+
+            config.build_settings[k] = "\"#{full}\" #{cur}".strip
+          end
+        end
       end
     end
+
+    project.save
   end
 
   # share_plus: remove ramo morto com keyWindow (iOS mínimo 13; Clang avisa no else inalcançável).

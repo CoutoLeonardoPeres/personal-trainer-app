@@ -280,14 +280,7 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
                             expandable: true,
                             workoutStatus: w.status,
                             useAlternative: useAlt,
-                            onToggleAlternative:
-                                calendarExerciseHasAlternative(meta)
-                                    ? () => setState(() {
-                                          _useAlternativeByLineId[line.id] =
-                                              !(_useAlternativeByLineId[line.id] ??
-                                                  false);
-                                        })
-                                    : null,
+                            onToggleAlternative: null,
                             performedSetsRepo: repo,
                           ),
                         );

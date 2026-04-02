@@ -94,6 +94,7 @@ class Personals extends Table {
   TextColumn get complement => text().nullable()();
   TextColumn get city => text()();
   TextColumn get stateUf => text()();
+  TextColumn get cep => text().nullable()();
   TextColumn get email => text()();
   BoolColumn get mustChangePassword =>
       boolean().withDefault(const Constant(true))();
@@ -179,7 +180,9 @@ class WorkoutGroupExercises extends Table {
   TextColumn get exerciseId => text().references(Exercises, #id)();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   RealColumn get lastLoadKg => real().nullable()();
+  /// Legado (número inteiro); preferir [lastRepsText] para faixas como «12-15».
   IntColumn get lastReps => integer().nullable()();
+  TextColumn get lastRepsText => text().nullable()();
   IntColumn get lastSets => integer().nullable()();
 
   @override
@@ -301,7 +304,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 11;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -350,6 +353,19 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 9) {
         await _seedExercisesFromDefaults();
+      }
+      if (from < 10) {
+        await m.addColumn(personals, personals.cep);
+      }
+      if (from < 11) {
+        await m.addColumn(
+          workoutGroupExercises,
+          workoutGroupExercises.lastRepsText,
+        );
+        await customStatement(
+          'UPDATE workout_group_exercises SET last_reps_text = CAST(last_reps AS TEXT) '
+          'WHERE last_reps IS NOT NULL AND (last_reps_text IS NULL OR last_reps_text = \'\');',
+        );
       }
     },
     beforeOpen: (details) async {

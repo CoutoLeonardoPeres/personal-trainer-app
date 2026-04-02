@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -194,6 +195,10 @@ class CalendarDayFlow {
     await showAppModalSheet<void>(
       context: context,
       title: 'Ajustes (só neste dia)',
+      subtitle:
+          'Alterações valem só para este dia no calendário. '
+          'Deslize o card do exercício para a esquerda para excluir.',
+      futuristicChrome: true,
       builder: (ctx, scroll) => _ProgramSnapshotEditor(
         scrollController: scroll,
         bundle: bundle,
@@ -569,20 +574,22 @@ class _ProgramSnapshotEditor extends StatefulWidget {
 }
 
 class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
-  late final List<TextEditingController> _sets;
-  late final List<TextEditingController> _reps;
-  late final List<TextEditingController> _loads;
+  late List<WeekScheduleRow> _rows;
+  late List<TextEditingController> _sets;
+  late List<TextEditingController> _reps;
+  late List<TextEditingController> _loads;
 
   @override
   void initState() {
     super.initState();
-    _sets = widget.bundle.rows
+    _rows = List<WeekScheduleRow>.from(widget.bundle.rows);
+    _sets = _rows
         .map((r) => TextEditingController(text: '${r.item.sets}'))
         .toList();
-    _reps = widget.bundle.rows
+    _reps = _rows
         .map((r) => TextEditingController(text: '${r.item.reps}'))
         .toList();
-    _loads = widget.bundle.rows
+    _loads = _rows
         .map(
           (r) => TextEditingController(text: r.item.loadKg?.toString() ?? ''),
         )
@@ -603,89 +610,186 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
     super.dispose();
   }
 
+  void _removeRowAt(int index) {
+    if (_rows.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Mantenha pelo menos um exercício para programar o dia, ou feche o painel.',
+          ),
+        ),
+      );
+      return;
+    }
+    _sets[index].dispose();
+    _reps[index].dispose();
+    _loads[index].dispose();
+    _sets.removeAt(index);
+    _reps.removeAt(index);
+    _loads.removeAt(index);
+    _rows.removeAt(index);
+    setState(() {});
+  }
+
+  InputDecoration _metricDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(
+        color: AppColors.accentGreen.withValues(alpha: 0.82),
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
+      floatingLabelStyle: TextStyle(
+        color: AppColors.cadastroCardBorder.withValues(alpha: 0.95),
+        fontSize: 11,
+      ),
+      filled: true,
+      fillColor: Colors.black.withValues(alpha: 0.38),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: AppColors.cadastroCardBorder.withValues(alpha: 0.38),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: AppColors.accentGreen.withValues(alpha: 0.65),
+          width: 1.4,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Expanded(
-          child: ListView.builder(
-            controller: widget.scrollController,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: widget.bundle.rows.length,
-            itemBuilder: (_, i) {
-              final r = widget.bundle.rows[i];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.white.withValues(alpha: 0.06),
-                    border: Border.all(
-                      color: AppColors.accentPink.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        r.exerciseName,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
+          child: FuturisticBackground(
+            child: SlidableAutoCloseBehavior(
+              child: ListView.builder(
+                controller: widget.scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                itemCount: _rows.length,
+                itemBuilder: (_, i) {
+                  final r = _rows[i];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Slidable(
+                      key: ValueKey('${r.item.id}_$i'),
+                      endActionPane: ActionPane(
+                        motion: const DrawerMotion(),
+                        extentRatio: 0.34,
                         children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _sets[i],
-                              keyboardType: TextInputType.number,
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                              ),
-                              decoration: const InputDecoration(
-                                labelText: 'Séries *',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _reps[i],
-                              keyboardType: TextInputType.number,
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                              ),
-                              decoration: const InputDecoration(
-                                labelText: 'Reps *',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _loads[i],
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                              ),
-                              decoration: const InputDecoration(
-                                labelText: 'kg',
-                              ),
+                          SlidableAction(
+                            onPressed: (_) => _removeRowAt(i),
+                            backgroundColor: AppColors.danger.withValues(alpha: 0.92),
+                            foregroundColor: Colors.white,
+                            icon: Icons.delete_outline_rounded,
+                            label: 'Excluir',
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(14),
+                              bottomLeft: Radius.circular(14),
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                AppColors.cadastroCardBorder.withValues(alpha: 0.1),
+                                Colors.black.withValues(alpha: 0.22),
+                                AppColors.accentGreen.withValues(alpha: 0.04),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: AppColors.cadastroCardBorder.withValues(
+                                alpha: 0.48,
+                              ),
+                              width: 1.1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accentGreen.withValues(alpha: 0.06),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                r.exerciseName,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                  height: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _sets[i],
+                                      keyboardType: TextInputType.number,
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 15,
+                                      ),
+                                      decoration: _metricDecoration('Séries *'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _reps[i],
+                                      keyboardType: TextInputType.number,
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 15,
+                                      ),
+                                      decoration: _metricDecoration('Reps *'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _loads[i],
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 15,
+                                      ),
+                                      decoration: _metricDecoration('kg'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
         ),
         Padding(
@@ -693,39 +797,41 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
           child: AppPrimaryButton(
             label: 'Programar no calendário',
             icon: Icons.check_rounded,
-            onPressed: () async {
-              final out = <WeekScheduleRow>[];
-              for (var i = 0; i < widget.bundle.rows.length; i++) {
-                final orig = widget.bundle.rows[i];
-                final s = int.tryParse(_sets[i].text.trim());
-                final re = int.tryParse(_reps[i].text.trim());
-                if (s == null || re == null || s <= 0 || re <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Preencha séries e repetições (> 0) em todos os exercícios.',
-                      ),
-                    ),
-                  );
-                  return;
-                }
-                final lText = _loads[i].text.trim().replaceAll(',', '.');
-                final l = lText.isEmpty ? null : double.tryParse(lText);
-                final newItem = orig.item.copyWith(
-                  sets: s,
-                  reps: re,
-                  loadKg: Value(l),
-                  needsDetail: false,
-                );
-                out.add(
-                  WeekScheduleRow(
-                    item: newItem,
-                    exerciseName: orig.exerciseName,
-                  ),
-                );
-              }
-              await widget.onConfirm(out);
-            },
+            onPressed: _rows.isEmpty
+                ? null
+                : () async {
+                    final out = <WeekScheduleRow>[];
+                    for (var i = 0; i < _rows.length; i++) {
+                      final orig = _rows[i];
+                      final s = int.tryParse(_sets[i].text.trim());
+                      final re = int.tryParse(_reps[i].text.trim());
+                      if (s == null || re == null || s <= 0 || re <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Preencha séries e repetições (> 0) em todos os exercícios.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      final lText = _loads[i].text.trim().replaceAll(',', '.');
+                      final l = lText.isEmpty ? null : double.tryParse(lText);
+                      final newItem = orig.item.copyWith(
+                        sets: s,
+                        reps: re,
+                        loadKg: Value(l),
+                        needsDetail: false,
+                      );
+                      out.add(
+                        WeekScheduleRow(
+                          item: newItem,
+                          exerciseName: orig.exerciseName,
+                        ),
+                      );
+                    }
+                    await widget.onConfirm(out);
+                  },
           ),
         ),
       ],

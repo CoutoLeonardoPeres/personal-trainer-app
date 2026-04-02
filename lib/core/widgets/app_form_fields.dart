@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../constants/brazil_states.dart';
 import '../theme/app_colors.dart';
+import 'brazil_state_picker_sheet.dart';
 
 /// Espaço vertical entre campos nos modais de cadastro.
 const double kCadastroFieldGap = 14;
@@ -18,6 +20,7 @@ class AppTextField extends StatelessWidget {
     this.readOnly = false,
     this.onTap,
     this.suffix,
+    this.inputFormatters,
   });
 
   final TextEditingController? controller;
@@ -29,12 +32,14 @@ class AppTextField extends StatelessWidget {
   final bool readOnly;
   final VoidCallback? onTap;
   final Widget? suffix;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       maxLines: maxLines,
       readOnly: readOnly,
       onTap: onTap,
@@ -50,7 +55,7 @@ class AppTextField extends StatelessWidget {
   }
 }
 
-/// Select de UF (lista alfabética por nome do estado).
+/// Campo de UF: abre o seletor futurista com busca (mesmo padrão em todo o app).
 class BrazilStateDropdown extends StatelessWidget {
   const BrazilStateDropdown({
     super.key,
@@ -67,23 +72,45 @@ class BrazilStateDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      key: ValueKey(valueUf ?? '__none__'),
-      initialValue: valueUf != null && valueUf!.isNotEmpty ? valueUf : null,
-      isExpanded: true,
-      dropdownColor: AppColors.barBackground,
-      style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
-      decoration: InputDecoration(
-        labelText: requiredField ? '$label *' : label,
-      ),
-      items: [
-        for (final s in kBrazilStates)
-          DropdownMenuItem(
-            value: s.uf,
-            child: Text(s.label, overflow: TextOverflow.ellipsis),
+    final selected = brazilStateByUf(valueUf);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          FocusScope.of(context).unfocus();
+          showBrazilStatePickerSheet(
+            context,
+            selectedUf: valueUf,
+            onSelected: onChanged,
+            title: label,
+          );
+        },
+        borderRadius: BorderRadius.circular(14),
+        splashColor: AppColors.splashMint.withValues(alpha: 0.12),
+        highlightColor: AppColors.accentPink.withValues(alpha: 0.06),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: requiredField ? '$label *' : label,
+            suffixIcon: Icon(
+              Icons.map_rounded,
+              color: AppColors.splashMint.withValues(alpha: 0.88),
+            ),
           ),
-      ],
-      onChanged: onChanged,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 1),
+            child: Text(
+              selected?.label ?? 'Toque para selecionar',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                color: selected != null ? AppColors.textPrimary : AppColors.textMuted,
+                fontWeight: selected != null ? FontWeight.w500 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/br_input_formatters.dart';
 import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
@@ -45,6 +47,7 @@ class AlunosPage extends StatelessWidget {
               itemBuilder: (_, i) {
                 final e = list[i];
                 return SwipeableRegistryCard(
+                  slidableKey: e.id,
                   title: e.name,
                   subtitle: e.email ?? e.city ?? '',
                   onEdit: () async {
@@ -76,7 +79,9 @@ class AlunosPage extends StatelessWidget {
     final name = TextEditingController(text: x?.name ?? '');
     final email = TextEditingController(text: x?.email ?? '');
     final goal = TextEditingController(text: x?.goal ?? '');
-    final cpf = TextEditingController(text: x?.cpf ?? '');
+    final cpf = TextEditingController(
+      text: brFormatCpfDisplay(x?.cpf ?? ''),
+    );
     final rua = TextEditingController(text: x?.street ?? '');
     final num = TextEditingController(text: x?.number ?? '');
     final comp = TextEditingController(text: x?.complement ?? '');
@@ -101,7 +106,12 @@ class AlunosPage extends StatelessWidget {
             const SizedBox(height: kCadastroFieldGap),
             AppTextField(controller: goal, label: 'Objetivo', maxLines: 2),
             const SizedBox(height: kCadastroFieldGap),
-            AppTextField(controller: cpf, label: 'CPF'),
+            AppTextField(
+              controller: cpf,
+              label: 'CPF',
+              keyboardType: TextInputType.number,
+              inputFormatters: [BrCpfInputFormatter()],
+            ),
             const SizedBox(height: kCadastroFieldGap),
             Material(
               color: const Color(0xFF12121C),
@@ -109,7 +119,9 @@ class AlunosPage extends StatelessWidget {
               child: ListTile(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: AppColors.accentPink.withValues(alpha: 0.55)),
+                  side: BorderSide(
+                    color: AppColors.cadastroCardBorder.withValues(alpha: 0.55),
+                  ),
                 ),
                 title: const Text(
                   'Data de nascimento',
@@ -138,7 +150,14 @@ class AlunosPage extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: AppTextField(controller: num, label: 'Número')),
+                Expanded(
+                  child: AppTextField(
+                    controller: num,
+                    label: 'Número',
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(child: AppTextField(controller: comp, label: 'Complemento')),
               ],
@@ -198,12 +217,21 @@ class AlunosPage extends StatelessWidget {
               icon: Icons.check_rounded,
               onPressed: () async {
                 if (name.text.trim().isEmpty) return;
+                final cpfDigits = brDigitsOnly(cpf.text);
+                if (cpfDigits.isNotEmpty && cpfDigits.length != 11) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('CPF deve ter 11 dígitos ou ficar em branco.')),
+                    );
+                  }
+                  return;
+                }
                 await repo.upsertStudent(
                   id: x?.id,
                   name: name.text.trim(),
                   email: email.text.trim().isEmpty ? null : email.text.trim(),
                   goal: goal.text.trim().isEmpty ? null : goal.text.trim(),
-                  cpf: cpf.text.trim().isEmpty ? null : cpf.text.trim(),
+                  cpf: cpfDigits.isEmpty ? null : cpfDigits,
                   birthDate: birth,
                   street: rua.text.trim().isEmpty ? null : rua.text.trim(),
                   number: num.text.trim().isEmpty ? null : num.text.trim(),

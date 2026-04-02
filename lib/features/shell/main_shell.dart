@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/ui/app_bottom_nav.dart';
 import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../core/widgets/modern_loading.dart';
+import '../../core/widgets/supabase_traffic_indicator.dart';
 import '../../data/repositories/app_data_repository.dart';
 import '../cadastro/cadastro_hub_page.dart';
 import '../calendar/calendar_page.dart';
@@ -22,9 +24,49 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
+  static const _prefNavTabIndex = 'main_shell_nav_tab_index';
+
   MainNavTab _tab = MainNavTab.calendar;
   bool _tabLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _restoreTabFromPrefs();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _persistTab(_tab);
+    }
+  }
+
+  Future<void> _restoreTabFromPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    final i = p.getInt(_prefNavTabIndex);
+    if (!mounted) return;
+    if (i != null &&
+        i >= 0 &&
+        i < MainNavTab.values.length &&
+        i != _tab.index) {
+      setState(() => _tab = MainNavTab.values[i]);
+    }
+  }
+
+  Future<void> _persistTab(MainNavTab tab) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(_prefNavTabIndex, tab.index);
+  }
 
   Future<void> _select(MainNavTab tab) async {
     if (tab == _tab) return;
@@ -35,6 +77,7 @@ class _MainShellState extends State<MainShell> {
       _tab = tab;
       _tabLoading = false;
     });
+    await _persistTab(tab);
   }
 
   String _title(MainNavTab t) => switch (t) {
@@ -50,6 +93,15 @@ class _MainShellState extends State<MainShell> {
       extendBody: true,
       backgroundColor: AppColors.background,
       appBar: buildGradientAppBar(
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SupabaseTrafficIndicator(),
+          ),
+        ),
+        leadingWidth: 68,
+        automaticallyImplyLeading: false,
         title: Text(_title(_tab)),
         actions: [
           IconButton(

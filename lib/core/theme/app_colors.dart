@@ -18,4 +18,6 @@ abstract final class AppColors {
   static const Color calendarIncomplete = Color(0xFFE53935);
   /// Dias futuros com treino programado / em aberto no calendário.
   static const Color calendarFutureProgrammed = Color(0xFF42A5F5);
+  /// Borda dos cards na tela Cadastro e listas de registro (subtelas).
+  static const Color cadastroCardBorder = Color(0xFF42A5F5);
 }

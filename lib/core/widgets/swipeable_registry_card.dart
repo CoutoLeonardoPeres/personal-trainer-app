@@ -15,6 +15,8 @@ class SwipeableRegistryCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.trailing,
+    /// Chave estável para o [Slidable] (ex.: id do registro). Evita colisão quando [title] se repete.
+    this.slidableKey,
   });
 
   final String title;
@@ -22,13 +24,14 @@ class SwipeableRegistryCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final Widget? trailing;
+  final Object? slidableKey;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Slidable(
-        key: ValueKey(title),
+        key: ValueKey(slidableKey ?? title),
         endActionPane: ActionPane(
           motion: const DrawerMotion(),
           extentRatio: 0.42,
@@ -72,7 +75,7 @@ class SwipeableRegistryCard extends StatelessWidget {
                 ],
               ),
               border: Border.all(
-                color: AppColors.accentPink.withValues(alpha: 0.4),
+                color: AppColors.cadastroCardBorder.withValues(alpha: 0.55),
               ),
             ),
             child: Row(

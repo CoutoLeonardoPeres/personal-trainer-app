@@ -43,6 +43,7 @@ class GruposMuscularesPage extends StatelessWidget {
               itemBuilder: (context, i) {
                 final e = list[i];
                 return SwipeableRegistryCard(
+                  slidableKey: e.id,
                   title: e.name,
                   subtitle: 'Grupo muscular',
                   onEdit: () => _openForm(context, repo, e),

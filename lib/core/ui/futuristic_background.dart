@@ -56,13 +56,21 @@ class FuturisticBackground extends StatelessWidget {
 }
 
 class FuturisticCard extends StatelessWidget {
-  const FuturisticCard({super.key, required this.child, this.onTap});
+  const FuturisticCard({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.borderColor,
+  });
 
   final Widget child;
   final VoidCallback? onTap;
+  /// Se nulo, mantém a borda rosa (ex.: calendário).
+  final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
+    final border = borderColor ?? AppColors.accentPink.withValues(alpha: 0.55);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -80,9 +88,7 @@ class FuturisticCard extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            border: Border.all(
-              color: AppColors.accentPink.withValues(alpha: 0.55),
-            ),
+            border: Border.all(color: border),
           ),
           child: child,
         ),

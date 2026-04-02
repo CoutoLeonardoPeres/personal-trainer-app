@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/ui/app_modal_sheet.dart';
-import '../../core/widgets/app_form_fields.dart';
 import '../../core/widgets/swipeable_registry_card.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/week_schedule_row.dart';
 import '../../data/repositories/app_data_repository.dart';
+import 'planning_schedule_workout_flow.dart';
+import 'planning_student_selector.dart';
 
 /// Semana em carrossel + aluno + persistência em [week_schedule_blocks] / [week_schedule_items].
 class PlanningPage extends StatefulWidget {
@@ -67,24 +67,43 @@ class _PlanningPageState extends State<PlanningPage> {
             stream: repo.watchStudentsAlphabetical(),
             builder: (context, snap) {
               final students = snap.data ?? [];
-              return DropdownButtonFormField<String?>(
-                key: ValueKey(studentId ?? '__none__'),
-                initialValue: studentId,
-                dropdownColor: AppColors.barBackground,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  labelText: 'Aluno',
-                  prefixIcon: Icon(Icons.person_outline, color: AppColors.accentGreen),
-                ),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Selecione o aluno'),
+              final waitingFirstStudents =
+                  snap.connectionState == ConnectionState.waiting && !snap.hasData;
+
+              if (studentId != null &&
+                  students.isNotEmpty &&
+                  !students.any((s) => s.id == studentId)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _studentId = null);
+                });
+              }
+              if (studentId != null && students.isEmpty && snap.hasData) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _studentId = null);
+                });
+              }
+              if (studentId != null && students.isEmpty && waitingFirstStudents) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   ),
-                  ...students.map(
-                    (s) => DropdownMenuItem<String?>(value: s.id, child: Text(s.name)),
-                  ),
-                ],
+                );
+              }
+              final dropdownValue =
+                  studentId != null && students.any((s) => s.id == studentId)
+                      ? studentId
+                      : null;
+              return PlanningFuturisticStudentSelector(
+                key: ValueKey('aluno_${dropdownValue ?? 'none'}'),
+                students: students,
+                selectedId: dropdownValue,
+                enabled: students.isNotEmpty,
                 onChanged: (v) => setState(() => _studentId = v),
               );
             },
@@ -157,7 +176,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                   weekMonday: pageMonday,
                                 ),
                                 builder: (context, snap) {
-                                  final rows = snap.data ?? [];
+                                  final rows = _uniqueWeekRowsByExercise(snap.data ?? []);
                                   return StreamBuilder<List<WorkoutGroupEntity>>(
                                     stream: repo.watchWorkoutGroupsAlphabetical(),
                                     builder: (context, gSnap) {
@@ -167,8 +186,8 @@ class _PlanningPageState extends State<PlanningPage> {
                                       };
                                       if (rows.isEmpty) {
                                         return _emptyHint(
-                                          'Nenhum grupo ou exercício nesta semana.\n'
-                                          'Use «Grupo de treinos» ou «Agendar treino» (avulsos).',
+                                          'Nenhum exercício agendado nesta semana.\n'
+                                          'Use o botão Agendar treino para incluir grupos de treinos cadastrados.',
                                         );
                                       }
                                       final grouped = _partitionWeekRowsByGroup(rows);
@@ -267,32 +286,36 @@ class _PlanningPageState extends State<PlanningPage> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: studentId == null
-                      ? null
-                      : () => _openScheduleExercises(context, repo, studentId, weekMonday),
-                  icon: const Icon(Icons.event_note),
-                  label: const Text('Agendar treino'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: studentId == null
-                      ? null
-                      : () => _openScheduleGroup(context, repo, studentId, weekMonday),
-                  icon: const Icon(Icons.layers_outlined),
-                  label: const Text('Grupo de treinos'),
-                ),
-              ),
-            ],
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: studentId == null
+                  ? null
+                  : () {
+                      showPlanningScheduleWorkoutSheet(
+                        context: context,
+                        repo: repo,
+                        studentId: studentId,
+                        weekMonday: weekMonday,
+                        weekLabel: _weekLabel(weekMonday),
+                      );
+                    },
+              icon: const Icon(Icons.event_note),
+              label: const Text('Agendar treino'),
+            ),
           ),
         ),
       ],
     );
+  }
+
+  /// Uma entrada por exercício na semana (primeira ocorrência vence).
+  List<WeekScheduleRow> _uniqueWeekRowsByExercise(List<WeekScheduleRow> rows) {
+    final seen = <String>{};
+    return [
+      for (final r in rows)
+        if (seen.add(r.item.exerciseId)) r,
+    ];
   }
 
   Map<String?, List<WeekScheduleRow>> _partitionWeekRowsByGroup(
@@ -362,7 +385,7 @@ class _PlanningPageState extends State<PlanningPage> {
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            initiallyExpanded: true,
+            initiallyExpanded: false,
             tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
             childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
             leading: Icon(
@@ -448,6 +471,7 @@ class _PlanningPageState extends State<PlanningPage> {
       ..write('Carga: ${i.loadKg?.toString() ?? '—'} kg');
 
     return SwipeableRegistryCard(
+      slidableKey: i.id,
       title: row.exerciseName,
       subtitle: subtitle.toString(),
       onEdit: () => _editScheduleItemDialog(context, repo, row),
@@ -587,132 +611,4 @@ class _PlanningPageState extends State<PlanningPage> {
     );
   }
 
-  Future<void> _openScheduleExercises(
-    BuildContext context,
-    AppDataRepository repo,
-    String studentId,
-    DateTime weekMonday,
-  ) async {
-    final exercises = await repo.watchExercisesAlphabetical().first;
-    if (!context.mounted) return;
-    final selected = <String>{};
-
-    await showAppModalSheet<void>(
-      context: context,
-      title: 'Agendar exercícios na semana',
-      builder: (ctx, scroll) => StatefulBuilder(
-        builder: (ctx, setSt) {
-          return Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  controller: scroll,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: exercises.length,
-                  itemBuilder: (_, i) {
-                    final e = exercises[i];
-                    return CheckboxListTile(
-                      value: selected.contains(e.id),
-                      onChanged: (v) => setSt(() {
-                        if (v == true) {
-                          selected.add(e.id);
-                        } else {
-                          selected.remove(e.id);
-                        }
-                      }),
-                      title: Text(
-                        e.name,
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
-                      activeColor: AppColors.accentGreen,
-                      checkColor: Colors.black,
-                    );
-                  },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-                child: AppPrimaryButton(
-                  label: 'Confirmar agendamento',
-                  icon: Icons.check_rounded,
-                  onPressed: selected.isEmpty
-                      ? null
-                      : () async {
-                          await repo.addExercisesToWeekSchedule(
-                            studentId: studentId,
-                            weekMonday: weekMonday,
-                            exerciseIds: selected.toList(),
-                          );
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        },
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _openScheduleGroup(
-    BuildContext context,
-    AppDataRepository repo,
-    String studentId,
-    DateTime weekMonday,
-  ) async {
-    final groups = await repo.watchWorkoutGroupsAlphabetical().first;
-    if (!context.mounted) return;
-
-    await showAppModalSheet<void>(
-      context: context,
-      title: 'Grupo de treinos',
-      builder: (ctx, scroll) {
-        if (groups.isEmpty) {
-          return const Center(
-            child: Text(
-              'Cadastre grupos de treinos em Cadastro.',
-              style: TextStyle(color: AppColors.textMuted),
-            ),
-          );
-        }
-        return ListView.separated(
-          controller: scroll,
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-          itemCount: groups.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 8),
-          itemBuilder: (_, i) {
-            final g = groups[i];
-            return Material(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-              child: ListTile(
-                title: Text(
-                  g.name,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                subtitle: Text(
-                  g.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                ),
-                trailing: const Icon(Icons.add_circle_outline, color: AppColors.accentGreen),
-                onTap: () async {
-                  await repo.copyWorkoutGroupToWeekSchedule(
-                    studentId: studentId,
-                    weekMonday: weekMonday,
-                    workoutGroupId: g.id,
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 }

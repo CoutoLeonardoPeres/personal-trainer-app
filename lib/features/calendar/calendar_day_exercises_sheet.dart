@@ -431,6 +431,7 @@ class CalendarExerciseLineCard extends StatefulWidget {
   final bool useAlternative;
 
   /// Ao arrastar a barra e tocar na ação rosa; alterna principal ↔ alternativo.
+  /// Com [workoutStatus] `completed`, o gesto é ignorado mesmo se o callback for passado.
   final VoidCallback? onToggleAlternative;
 
   /// Quando não nulo, séries registradas na expansão ganham slide Editar/Excluir.
@@ -456,7 +457,9 @@ class CalendarExerciseLineCard extends StatefulWidget {
 class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   var _expanded = false;
 
-  bool get _usesSlidable => widget.onToggleAlternative != null;
+  bool get _usesSlidable =>
+      widget.onToggleAlternative != null &&
+      widget.workoutStatus != 'completed';
 
   List<DayWorkoutPerformedSet> get _performed =>
       DayWorkoutPerformedSetCodec.decode(widget.line.performedSetsJson);
@@ -1484,13 +1487,14 @@ class _DayExercisesSheetScaffoldState
                                         w.timerResumeAt == null,
                                     useAlternative: useAlt,
                                     onToggleAlternative:
-                                        calendarExerciseHasAlternative(ex)
-                                        ? () => setState(() {
-                                              _useAlternativeByLineId[line.id] =
-                                                  !(_useAlternativeByLineId[line.id] ??
-                                                      false);
-                                            })
-                                        : null,
+                                        calendarExerciseHasAlternative(ex) &&
+                                                w.status != 'completed'
+                                            ? () => setState(() {
+                                                  _useAlternativeByLineId[line.id] =
+                                                      !(_useAlternativeByLineId[line.id] ??
+                                                          false);
+                                                })
+                                            : null,
                                     onAdicionar: canAddSerie
                                         ? () => showCalendarAddSetDialog(
                                               context: context,

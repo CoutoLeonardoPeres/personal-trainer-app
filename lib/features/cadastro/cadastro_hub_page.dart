@@ -68,6 +68,7 @@ class CadastroHubPage extends StatelessWidget {
       itemBuilder: (context, i) {
         final it = items[i];
         return FuturisticCard(
+          borderColor: AppColors.cadastroCardBorder.withValues(alpha: 0.65),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => it.page),

@@ -17,7 +17,7 @@ Future<void> showCalendarAddSetDialog({
     context: context,
     barrierDismissible: false,
     useRootNavigator: true,
-    barrierColor: Colors.black.withValues(alpha: 0.55),
+    barrierColor: Colors.black.withValues(alpha: 0.72),
     builder: (ctx) => _AddSetDialog(
       repo: repo,
       line: line,
@@ -89,9 +89,6 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
   late final FocusNode _cargaFocus;
   late final FocusNode _repsFocus;
   var _saving = false;
-
-  static const _fieldAccent = Color(0xFF7FFFD4);
-  static const _dialogBg = Color(0xFF16161C);
 
   @override
   void initState() {
@@ -180,112 +177,69 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
     final screenH = MediaQuery.sizeOf(context).height;
     final maxDialogH =
         (screenH * 0.88 - bottomInset - 16).clamp(240.0, 560.0);
+    final seriesLabel = 'Série ${widget.performedIndex + 1}';
 
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-      child: Material(
-        color: _dialogBg,
-        borderRadius: BorderRadius.circular(22),
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            physics: const ClampingScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(20, 14, 12, 12 + bottomInset),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Carga e repetições',
-                            style: TextStyle(
-                              color: Color(0xFF5DEDE0),
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.exerciseName,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Altere o registro desta série.',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.38),
-                              fontSize: 13,
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: _saving
-                          ? null
-                          : () {
-                              FocusManager.instance.primaryFocus?.unfocus();
-                              Navigator.of(context).pop();
-                            },
-                    ),
-                  ],
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
+        child: _FuturisticSetMetricDialogChrome(
+          title: 'Carga e repetições',
+          exerciseName: widget.exerciseName,
+          subtitle: 'Altere o registro desta série.',
+          seriesBadge: seriesLabel,
+          saving: _saving,
+          onClose: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            Navigator.of(context).pop();
+          },
+          bottomInset: bottomInset,
+          scrollableChild: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _FuturisticMetricField(
+                label: 'Carga (kg)',
+                hint: 'Opcional',
+                icon: Icons.monitor_weight_outlined,
+                controller: _cargaCtrl,
+                focusNode: _cargaFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) {
+                  FocusScope.of(context).requestFocus(_repsFocus);
+                },
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _FuturisticMetricField(
+                label: 'Repetições',
+                hint: 'Por série',
+                icon: Icons.repeat_rounded,
+                controller: _repsCtrl,
+                focusNode: _repsFocus,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
+                keyboardType: const TextInputType.numberWithOptions(
+                  signed: false,
+                  decimal: false,
                 ),
-                const SizedBox(height: 16),
-                _OutlinedNumberSlot(
-                  label: 'Carga',
-                  accent: _fieldAccent,
-                  backgroundColor: _dialogBg,
-                  controller: _cargaCtrl,
-                  focusNode: _cargaFocus,
-                  textInputAction: TextInputAction.next,
-                  onSubmitted: (_) {
-                    FocusScope.of(context).requestFocus(_repsFocus);
-                  },
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _OutlinedNumberSlot(
-                  label: 'Repetições',
-                  accent: _fieldAccent,
-                  backgroundColor: _dialogBg,
-                  controller: _repsCtrl,
-                  focusNode: _repsFocus,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    signed: false,
-                    decimal: false,
-                  ),
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                ),
-                const SizedBox(height: 20),
-                _GlowGradientButton(
-                  label: 'Salvar alterações',
-                  onPressed: _saving ? null : _submit,
-                  busy: _saving,
-                ),
-              ],
-            ),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 24),
+              _FuturisticPrimaryCta(
+                label: 'Salvar alterações',
+                icon: Icons.save_rounded,
+                onPressed: _saving ? null : _submit,
+                busy: _saving,
+              ),
+            ],
           ),
         ),
       ),
@@ -568,10 +522,6 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   late final FocusNode _repsFocus;
   var _saving = false;
 
-  /// Borda + label dos dois campos (mesmo visual que “Repetições”).
-  static const _fieldAccent = Color(0xFF7FFFD4);
-  static const _dialogBg = Color(0xFF16161C);
-
   @override
   void initState() {
     super.initState();
@@ -658,106 +608,75 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final screenH = MediaQuery.sizeOf(context).height;
-    // Margem extra evita overflow de alguns px quando o teclado reduz o espaço (Flexible + min intrinsic).
     final maxDialogH =
         (screenH * 0.88 - bottomInset - 16).clamp(240.0, 560.0);
+    final performed = DayWorkoutPerformedSetCodec.decode(
+      widget.line.performedSetsJson,
+    );
+    final nextSeries = performed.length + 1;
+    final seriesLabel = 'Série $nextSeries';
 
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-      child: Material(
-        color: _dialogBg,
-        borderRadius: BorderRadius.circular(22),
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            physics: const ClampingScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(20, 14, 12, 12 + bottomInset),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Adicionar Série',
-                            style: TextStyle(
-                              color: Color(0xFF5DEDE0),
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.exerciseName,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: _saving
-                          ? null
-                          : () {
-                              FocusManager.instance.primaryFocus?.unfocus();
-                              Navigator.of(context).pop();
-                            },
-                    ),
-                  ],
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
+        child: _FuturisticSetMetricDialogChrome(
+          title: 'Registrar série',
+          exerciseName: widget.exerciseName,
+          subtitle: 'Informe carga e repetições desta execução.',
+          seriesBadge: seriesLabel,
+          saving: _saving,
+          onClose: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            Navigator.of(context).pop();
+          },
+          bottomInset: bottomInset,
+          scrollableChild: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _FuturisticMetricField(
+                label: 'Carga (kg)',
+                hint: 'Opcional',
+                icon: Icons.monitor_weight_outlined,
+                controller: _cargaCtrl,
+                focusNode: _cargaFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) {
+                  FocusScope.of(context).requestFocus(_repsFocus);
+                },
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _FuturisticMetricField(
+                label: 'Repetições',
+                hint: 'Por série',
+                icon: Icons.repeat_rounded,
+                controller: _repsCtrl,
+                focusNode: _repsFocus,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
+                keyboardType: const TextInputType.numberWithOptions(
+                  signed: false,
+                  decimal: false,
                 ),
-                const SizedBox(height: 16),
-                _OutlinedNumberSlot(
-                  label: 'Carga',
-                  accent: _fieldAccent,
-                  backgroundColor: _dialogBg,
-                  controller: _cargaCtrl,
-                  focusNode: _cargaFocus,
-                  textInputAction: TextInputAction.next,
-                  onSubmitted: (_) {
-                    FocusScope.of(context).requestFocus(_repsFocus);
-                  },
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _OutlinedNumberSlot(
-                  label: 'Repetições',
-                  accent: _fieldAccent,
-                  backgroundColor: _dialogBg,
-                  controller: _repsCtrl,
-                  focusNode: _repsFocus,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    signed: false,
-                    decimal: false,
-                  ),
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                ),
-                const SizedBox(height: 20),
-                _GlowGradientButton(
-                  label: 'Adicionar Série',
-                  onPressed: _saving ? null : _submit,
-                  busy: _saving,
-                ),
-              ],
-            ),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 24),
+              _FuturisticPrimaryCta(
+                label: 'Confirmar série',
+                icon: Icons.add_task_rounded,
+                onPressed: _saving ? null : _submit,
+                busy: _saving,
+              ),
+            ],
           ),
         ),
       ),
@@ -765,11 +684,215 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   }
 }
 
-class _OutlinedNumberSlot extends StatelessWidget {
-  const _OutlinedNumberSlot({
+/// Shell visual compartilhado (gradiente, borda neon, faixa superior).
+class _FuturisticSetMetricDialogChrome extends StatelessWidget {
+  const _FuturisticSetMetricDialogChrome({
+    required this.title,
+    required this.exerciseName,
+    required this.saving,
+    required this.onClose,
+    required this.bottomInset,
+    required this.scrollableChild,
+    this.subtitle,
+    this.seriesBadge,
+  });
+
+  final String title;
+  final String exerciseName;
+  final String? subtitle;
+  final String? seriesBadge;
+  final bool saving;
+  final VoidCallback onClose;
+  final double bottomInset;
+  final Widget scrollableChild;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.barBackground,
+              AppColors.backgroundDeep,
+              const Color(0xFF050508),
+            ],
+          ),
+          border: Border.all(
+            color: AppColors.cadastroCardBorder.withValues(alpha: 0.55),
+            width: 1.25,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.accentGreen.withValues(alpha: 0.14),
+              blurRadius: 28,
+              spreadRadius: -2,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              height: 3,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.headerGradientPink.withValues(alpha: 0.95),
+                    AppColors.cadastroCardBorder.withValues(alpha: 0.9),
+                    AppColors.headerGradientMint.withValues(alpha: 0.85),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 8, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.accentGreen.withValues(alpha: 0.45),
+                      ),
+                      gradient: RadialGradient(
+                        colors: [
+                          AppColors.accentGreen.withValues(alpha: 0.22),
+                          Colors.transparent,
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.accentGreen.withValues(alpha: 0.15),
+                          blurRadius: 14,
+                        ),
+                      ],
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Icon(
+                        Icons.fitness_center_rounded,
+                        color: AppColors.accentGreen,
+                        size: 26,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title.toUpperCase(),
+                          style: TextStyle(
+                            color: AppColors.accentGreen.withValues(alpha: 0.92),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          exerciseName,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            subtitle!,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.42),
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
+                    onPressed: saving ? null : onClose,
+                  ),
+                ],
+              ),
+            ),
+            if (seriesBadge != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.cadastroCardBorder.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
+                      color: AppColors.accentGreen.withValues(alpha: 0.1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.layers_rounded,
+                          size: 17,
+                          color: AppColors.cadastroCardBorder,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          seriesBadge!,
+                          style: const TextStyle(
+                            color: AppColors.accentGreen,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Flexible(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const ClampingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(18, 10, 18, 14 + bottomInset),
+                child: scrollableChild,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FuturisticMetricField extends StatelessWidget {
+  const _FuturisticMetricField({
     required this.label,
-    required this.accent,
-    required this.backgroundColor,
+    required this.hint,
+    required this.icon,
     required this.controller,
     required this.keyboardType,
     this.inputFormatters,
@@ -779,8 +902,8 @@ class _OutlinedNumberSlot extends StatelessWidget {
   });
 
   final String label;
-  final Color accent;
-  final Color backgroundColor;
+  final String hint;
+  final IconData icon;
   final TextEditingController controller;
   final TextInputType keyboardType;
   final List<TextInputFormatter>? inputFormatters;
@@ -790,54 +913,93 @@ class _OutlinedNumberSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          margin: const EdgeInsets.only(top: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accent, width: 1.4),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
-          child: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            keyboardType: keyboardType,
-            textInputAction: textInputAction,
-            onSubmitted: onSubmitted,
-            inputFormatters: inputFormatters,
-            textAlign: TextAlign.center,
-            scrollPadding: const EdgeInsets.only(bottom: 120, top: 24),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w600,
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: AppColors.cadastroCardBorder.withValues(alpha: 0.85),
             ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              isDense: true,
-              hintText: '0',
-              hintStyle: TextStyle(
-                color: Colors.white.withValues(alpha: 0.2),
-                fontSize: 28,
+            const SizedBox(width: 8),
+            Text(
+              label.toUpperCase(),
+              style: TextStyle(
+                color: AppColors.accentGreen.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w800,
+                fontSize: 11,
+                letterSpacing: 1.2,
               ),
             ),
-          ),
-        ),
-        Positioned(
-          left: 14,
-          top: 0,
-          child: IgnorePointer(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              color: backgroundColor,
+            const SizedBox(width: 8),
+            Expanded(
               child: Text(
-                label,
+                hint,
+                textAlign: TextAlign.end,
                 style: TextStyle(
-                  color: accent,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.28),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.cadastroCardBorder.withValues(alpha: 0.75),
+                AppColors.accentGreen.withValues(alpha: 0.45),
+                AppColors.headerGradientMint.withValues(alpha: 0.35),
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accentGreen.withValues(alpha: 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(1.35),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16.8),
+              color: const Color(0xFF0C0C12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              keyboardType: keyboardType,
+              textInputAction: textInputAction,
+              onSubmitted: onSubmitted,
+              inputFormatters: inputFormatters,
+              textAlign: TextAlign.center,
+              scrollPadding: const EdgeInsets.only(bottom: 120, top: 24),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                hintText: '0',
+                hintStyle: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  fontSize: 30,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -848,64 +1010,99 @@ class _OutlinedNumberSlot extends StatelessWidget {
   }
 }
 
-class _GlowGradientButton extends StatelessWidget {
-  const _GlowGradientButton({
+class _FuturisticPrimaryCta extends StatelessWidget {
+  const _FuturisticPrimaryCta({
     required this.label,
+    required this.icon,
     required this.onPressed,
     required this.busy,
   });
 
   final String label;
+  final IconData icon;
   final VoidCallback? onPressed;
   final bool busy;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onPressed != null;
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF40E0D0).withValues(alpha: 0.55),
-            blurRadius: 22,
-            spreadRadius: 0,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: enabled
+            ? [
+                BoxShadow(
+                  color: AppColors.headerGradientMint.withValues(alpha: 0.35),
+                  blurRadius: 22,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : null,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(18),
           child: Ink(
-            height: 52,
+            height: 54,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              gradient: const LinearGradient(
-                colors: [
-                  Color(0xFF5DEDE0),
-                  Color(0xFF0D9B8C),
-                ],
+              borderRadius: BorderRadius.circular(18),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: enabled
+                    ? [
+                        AppColors.headerGradientMint,
+                        AppColors.accentGreen.withValues(alpha: 0.88),
+                        AppColors.headerGradientPink.withValues(alpha: 0.75),
+                      ]
+                    : [
+                        Colors.white.withValues(alpha: 0.12),
+                        Colors.white.withValues(alpha: 0.08),
+                      ],
+              ),
+              border: Border.all(
+                color: enabled
+                    ? Colors.white.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.08),
+                width: 1,
               ),
             ),
             child: Center(
               child: busy
                   ? const SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: 26,
+                      height: 26,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.black87,
+                        strokeWidth: 2.8,
+                        color: Color(0xFF0A0A12),
                       ),
                     )
-                  : Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          icon,
+                          color: enabled
+                              ? const Color(0xFF0A0A12)
+                              : Colors.white38,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: enabled
+                                ? const Color(0xFF0A0A12)
+                                : Colors.white38,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
                     ),
             ),
           ),

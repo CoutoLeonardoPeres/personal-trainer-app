@@ -41,6 +41,7 @@ class AcademiasPage extends StatelessWidget {
               itemBuilder: (_, i) {
                 final e = list[i];
                 return SwipeableRegistryCard(
+                  slidableKey: e.id,
                   title: e.name,
                   subtitle: '${e.city} — ${e.stateUf}',
                   onEdit: () => _form(context, repo, e),
