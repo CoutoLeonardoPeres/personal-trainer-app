@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS muscle_groups (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Índice único de nomes normalizados será criado após deduplicação automática
+-- (para bases já populadas).
+
 CREATE TABLE IF NOT EXISTS exercises (
   id text PRIMARY KEY,
   name text NOT NULL,
@@ -27,6 +30,96 @@ CREATE TABLE IF NOT EXISTS exercises (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Deduplica grupos musculares por nome normalizado e reaponta FKs de exercises
+-- antes de criar o índice único.
+DO $$
+BEGIN
+  CREATE TEMP TABLE _mg_dedup_map ON COMMIT DROP AS
+  WITH ranked AS (
+    SELECT
+      id,
+      lower(trim(name)) AS norm_name,
+      row_number() OVER (
+        PARTITION BY lower(trim(name))
+        ORDER BY created_at ASC, id ASC
+      ) AS rn,
+      first_value(id) OVER (
+        PARTITION BY lower(trim(name))
+        ORDER BY created_at ASC, id ASC
+      ) AS keeper_id
+    FROM public.muscle_groups
+  )
+  SELECT id AS duplicate_id, keeper_id
+  FROM ranked
+  WHERE rn > 1;
+
+  IF to_regclass('public.exercises') IS NOT NULL THEN
+    UPDATE public.exercises e
+    SET muscle_group_id = m.keeper_id
+    FROM _mg_dedup_map m
+    WHERE e.muscle_group_id = m.duplicate_id;
+  END IF;
+
+  DELETE FROM public.muscle_groups g
+  USING _mg_dedup_map m
+  WHERE g.id = m.duplicate_id;
+END $$;
+
+-- Evita duplicar o mesmo grupo (ex.: "Peitoral" e "peitoral").
+CREATE UNIQUE INDEX IF NOT EXISTS muscle_groups_unique_normalized_name
+  ON muscle_groups (lower(trim(name)));
+
+-- Deduplica exercícios por nome normalizado e reaponta FKs nas tabelas que referenciam exercises.
+DO $$
+BEGIN
+  CREATE TEMP TABLE _ex_dedup_map ON COMMIT DROP AS
+  WITH ranked AS (
+    SELECT
+      id,
+      lower(trim(name)) AS norm_name,
+      row_number() OVER (
+        PARTITION BY lower(trim(name))
+        ORDER BY created_at ASC, id ASC
+      ) AS rn,
+      first_value(id) OVER (
+        PARTITION BY lower(trim(name))
+        ORDER BY created_at ASC, id ASC
+      ) AS keeper_id
+    FROM public.exercises
+  )
+  SELECT id AS duplicate_id, keeper_id
+  FROM ranked
+  WHERE rn > 1;
+
+  IF to_regclass('public.workout_group_exercises') IS NOT NULL THEN
+    UPDATE public.workout_group_exercises w
+    SET exercise_id = m.keeper_id
+    FROM _ex_dedup_map m
+    WHERE w.exercise_id = m.duplicate_id;
+  END IF;
+
+  IF to_regclass('public.week_schedule_items') IS NOT NULL THEN
+    UPDATE public.week_schedule_items w
+    SET exercise_id = m.keeper_id
+    FROM _ex_dedup_map m
+    WHERE w.exercise_id = m.duplicate_id;
+  END IF;
+
+  IF to_regclass('public.day_workout_exercises') IS NOT NULL THEN
+    UPDATE public.day_workout_exercises d
+    SET exercise_id = m.keeper_id
+    FROM _ex_dedup_map m
+    WHERE d.exercise_id = m.duplicate_id;
+  END IF;
+
+  DELETE FROM public.exercises e
+  USING _ex_dedup_map m
+  WHERE e.id = m.duplicate_id;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_unique_normalized_name
+  ON exercises (lower(trim(name)));
 
 CREATE TABLE IF NOT EXISTS gyms (
   id text PRIMARY KEY,
