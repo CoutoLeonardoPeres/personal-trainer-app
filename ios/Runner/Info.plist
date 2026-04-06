@@ -22,10 +22,6 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>com.personaltrainer.appPersonal.scene</string>
-	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!-- Alguns dispositivos/iOS ficam com FlutterView preta com Impeller; Skia é mais estável aqui. -->
@@ -33,27 +29,8 @@
 	<false/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-		<key>UISceneConfigurations</key>
-		<dict>
-			<key>UIWindowSceneSessionRoleApplication</key>
-			<array>
-				<dict>
-					<key>UISceneClassName</key>
-					<string>UIWindowScene</string>
-					<key>UISceneConfigurationName</key>
-					<string>com.personaltrainer.appPersonal.scene</string>
-					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-					<key>UISceneStoryboardFile</key>
-					<string>Main</string>
-				</dict>
-			</array>
-		</dict>
-	</dict>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -67,8 +44,14 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!--
+	  Workaround Flutter #183900 (iOS 26 / ProMotion + motor implícito): com isto a YES o
+	  UIScreen.maximumFramesPerSecond > 60 e o FlutterViewController cria VSyncClient em
+	  viewDidLoad antes do platformTaskRunner existir → SIGSEGV ao abrir sem Xcode.
+	  YES = mais fps; NO = evita esse caminho até correção no engine (pode limitar a ~60 Hz).
+	-->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
+	<false/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>LSApplicationQueriesSchemes</key>

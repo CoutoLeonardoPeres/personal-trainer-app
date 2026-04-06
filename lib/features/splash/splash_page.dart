@@ -19,6 +19,8 @@ class SplashPage extends StatefulWidget {
 
 class _SplashPageState extends State<SplashPage> {
   int _buildLogCount = 0;
+  bool _bootStarted = false;
+  String? _bootError;
 
   @override
   void initState() {
@@ -28,7 +30,8 @@ class _SplashPageState extends State<SplashPage> {
     // e conflitos com o ciclo de vida no iOS ao reabrir o app.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       bootTrace('SplashPage.postFrame', 'iniciar _boot');
-      if (!mounted) return;
+      if (!mounted || _bootStarted) return;
+      _bootStarted = true;
       unawaited(_boot());
     });
   }
@@ -41,11 +44,15 @@ class _SplashPageState extends State<SplashPage> {
       final session = context.read<AppSession>();
       final repo = context.read<AppDataRepository>();
       bootTrace('Splash._boot', 'providers OK');
+      if (_bootError != null && mounted) {
+        setState(() => _bootError = null);
+      }
       await Future<void>.delayed(Duration.zero);
       bootTrace('Splash._boot', 'warmUp…');
       await repo.warmUp();
       bootTrace('Splash._boot', 'bootstrapIfNeeded…');
       await session.bootstrapIfNeeded(db);
+      await session.repairSessionIfInconsistent(db);
       bootTrace('Splash._boot', 'delay 600ms');
       await Future<void>.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
@@ -58,13 +65,20 @@ class _SplashPageState extends State<SplashPage> {
       bootTrace('Splash._boot FAILED', e);
       logLaunch('Splash._boot FAILED', error: e, stackTrace: st);
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          content: Text('Falha ao iniciar: $e'),
-          duration: const Duration(seconds: 8),
-        ),
-      );
+      setState(() => _bootError = e.toString());
     }
+  }
+
+  void _retryBoot() {
+    setState(() {
+      _bootStarted = false;
+      _bootError = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _bootStarted) return;
+      _bootStarted = true;
+      unawaited(_boot());
+    });
   }
 
   @override
@@ -82,50 +96,94 @@ class _SplashPageState extends State<SplashPage> {
 
     // Sem Image.asset aqui: decode da foto de fundo atrasava o 1º frame ~10s no dispositivo
     // e gerava “gesture gate timed out” / inversão de prioridade no Skia (font metrics).
+    // Mantemos a imagem com opacidade + filtro baixo para reduzir custo visual no boot.
     return Scaffold(
       backgroundColor: Colors.black,
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.background,
-              AppColors.backgroundDeep,
-              AppColors.background,
-            ],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'assets/images/fitness_background.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            filterQuality: FilterQuality.low,
           ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Personal Trainer',
-                textAlign: TextAlign.center,
-                style: titleStyle,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.34),
+            ),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.background,
+                  AppColors.backgroundDeep,
+                  AppColors.background,
+                ],
               ),
-              const SizedBox(height: 12),
-              Text(
-                'Powered by Leonardo Peres',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      fontWeight: FontWeight.w400,
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Personal Trainer',
+                    textAlign: TextAlign.center,
+                    style: titleStyle,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Powered by Leonardo Peres',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          fontWeight: FontWeight.w400,
+                        ),
+                  ),
+                  const SizedBox(height: 36),
+                  if (_bootError == null)
+                    const SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(
+                        color: AppColors.splashMint,
+                        strokeWidth: 3.2,
+                      ),
+                    )
+                  else ...[
+                    Text(
+                      'Falha ao iniciar o app',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _bootError!,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.white70,
+                          ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: _retryBoot,
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 36),
-              const SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(
-                  color: AppColors.splashMint,
-                  strokeWidth: 3.2,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

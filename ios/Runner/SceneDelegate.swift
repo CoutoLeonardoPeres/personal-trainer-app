@@ -29,10 +29,25 @@ private func ensureSceneUserActivity(_ scene: UIScene) {
 
 class SceneDelegate: FlutterSceneDelegate {
 
+  /// O engine Flutter ([FlutterSceneLifeCycle stateRestorationActivityForScene:]) usa
+  /// `scene.userActivity` ou, se nil, `[[NSUserActivity alloc] initWithActivityType:session.configuration.name]`.
+  /// Em alguns iOS (ex.: 26.x) `configuration.name` chega nil no arranque — **antes** de `super` o
+  /// `userActivity` tem de existir, senão a segunda abertura (restauração / resign) pode rebentar.
+  override func stateRestorationActivity(for scene: UIScene) -> NSUserActivity? {
+    ensureSceneUserActivity(scene)
+    // Não delegar para `super` aqui: o caminho interno do Flutter pode voltar a
+    // tentar `session.configuration.name` quando nil em alguns iOS 26.x.
+    // Ao devolver `scene.userActivity`, garantimos activityType válido no relançamento.
+    return scene.userActivity
+  }
+
   override func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+    let fps = UIScreen.main.maximumFramesPerSecond
+    sceneLog("scene willConnect pid=\(ProcessInfo.processInfo.processIdentifier) maxFPS=\(fps)")
     sceneLog("scene willConnect persistentIdentifier=\(session.persistentIdentifier)")
     let cfgName = session.configuration.name ?? "nil"
     sceneLog("scene willConnect session.configuration.name=\(cfgName)")
+    ensureSceneUserActivity(scene)
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     ensureSceneUserActivity(scene)
     sceneLog("scene willConnect super returned")

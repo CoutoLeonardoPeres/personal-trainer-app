@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -27,6 +28,10 @@ class _QueuedAudit {
 
 /// Espelha o SQLite no Supabase **depois** das gravações locais (via auditoria).
 /// Fila única + processamento serial evita rajadas de HTTP que travam frames.
+///
+/// Falha de rede ou JWT **não** apaga nem altera o SQLite: o utilizador continua com
+/// os dados no telemóvel; quando a API voltar, a fila reprocessa auditorias pendentes
+/// (e pode usar “Enviar tudo” em Configurações). A nuvem é espelho, não fonte única.
 class SupabaseRemoteSyncService implements RemoteSyncService {
   SupabaseRemoteSyncService(this._db, this._controller);
 
@@ -34,7 +39,9 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
   final SupabaseSyncController _controller;
 
   final List<_QueuedAudit> _queue = [];
+  final Set<String> _queuedAuditIds = <String>{};
   bool _workerRunning = false;
+  bool _recovering = false;
 
   /// Libera o thread de UI entre um envio e outro (~1 frame a 60 Hz).
   static const Duration _yieldBetweenJobs = Duration(milliseconds: 18);
@@ -47,6 +54,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     String? entityId,
     Map<String, Object?>? payload,
   }) async {
+    if (!_queuedAuditIds.add(auditLogId)) return;
     _queue.add(
       _QueuedAudit(
         auditLogId: auditLogId,
@@ -65,14 +73,55 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     try {
       while (_queue.isNotEmpty) {
         final job = _queue.removeAt(0);
-        await _syncOneJob(job);
-        await Future<void>.delayed(_yieldBetweenJobs);
+        try {
+          await _syncOneJob(job);
+        } finally {
+          _queuedAuditIds.remove(job.auditLogId);
+        }
+        if (_queue.isNotEmpty) {
+          await Future<void>.delayed(_yieldBetweenJobs);
+        }
       }
     } finally {
       _workerRunning = false;
       if (_queue.isNotEmpty) {
         unawaited(_pumpQueue());
       }
+    }
+  }
+
+  @override
+  Future<void> recoverPendingWork() async {
+    if (_recovering || !supabaseAppEnabled) return;
+    _recovering = true;
+    try {
+      final rows = await (_db.select(_db.auditLogs)
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.at),
+              (t) => OrderingTerm.desc(t.id),
+            ]))
+          .get();
+
+      final seenEntityKeys = <String>{};
+      final recovered = <AuditLogEntity>[];
+      for (final row in rows) {
+        final entityId = row.entityId;
+        if (entityId == null || entityId.isEmpty) continue;
+        final key = '${row.entityType}::$entityId';
+        if (!seenEntityKeys.add(key)) continue;
+        recovered.add(row);
+      }
+
+      for (final row in recovered.reversed) {
+        await enqueueAudit(
+          auditLogId: row.id,
+          action: row.action,
+          entityType: row.entityType,
+          entityId: row.entityId,
+        );
+      }
+    } finally {
+      _recovering = false;
     }
   }
 

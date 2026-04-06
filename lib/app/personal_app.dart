@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import '../core/auth/app_session.dart';
@@ -11,6 +12,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/app_data_repository.dart';
+import '../data/sync/remote_sync_service.dart';
 import '../data/sync/supabase_auto_push_scheduler.dart';
 import '../data/sync/supabase_cloud_fidelity_checker.dart';
 import '../data/sync/supabase_remote_sync_service.dart';
@@ -24,6 +26,7 @@ class _LoadedServices {
     required this.sync,
     required this.fidelity,
     required this.repo,
+    required this.remoteSync,
   });
 
   final AppDatabase db;
@@ -31,6 +34,7 @@ class _LoadedServices {
   final SupabaseSyncController sync;
   final SupabaseCloudFidelityChecker fidelity;
   final AppDataRepository repo;
+  final RemoteSyncService remoteSync;
 }
 
 /// Raiz do app: um único [MaterialApp] “de carregamento” e, depois,
@@ -75,10 +79,11 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       final session = AppSession();
       final sync = SupabaseSyncController();
       final fidelity = SupabaseCloudFidelityChecker(db, sync);
+      final remoteSync = SupabaseRemoteSyncService(db, sync);
       final repo = AppDataRepository(
         db,
         session,
-        remoteSync: SupabaseRemoteSyncService(db, sync),
+        remoteSync: remoteSync,
       );
       final bundle = _LoadedServices(
         db: db,
@@ -86,6 +91,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         sync: sync,
         fidelity: fidelity,
         repo: repo,
+        remoteSync: remoteSync,
       );
       if (!mounted) return;
       bootTrace('_loadServices', 'AppDatabase + repo OK → setState(services)');
@@ -120,9 +126,11 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       logLaunch('initializeSupabaseApp erro', error: e, stackTrace: st);
     }
     if (!mounted) return;
-    bootTrace('cloud', 'startHeartbeat + fidelity');
+    bootTrace('cloud', 'recover queue + startHeartbeat + fidelity');
+    await s.remoteSync.recoverPendingWork();
     s.sync.startHeartbeat();
     s.fidelity.start();
+    SupabaseAutoPushScheduler.scheduleAfterResume(db: s.db, sync: s.sync);
   }
 
   void _retryLoad() {
@@ -133,6 +141,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       _loadStarted = false;
     });
     if (old != null) {
+      old.repo.dispose();
       old.fidelity.dispose();
       old.sync.dispose();
       old.db.close();
@@ -150,6 +159,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     WidgetsBinding.instance.removeObserver(this);
     final s = _services;
     if (s != null) {
+      s.repo.dispose();
       s.fidelity.dispose();
       s.sync.dispose();
       s.db.close();
@@ -159,11 +169,29 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    logLifecycle(state);
-    final s = _services;
-    if (state == AppLifecycleState.paused && s != null) {
-      SupabaseAutoPushScheduler.onAppPaused(db: s.db, sync: s.sync);
-    }
+    // Sair do stack síncrono do engine → evita coincidir com avisos Swift
+    // "unsafeForcedSync … Concurrent context" no iOS 26 ao minimizar.
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      logLifecycle(state);
+      final s = _services;
+      if (s == null) return;
+      if (state == AppLifecycleState.resumed) {
+        SchedulerBinding.instance.scheduleTask(
+          () => SupabaseAutoPushScheduler.scheduleAfterResume(
+            db: s.db,
+            sync: s.sync,
+          ),
+          Priority.idle,
+          debugLabel: 'personalApp.supabaseAutoPushAfterResume',
+        );
+      } else if (state == AppLifecycleState.inactive ||
+          state == AppLifecycleState.hidden ||
+          state == AppLifecycleState.paused ||
+          state == AppLifecycleState.detached) {
+        SupabaseAutoPushScheduler.cancelScheduledWork();
+      }
+    });
   }
 
   @override

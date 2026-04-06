@@ -9,6 +9,8 @@ abstract class RemoteSyncService {
     String? entityId,
     Map<String, Object?>? payload,
   });
+
+  Future<void> recoverPendingWork() async {}
 }
 
 class NoOpRemoteSyncService implements RemoteSyncService {
@@ -22,4 +24,7 @@ class NoOpRemoteSyncService implements RemoteSyncService {
     String? entityId,
     Map<String, Object?>? payload,
   }) async {}
+
+  @override
+  Future<void> recoverPendingWork() async {}
 }

@@ -8,8 +8,8 @@ import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import 'supabase_manual_sync_service.dart';
 
-/// Envia todo o SQLite para o Supabase **quando o app vai para segundo plano**
-/// (não logo ao abrir — evita competir com a UI).
+/// Envia todo o SQLite para o Supabase **depois que o app volta a ficar ativo**
+/// e a UI já estabilizou.
 ///
 /// Leituras/gravações do app usam só o SQLite; este job só espelha a nuvem.
 /// Após sucesso: mínimo 30 min até outro envio completo; entre tentativas: 4 min.
@@ -18,15 +18,25 @@ abstract final class SupabaseAutoPushScheduler {
   static const _kLastAttemptMs = 'supabase_auto_full_push_attempt_ms';
   static const _minGapSuccess = Duration(minutes: 30);
   static const _minGapRetry = Duration(minutes: 4);
+  static Timer? _scheduledRun;
 
-  /// Chame em [WidgetsBindingObserver.didChangeAppLifecycleState] com
-  /// [AppLifecycleState.paused] para sincronizar sem impactar uso ativo.
-  static void onAppPaused({
+  /// Chame após `resumed`/boot para evitar trabalho pesado no caminho de fechamento do iOS.
+  static void scheduleAfterResume({
     required AppDatabase db,
     required SupabaseSyncController sync,
+    Duration delay = const Duration(seconds: 8),
   }) {
+    _scheduledRun?.cancel();
     if (!supabaseAppEnabled) return;
-    unawaited(_run(db, sync));
+    _scheduledRun = Timer(delay, () {
+      _scheduledRun = null;
+      unawaited(_run(db, sync));
+    });
+  }
+
+  static void cancelScheduledWork() {
+    _scheduledRun?.cancel();
+    _scheduledRun = null;
   }
 
   static Future<void> _run(
