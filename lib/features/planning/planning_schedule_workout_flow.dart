@@ -479,3 +479,162 @@ Future<void> showPlanningScheduleWorkoutSheet({
     },
   );
 }
+
+/// Modal para copiar o planejamento semanal de outro aluno para o aluno selecionado.
+Future<void> showPlanningCopyWorkoutSheet({
+  required BuildContext context,
+  required AppDataRepository repo,
+  required String targetStudentId,
+  required DateTime weekMonday,
+  required String weekLabel,
+}) {
+  return showAppModalSheet<void>(
+    context: context,
+    title: 'Copiar treino — $weekLabel',
+    builder: (ctx, scroll) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              'Escolha um aluno de origem. O planejamento da semana atual desse aluno '
+              'será copiado para o aluno selecionado, com opção de repetição por semanas.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.52),
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<List<StudentEntity>>(
+              stream: repo.watchStudentsAlphabetical(),
+              builder: (context, snap) {
+                final students = (snap.data ?? [])
+                    .where((s) => s.id != targetStudentId)
+                    .toList();
+                if (snap.connectionState == ConnectionState.waiting &&
+                    students.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+                if (students.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Nenhum outro aluno disponível para copiar treino.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  controller: scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: students.length,
+                  itemBuilder: (context, i) {
+                    final s = students[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () async {
+                            final weeks = await showPlanningWeekCountDialog(
+                              ctx,
+                              groupName: 'Treino de ${s.name}',
+                            );
+                            if (weeks == null || !ctx.mounted) return;
+                            try {
+                              final r = await repo.copyStudentWeekScheduleForWeeks(
+                                sourceStudentId: s.id,
+                                targetStudentId: targetStudentId,
+                                startWeekMonday: weekMonday,
+                                weekCount: weeks,
+                              );
+                              if (!ctx.mounted) return;
+                              Navigator.pop(ctx);
+                              if (!context.mounted) return;
+                              final msg = r.sourceItems == 0
+                                  ? 'O aluno de origem não possui treino no planejamento desta semana.'
+                                  : 'Treino copiado em ${r.weeksWithAdds} semana(s) · ${r.itemsAdded} exercício(s) adicionados.';
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(msg)),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Não foi possível copiar: $e'),
+                                ),
+                              );
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.accentPink.withValues(alpha: 0.08),
+                                  Colors.black.withValues(alpha: 0.2),
+                                ],
+                              ),
+                              border: Border.all(
+                                color: AppColors.cadastroCardBorder.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.content_copy_rounded,
+                                  color: AppColors.splashMint,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    s.name,
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.white.withValues(alpha: 0.35),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}

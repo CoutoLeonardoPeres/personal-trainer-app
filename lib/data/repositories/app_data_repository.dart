@@ -5,7 +5,9 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/auth/app_session.dart';
 import '../../core/utils/calendar_day_utils.dart';
+import '../../core/utils/muscle_group_utils.dart';
 import '../../domain/scoring.dart' as scoring;
+import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
 import '../models/day_workout_performed_set.dart';
 import '../models/programmable_bundle.dart';
@@ -13,6 +15,24 @@ import '../models/week_schedule_row.dart';
 import '../sync/remote_sync_service.dart';
 
 const _uuid = Uuid();
+
+/// Rendimento do treino: soma dos scores dos exercícios ÷ minutos ativos (igual a [completeDayWorkout]).
+double _rendimentoPorMinuto({
+  required DayWorkoutEntity w,
+  required List<DayWorkoutExerciseEntity> exercises,
+}) {
+  final stored = w.workoutScore;
+  if (stored != null) return stored;
+  var sum = 0.0;
+  for (final e in exercises) {
+    sum += e.exerciseScore ?? 0;
+  }
+  final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
+  return scoring.workoutScorePerActiveMinute(
+    exercisesScoreSum: sum,
+    activeDurationSeconds: sec,
+  );
+}
 
 /// Converte repetições do grupo (texto «12-15» ou legado inteiro) para o campo inteiro do planejamento/calendário.
 int _repsIntFromWorkoutGroupLine(WorkoutGroupExerciseEntity line) {
@@ -31,36 +51,15 @@ int _repsIntFromWorkoutGroupLine(WorkoutGroupExerciseEntity line) {
 Expression<bool> _dayWorkoutNotCancelled($DayWorkoutsTable t) =>
     t.status.equals('cancelled').not();
 
-/// Uma linha por exercício: evita o mesmo [exerciseId] repetido no treino do dia
-/// (lista na modal do calendário e demais leituras).
-List<DayWorkoutExerciseEntity> _uniqueDayWorkoutLinesByExerciseId(
-  List<DayWorkoutExerciseEntity> lines,
-) {
-  final seen = <String>{};
-  return [
-    for (final line in lines)
-      if (seen.add(line.exerciseId)) line,
-  ];
-}
-
-/// Preserva a primeira ocorrência de cada exercício ao montar o snapshot do dia.
-List<WeekScheduleRow> _uniqueWeekScheduleRowsByExerciseId(
-  List<WeekScheduleRow> rows,
-) {
-  final seen = <String>{};
-  return [
-    for (final r in rows)
-      if (seen.add(r.item.exerciseId)) r,
-  ];
-}
-
 /// Repositório central: CRUD local, auditoria e fila para Supabase (segundo plano).
 class AppDataRepository {
   AppDataRepository(
     this._db,
     this._session, {
     RemoteSyncService? remoteSync,
-  }) : _remote = remoteSync ?? const NoOpRemoteSyncService();
+  }) : _remote = remoteSync ?? const NoOpRemoteSyncService() {
+    _session.addListener(_clearReactiveStreamCaches);
+  }
 
   final AppDatabase _db;
   final AppSession _session;
@@ -89,6 +88,26 @@ class AppDataRepository {
 
   AppDatabase get db => _db;
   AppSession get session => _session;
+
+  /// Ao mudar perfil (admin / personal / aluno), os streams em cache devem ser recriados;
+  /// senão o primeiro erro de [requireStudentAccess] ou snapshot antigo fica preso para sempre.
+  void _clearReactiveStreamCaches() {
+    _weekScheduleInnerByKey.clear();
+    _weekScheduleLastByKey.clear();
+    _studentWeekWorkoutsInnerByKey.clear();
+    _studentWeekWorkoutsLastByKey.clear();
+    _studentsRawBroadcast = null;
+    _lastStudentsRaw = null;
+    _workoutGroupsInnerBroadcast = null;
+    _lastWorkoutGroups = null;
+    _workoutGroupsSchedulableInnerBroadcast = null;
+    _lastSchedulable = null;
+  }
+
+  /// Remover o listener de [AppSession] antes de descartar o repositório.
+  void dispose() {
+    _session.removeListener(_clearReactiveStreamCaches);
+  }
 
   Future<StudentEntity?> getStudentById(String id) {
     return (_db.select(_db.students)..where((s) => s.id.equals(id)))
@@ -195,18 +214,30 @@ class AppDataRepository {
     String? id,
     required String name,
   }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Nome do grupo muscular não pode ser vazio.');
+    }
+    final norm = normalizeMuscleGroupName(trimmed);
+    final existingRows = await _db.select(_db.muscleGroups).get();
+    for (final g in existingRows) {
+      if (normalizeMuscleGroupName(g.name) != norm) continue;
+      if (id != null && g.id == id) continue;
+      throw DuplicateMuscleGroupNameException(existingDisplayName: g.name);
+    }
+
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
     await _db.into(_db.muscleGroups).insertOnConflictUpdate(
           MuscleGroupsCompanion.insert(
             id: sid,
-            name: name,
+            name: trimmed,
             createdAt: Value(now),
             updatedAt: Value(now),
           ),
         );
     await _audit(id == null ? 'create' : 'update', 'muscle_group',
-        entityId: sid, payload: {'name': name});
+        entityId: sid, payload: {'name': trimmed});
   }
 
   Future<void> deleteMuscleGroup(String id) async {
@@ -227,12 +258,26 @@ class AppDataRepository {
     String? alternativeNote,
     String? alternativeVideoUrl,
   }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Nome do exercício não pode ser vazio.');
+    }
+    final existingRows = await _db.select(_db.exercises).get();
+    final clash = findDuplicateExerciseByNormalizedName(
+      trimmed,
+      existingRows,
+      excludeExerciseId: id,
+    );
+    if (clash != null) {
+      throw DuplicateExerciseNameException(existingDisplayName: clash.name);
+    }
+
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
     await _db.into(_db.exercises).insertOnConflictUpdate(
           ExercisesCompanion.insert(
             id: sid,
-            name: name,
+            name: trimmed,
             muscleGroupId: muscleGroupId,
             videoUrl: Value(videoUrl),
             alternativeNote: Value(alternativeNote),
@@ -1282,8 +1327,9 @@ class AppDataRepository {
   }
 
   /// Inclui o modelo do grupo no planejamento por [weekCount] semanas consecutivas
-  /// a partir de [startWeekMonday] (inclusive). Em cada semana, ignora exercícios
-  /// cujo [exerciseId] já exista no bloco. Itens recebem [sourceWorkoutGroupId].
+  /// a partir de [startWeekMonday] (inclusive). Cada linha de [workoutGroupExercises]
+  /// vira um item (o mesmo [exerciseId] pode repetir, como no cadastro do grupo).
+  /// Itens recebem [sourceWorkoutGroupId].
   Future<({int weeksWithAdds, int itemsAdded})> scheduleWorkoutGroupForWeeks({
     required String studentId,
     required DateTime startWeekMonday,
@@ -1315,7 +1361,6 @@ class AppDataRepository {
       final existing = await (_db.select(_db.weekScheduleItems)
             ..where((i) => i.blockId.equals(blockId)))
           .get();
-      final already = {for (final i in existing) i.exerciseId};
       var maxO = -1;
       for (final i in existing) {
         if (i.sortOrder > maxO) maxO = i.sortOrder;
@@ -1324,8 +1369,6 @@ class AppDataRepository {
       var addedThisWeek = 0;
       await _db.transaction(() async {
         for (final line in lines) {
-          if (already.contains(line.exerciseId)) continue;
-          already.add(line.exerciseId);
           maxO++;
           final sets = line.lastSets ?? 0;
           final reps = _repsIntFromWorkoutGroupLine(line);
@@ -1354,6 +1397,104 @@ class AppDataRepository {
     }
 
     return (weeksWithAdds: weeksWithAdds, itemsAdded: itemsAdded);
+  }
+
+  /// Copia o planejamento da semana [startWeekMonday] de [sourceStudentId] para [targetStudentId]
+  /// e repete por [weekCount] semanas consecutivas.
+  ///
+  /// Mantém a ordem e os detalhes dos itens (sets/reps/carga/needsDetail/sourceWorkoutGroupId).
+  /// Não remove itens já existentes no aluno de destino; apenas adiciona.
+  Future<({int sourceItems, int weeksWithAdds, int itemsAdded})>
+      copyStudentWeekScheduleForWeeks({
+    required String sourceStudentId,
+    required String targetStudentId,
+    required DateTime startWeekMonday,
+    required int weekCount,
+  }) async {
+    await requireStudentAccess(sourceStudentId);
+    await requireStudentAccess(targetStudentId);
+    if (sourceStudentId == targetStudentId) {
+      throw ArgumentError('Selecione outro aluno para copiar o treino.');
+    }
+    if (weekCount < 1 || weekCount > 52) {
+      throw ArgumentError('weekCount deve estar entre 1 e 52.');
+    }
+
+    final start = DateTime(
+      startWeekMonday.year,
+      startWeekMonday.month,
+      startWeekMonday.day,
+    );
+    final sourceBlock = await (_db.select(_db.weekScheduleBlocks)
+          ..where(
+            (b) =>
+                b.studentId.equals(sourceStudentId) &
+                b.weekStartMonday.equals(start),
+          ))
+        .getSingleOrNull();
+    if (sourceBlock == null) {
+      return (sourceItems: 0, weeksWithAdds: 0, itemsAdded: 0);
+    }
+
+    final sourceItems = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.blockId.equals(sourceBlock.id))
+          ..orderBy([(i) => OrderingTerm.asc(i.sortOrder)]))
+        .get();
+    if (sourceItems.isEmpty) {
+      return (sourceItems: 0, weeksWithAdds: 0, itemsAdded: 0);
+    }
+
+    var weeksWithAdds = 0;
+    var itemsAdded = 0;
+    for (var wi = 0; wi < weekCount; wi++) {
+      final mon = start.add(Duration(days: wi * 7));
+      final targetBlockId = await _getOrCreateWeekBlock(targetStudentId, mon);
+      final existing = await (_db.select(_db.weekScheduleItems)
+            ..where((i) => i.blockId.equals(targetBlockId)))
+          .get();
+
+      var maxO = -1;
+      for (final i in existing) {
+        if (i.sortOrder > maxO) maxO = i.sortOrder;
+      }
+
+      var addedThisWeek = 0;
+      await _db.transaction(() async {
+        for (final source in sourceItems) {
+          maxO++;
+          await _db.into(_db.weekScheduleItems).insert(
+                WeekScheduleItemsCompanion.insert(
+                  id: _uuid.v4(),
+                  blockId: targetBlockId,
+                  exerciseId: source.exerciseId,
+                  sourceWorkoutGroupId: Value(source.sourceWorkoutGroupId),
+                  sortOrder: Value(maxO),
+                  sets: Value(source.sets),
+                  reps: Value(source.reps),
+                  loadKg: Value(source.loadKg),
+                  needsDetail: Value(source.needsDetail),
+                ),
+              );
+          addedThisWeek++;
+        }
+      });
+
+      if (addedThisWeek > 0) {
+        weeksWithAdds++;
+        itemsAdded += addedThisWeek;
+        await _audit(
+          'schedule_exercises_week',
+          'week_schedule',
+          entityId: targetBlockId,
+        );
+      }
+    }
+
+    return (
+      sourceItems: sourceItems.length,
+      weeksWithAdds: weeksWithAdds,
+      itemsAdded: itemsAdded,
+    );
   }
 
   Future<void> copyWorkoutGroupToWeekSchedule({
@@ -1532,8 +1673,6 @@ class AppDataRepository {
   }) async {
     await requireStudentAccess(studentId);
     if (rows.isEmpty) throw ArgumentError('rows vazio');
-    final uniqueRows = _uniqueWeekScheduleRowsByExerciseId(rows);
-    if (uniqueRows.isEmpty) throw ArgumentError('rows vazio');
     final dayOnly = DateTime(day.year, day.month, day.day);
     if (isCalendarDateBeforeToday(dayOnly)) {
       throw ArgumentError('Não é possível programar treino em data passada.');
@@ -1556,7 +1695,7 @@ class AppDataRepository {
             ),
           );
       var order = 0;
-      for (final r in uniqueRows) {
+      for (final r in rows) {
         final i = r.item;
         order++;
         await _db.into(_db.dayWorkoutExercises).insert(
@@ -1603,17 +1742,199 @@ class AppDataRepository {
     yield* (_db.select(_db.dayWorkoutExercises)
           ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-        .watch()
-        .map(_uniqueDayWorkoutLinesByExerciseId);
+        .watch();
   }
 
   Future<List<DayWorkoutExerciseEntity>> getDayWorkoutExercises(String dayWorkoutId) async {
     await _requireAccessForDayWorkoutId(dayWorkoutId);
-    final raw = await (_db.select(_db.dayWorkoutExercises)
+    return (_db.select(_db.dayWorkoutExercises)
           ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
         .get();
-    return _uniqueDayWorkoutLinesByExerciseId(raw);
+  }
+
+  /// Score do exercício no último treino concluído anterior (mesmo aluno + exercício).
+  /// Retorna `null` quando não há histórico.
+  Future<double?> previousCompletedExerciseScoreForWorkout({
+    required String dayWorkoutId,
+    required String exerciseId,
+  }) async {
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
+    final current = await _dayWorkoutRow(dayWorkoutId);
+    if (current == null) return null;
+
+    final cutoff = current.completedAt ?? DateTime.now();
+    final join = _db.select(_db.dayWorkoutExercises).join([
+      innerJoin(
+        _db.dayWorkouts,
+        _db.dayWorkouts.id.equalsExp(_db.dayWorkoutExercises.dayWorkoutId),
+      ),
+    ])
+      ..where(
+        _db.dayWorkoutExercises.exerciseId.equals(exerciseId) &
+            _db.dayWorkouts.studentId.equals(current.studentId) &
+            _db.dayWorkouts.status.equals('completed') &
+            _db.dayWorkouts.id.equals(dayWorkoutId).not() &
+            _db.dayWorkouts.completedAt.isSmallerThanValue(cutoff),
+      )
+      ..orderBy([OrderingTerm.desc(_db.dayWorkouts.completedAt)])
+      ..limit(1);
+
+    final row = await join.getSingleOrNull();
+    if (row == null) return null;
+    final line = row.readTable(_db.dayWorkoutExercises);
+    final stored = line.exerciseScore;
+    if (stored != null) return stored;
+    return DayWorkoutPerformedSetCodec.totalVolumeScore(
+      DayWorkoutPerformedSetCodec.decode(line.performedSetsJson),
+    );
+  }
+
+  /// Últimos [limit] treinos **concluídos**, ordenados do mais **antigo** ao mais **novo** (eixo X).
+  /// [scorePerMinute] = Σ score dos exercícios ÷ tempo ativo em minutos.
+  Future<List<({DateTime completedAt, double scorePerMinute})>>
+      lastCompletedWorkoutRendimentoSeries({
+    required String studentId,
+    int limit = 7,
+  }) async {
+    await requireStudentAccess(studentId);
+    final rows = await (_db.select(_db.dayWorkouts)
+          ..where((w) =>
+              w.studentId.equals(studentId) &
+              w.status.equals('completed'))
+          ..orderBy([
+            (w) => OrderingTerm.desc(w.completedAt),
+            (w) => OrderingTerm.desc(w.dayDate),
+          ])
+          ..limit(limit))
+        .get();
+
+    final out = <({DateTime completedAt, double scorePerMinute})>[];
+    for (final w in rows.reversed) {
+      final exercises = await getDayWorkoutExercises(w.id);
+      final score = _rendimentoPorMinuto(w: w, exercises: exercises);
+      final at = w.completedAt ??
+          DateTime(w.dayDate.year, w.dayDate.month, w.dayDate.day);
+      out.add((completedAt: at, scorePerMinute: score));
+    }
+    return out;
+  }
+
+  /// Até [limit] treinos concluídos **mais recentes** em que o score (por minuto ativo)
+  /// **subiu em cada um dos últimos 3 treinos** em sequência: numa janela de 4 treinos
+  /// cronológicos, vale [s₀ < s₁ < s₂ < s₃]; devolve o treino que encerra a sequência ([s₃]).
+  /// Ordem no resultado: cronológica (mais antigo → mais novo no eixo X do gráfico).
+  Future<List<({DateTime completedAt, double scorePerMinute})>>
+      lastWorkoutsWithThreeConsecutiveScoreIncreases({
+    required String studentId,
+    int limit = 10,
+  }) async {
+    await requireStudentAccess(studentId);
+    final rows = await (_db.select(_db.dayWorkouts)
+          ..where((w) =>
+              w.studentId.equals(studentId) &
+              w.status.equals('completed'))
+          ..orderBy([
+            (w) => OrderingTerm.asc(w.completedAt),
+            (w) => OrderingTerm.asc(w.dayDate),
+          ]))
+        .get();
+
+    if (rows.length < 4) return [];
+
+    final scores = <double>[];
+    for (final w in rows) {
+      final exercises = await getDayWorkoutExercises(w.id);
+      scores.add(_rendimentoPorMinuto(w: w, exercises: exercises));
+    }
+
+    final matches = <({DateTime completedAt, double scorePerMinute})>[];
+    for (var i = 3; i < rows.length; i++) {
+      final s0 = scores[i - 3];
+      final s1 = scores[i - 2];
+      final s2 = scores[i - 1];
+      final s3 = scores[i];
+      if (s1 > s0 && s2 > s1 && s3 > s2) {
+        final w = rows[i];
+        final at = w.completedAt ??
+            DateTime(w.dayDate.year, w.dayDate.month, w.dayDate.day);
+        matches.add((completedAt: at, scorePerMinute: s3));
+      }
+    }
+
+    if (matches.isEmpty) return [];
+    if (matches.length <= limit) return matches;
+    return matches.sublist(matches.length - limit);
+  }
+
+  /// Por grupo de treino ([sourceWorkoutGroupId]), o **melhor** score por minuto ativo entre treinos
+  /// **concluídos** cuja data efetiva ([completedAt] ou início do [dayDate]) cai em **[window]** até agora.
+  /// Ordenado do maior score para o menor; no máximo [maxGroups] linhas.
+  Future<List<({String groupId, String groupName, double bestScorePerMinute})>>
+      workoutGroupsBestRendimentoInWindow({
+    required String studentId,
+    required Duration window,
+    int maxGroups = 15,
+  }) async {
+    await requireStudentAccess(studentId);
+    final now = DateTime.now();
+    final cutoff = now.subtract(window);
+
+    final rows = await (_db.select(_db.dayWorkouts)
+          ..where((w) =>
+              w.studentId.equals(studentId) & w.status.equals('completed')))
+        .get();
+
+    DateTime effectiveAt(DayWorkoutEntity w) =>
+        w.completedAt ??
+        DateTime(w.dayDate.year, w.dayDate.month, w.dayDate.day);
+
+    final byGroupBest = <String, double>{};
+    for (final w in rows) {
+      final gid = w.sourceWorkoutGroupId?.trim();
+      if (gid == null || gid.isEmpty) continue;
+      if (effectiveAt(w).isBefore(cutoff)) continue;
+      final exercises = await getDayWorkoutExercises(w.id);
+      final score = _rendimentoPorMinuto(w: w, exercises: exercises);
+      final prev = byGroupBest[gid];
+      if (prev == null || score > prev) {
+        byGroupBest[gid] = score;
+      }
+    }
+
+    if (byGroupBest.isEmpty) return [];
+
+    final sorted = byGroupBest.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final out = <({String groupId, String groupName, double bestScorePerMinute})>[];
+    final take = sorted.length > maxGroups ? maxGroups : sorted.length;
+    for (var i = 0; i < take; i++) {
+      final e = sorted[i];
+      final g = await (_db.select(_db.workoutGroups)
+            ..where((t) => t.id.equals(e.key)))
+          .getSingleOrNull();
+      final name = g?.name.trim();
+      out.add((
+        groupId: e.key,
+        groupName: (name == null || name.isEmpty) ? 'Grupo' : name,
+        bestScorePerMinute: e.value,
+      ));
+    }
+    return out;
+  }
+
+  /// Atalho: melhor score por grupo nas últimas 4 semanas (28 dias).
+  Future<List<({String groupId, String groupName, double bestScorePerMinute})>>
+      workoutGroupsBestRendimentoLast4Weeks({
+    required String studentId,
+    int maxGroups = 15,
+  }) {
+    return workoutGroupsBestRendimentoInWindow(
+      studentId: studentId,
+      window: const Duration(days: 28),
+      maxGroups: maxGroups,
+    );
   }
 
   /// Acrescenta uma série executada (JSON). Não altera [reps] prescrito da linha.
@@ -1729,6 +2050,9 @@ class AppDataRepository {
     await _requireAccessForDayWorkoutId(id);
     final cur = await _dayWorkoutRow(id);
     if (cur == null || cur.status != 'programmed') return;
+    if (isCalendarDateBeforeToday(cur.dayDate)) {
+      throw ArgumentError('Treinos em datas passadas não podem ser iniciados.');
+    }
     final now = DateTime.now();
     await (_db.update(_db.dayWorkouts)..where((w) => w.id.equals(id))).write(
           DayWorkoutsCompanion(
@@ -1822,4 +2146,26 @@ class AppDataRepository {
       'activeSeconds': active,
     });
   }
+}
+
+/// Já existe outro grupo muscular com o mesmo nome (comparação sem diferenciar maiúsculas/minúsculas nem espaços nas pontas).
+class DuplicateMuscleGroupNameException implements Exception {
+  DuplicateMuscleGroupNameException({required this.existingDisplayName});
+
+  final String existingDisplayName;
+
+  @override
+  String toString() =>
+      'DuplicateMuscleGroupNameException: já existe o grupo "$existingDisplayName".';
+}
+
+/// Já existe exercício com o mesmo nome (mesma regra de normalização).
+class DuplicateExerciseNameException implements Exception {
+  DuplicateExerciseNameException({required this.existingDisplayName});
+
+  final String existingDisplayName;
+
+  @override
+  String toString() =>
+      'DuplicateExerciseNameException: já existe o exercício "$existingDisplayName".';
 }

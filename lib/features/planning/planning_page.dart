@@ -176,7 +176,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                   weekMonday: pageMonday,
                                 ),
                                 builder: (context, snap) {
-                                  final rows = _uniqueWeekRowsByExercise(snap.data ?? []);
+                                  final rows = snap.data ?? [];
                                   return StreamBuilder<List<WorkoutGroupEntity>>(
                                     stream: repo.watchWorkoutGroupsAlphabetical(),
                                     builder: (context, gSnap) {
@@ -286,36 +286,48 @@ class _PlanningPageState extends State<PlanningPage> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: studentId == null
-                  ? null
-                  : () {
-                      showPlanningScheduleWorkoutSheet(
-                        context: context,
-                        repo: repo,
-                        studentId: studentId,
-                        weekMonday: weekMonday,
-                        weekLabel: _weekLabel(weekMonday),
-                      );
-                    },
-              icon: const Icon(Icons.event_note),
-              label: const Text('Agendar treino'),
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: studentId == null
+                      ? null
+                      : () {
+                          showPlanningScheduleWorkoutSheet(
+                            context: context,
+                            repo: repo,
+                            studentId: studentId,
+                            weekMonday: weekMonday,
+                            weekLabel: _weekLabel(weekMonday),
+                          );
+                        },
+                  icon: const Icon(Icons.event_note),
+                  label: const Text('Agendar treino'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: studentId == null
+                      ? null
+                      : () {
+                          showPlanningCopyWorkoutSheet(
+                            context: context,
+                            repo: repo,
+                            targetStudentId: studentId,
+                            weekMonday: weekMonday,
+                            weekLabel: _weekLabel(weekMonday),
+                          );
+                        },
+                  icon: const Icon(Icons.content_copy_rounded),
+                  label: const Text('Copiar treino'),
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
-  }
-
-  /// Uma entrada por exercício na semana (primeira ocorrência vence).
-  List<WeekScheduleRow> _uniqueWeekRowsByExercise(List<WeekScheduleRow> rows) {
-    final seen = <String>{};
-    return [
-      for (final r in rows)
-        if (seen.add(r.item.exerciseId)) r,
-    ];
   }
 
   Map<String?, List<WeekScheduleRow>> _partitionWeekRowsByGroup(
