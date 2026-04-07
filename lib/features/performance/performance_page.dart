@@ -250,16 +250,26 @@ class _PerformancePageState extends State<PerformancePage> {
     final student = await repo.getStudentById(studentId);
     if (!context.mounted) return;
     final studentName = student?.name ?? 'Aluno';
-    await showModalBottomSheet<void>(
+    final history = await repo.studentAnamneseHistory(
+      studentId: studentId,
+      limit: 1,
+    );
+    if (!context.mounted) return;
+    final saved = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _AnamneseSheet(
+      barrierDismissible: false,
+      builder: (ctx) => _AnamneseQuizDialog(
         repo: repo,
         studentId: studentId,
         studentName: studentName,
+        initialAnswers: history.isNotEmpty ? history.first.answers : const {},
       ),
     );
+    if (saved == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Questionário de anamnese salvo.')),
+      );
+    }
   }
 
 }
@@ -837,7 +847,7 @@ class _FuturisticReportButton extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Text(
-                'Relatório Inteligente do Aluno',
+                'Relatório',
                 style: TextStyle(
                   color: enabled
                       ? Colors.white.withValues(alpha: 0.95)
@@ -925,149 +935,235 @@ class _FuturisticAnamneseButton extends StatelessWidget {
   }
 }
 
+enum _AnamneseAnswerKind {
+  single,
+  multi,
+  text,
+  number,
+  date,
+}
+
 class _AnamneseQuestion {
   const _AnamneseQuestion({
+    required this.section,
     required this.prompt,
-    required this.options,
+    required this.kind,
+    this.options = const [],
+    this.required = true,
+    this.showWhenPromptEquals,
+    this.showWhenValueEquals,
   });
 
+  final String section;
   final String prompt;
+  final _AnamneseAnswerKind kind;
   final List<String> options;
+  final bool required;
+  final String? showWhenPromptEquals;
+  final String? showWhenValueEquals;
 }
 
 const List<_AnamneseQuestion> _kAnamneseQuestions = [
+  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Data de nascimento', kind: _AnamneseAnswerKind.date),
+  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Gênero', kind: _AnamneseAnswerKind.single, options: ['Masculino', 'Feminino', 'Prefiro não informar', 'Outro']),
+  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Altura (m)', kind: _AnamneseAnswerKind.number),
+  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Peso atual (kg)', kind: _AnamneseAnswerKind.number),
+  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Profissão', kind: _AnamneseAnswerKind.text),
+  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Como é sua rotina diária?', kind: _AnamneseAnswerKind.single, options: ['Sedentária', 'Moderadamente ativa', 'Ativa', 'Muito ativa']),
+
+  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Possui ou já teve alguma lesão muscular, articular ou óssea?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não']),
   _AnamneseQuestion(
-    prompt: 'Objetivo principal',
-    options: [
-      'Emagrecimento',
-      'Hipertrofia',
-      'Condicionamento',
-      'Reabilitação',
-      'Performance esportiva',
-    ],
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Se sim, qual lesão?',
+    kind: _AnamneseAnswerKind.text,
+    required: false,
+    showWhenPromptEquals:
+        'Possui ou já teve alguma lesão muscular, articular ou óssea?',
+    showWhenValueEquals: 'Sim',
   ),
+  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Possui limitação física ou condição médica diagnosticada?', kind: _AnamneseAnswerKind.multi, options: ['Nenhuma', 'Coluna', 'Joelhos', 'Coração', 'Hipertensão', 'Diabetes', 'Outras']),
+  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Usa medicação contínua?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não']),
   _AnamneseQuestion(
-    prompt: 'Dor, limitação articular ou lesão',
-    options: ['Nenhuma', 'Leve', 'Moderada', 'Alta'],
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Se sim, qual medicação?',
+    kind: _AnamneseAnswerKind.text,
+    required: false,
+    showWhenPromptEquals: 'Usa medicação contínua?',
+    showWhenValueEquals: 'Sim',
   ),
+  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Como avalia o nível atual de saúde geral?', kind: _AnamneseAnswerKind.single, options: ['Muito bom', 'Bom', 'Regular', 'Ruim']),
+  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Dorme bem?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Às vezes', 'Raramente', 'Tenho insônia']),
+  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Pratica outra atividade física além da musculação?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não']),
   _AnamneseQuestion(
-    prompt: 'Uso de medicação que impacta treino',
-    options: ['Não', 'Sim (acompanhado)', 'Sim (sem acompanhamento)'],
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Se sim, qual outra atividade?',
+    kind: _AnamneseAnswerKind.text,
+    required: false,
+    showWhenPromptEquals: 'Pratica outra atividade física além da musculação?',
+    showWhenValueEquals: 'Sim',
   ),
-  _AnamneseQuestion(
-    prompt: 'Nível de energia/disposição',
-    options: ['Muito baixa', 'Baixa', 'Média', 'Boa', 'Muito boa'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Qualidade do sono',
-    options: ['Ruim', 'Regular', 'Boa', 'Excelente'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Nível de estresse diário',
-    options: ['Baixo', 'Moderado', 'Alto', 'Muito alto'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Alimentação/hidratação',
-    options: ['Ruim', 'Regular', 'Boa', 'Excelente'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Percepção de esforço recente',
-    options: ['3/10', '4/10', '5/10', '6/10', '7/10', '8/10', '9/10'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Grupo com maior facilidade',
-    options: ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Core', 'Cardio'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Grupo com maior dificuldade',
-    options: ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Core', 'Cardio'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Restrição médica para exercício',
-    options: ['Nenhuma', 'Parcial', 'Importante'],
-  ),
-  _AnamneseQuestion(
-    prompt: 'Prioridade de atenção atual',
-    options: [
-      'Técnica de execução',
-      'Dor/desconforto',
-      'Sono/recuperação',
-      'Estresse',
-      'Alimentação',
-    ],
-  ),
+
+  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Já praticou musculação ou treinos físicos antes?', kind: _AnamneseAnswerKind.single, options: ['Nunca', 'Já treinei, mas faz tempo', '< 6 meses', '> 6 meses', '> 2 anos']),
+  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Como avalia o condicionamento físico atual?', kind: _AnamneseAnswerKind.single, options: ['Iniciante', 'Intermediário', 'Avançado']),
+  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Quantos dias por semana consegue treinar?', kind: _AnamneseAnswerKind.single, options: ['1', '2', '3', '4', '5', '6+']),
+  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Qual horário prefere treinar?', kind: _AnamneseAnswerKind.single, options: ['Manhã', 'Tarde', 'Noite', 'Varia conforme o dia']),
+
+  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'Principal objetivo', kind: _AnamneseAnswerKind.single, options: ['Emagrecimento', 'Ganho de massa', 'Definição', 'Condicionamento', 'Reabilitação', 'Postura', 'Redução de estresse', 'Outro']),
+  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'Parte do corpo que mais gostaria de desenvolver', kind: _AnamneseAnswerKind.multi, options: ['Braços', 'Peito', 'Costas', 'Abdômen', 'Pernas', 'Glúteos', 'Ombros', 'Corpo inteiro']),
+  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'O que mais motiva a treinar?', kind: _AnamneseAnswerKind.multi, options: ['Estética', 'Saúde', 'Desempenho', 'Superação', 'Acompanhamento', 'Estilo de vida']),
+  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'O que desmotiva?', kind: _AnamneseAnswerKind.multi, options: ['Falta de resultados', 'Falta de tempo', 'Treinos repetitivos', 'Dores', 'Falta de acompanhamento', 'Treinar sozinho']),
+  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'Deseja acompanhamento nutricional?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não', 'Talvez futuramente']),
+
+  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Como é sua alimentação?', kind: _AnamneseAnswerKind.single, options: ['Equilibrada', 'Mediana', 'Irregular', 'Tentando melhorar']),
+  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Consome bebidas alcoólicas?', kind: _AnamneseAnswerKind.single, options: ['Não', 'Raramente', 'Socialmente', 'Frequentemente']),
+  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Fuma ou já fumou?', kind: _AnamneseAnswerKind.single, options: ['Nunca', 'Já fumei, parei', 'Fumo atualmente']),
+  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Nível de estresse atual', kind: _AnamneseAnswerKind.single, options: ['Baixo', 'Moderado', 'Alto']),
+  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Como descreve o sono?', kind: _AnamneseAnswerKind.single, options: ['Durmo bem', 'Acordo cansado', 'Dificuldade para dormir', 'Acordo várias vezes']),
+
+  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Onde pretende treinar?', kind: _AnamneseAnswerKind.single, options: ['Academia', 'Casa', 'Ao ar livre', 'Outro']),
+  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Tem acesso a equipamentos?', kind: _AnamneseAnswerKind.single, options: ['Sim, academia completa', 'Alguns em casa', 'Não, só peso corporal']),
+  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Que tipo de treino prefere?', kind: _AnamneseAnswerKind.single, options: ['Musculação', 'Funcional', 'HIIT', 'Alongamento', 'Misto', 'Outro']),
+  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Gosta de acompanhar métricas e resultados?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Às vezes', 'Não']),
+  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Gostaria de plano alimentar ou desafios motivacionais?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Dicas básicas', 'Só o treino']),
+
+  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Descreva o corpo/resultado que gostaria de atingir', kind: _AnamneseAnswerKind.text),
+  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Existe algo que gostaria que o treinador soubesse?', kind: _AnamneseAnswerKind.text, required: false),
+  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Deseja treinos mais', kind: _AnamneseAnswerKind.single, options: ['Intensos', 'Moderados', 'Leves / progressivos']),
+  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Quanto tempo pretende manter o acompanhamento?', kind: _AnamneseAnswerKind.single, options: ['1 mês', '3 meses', '6 meses', 'Indefinido / longo prazo']),
 ];
 
-class _AnamneseSheet extends StatefulWidget {
-  const _AnamneseSheet({
+class _AnamneseQuizDialog extends StatefulWidget {
+  const _AnamneseQuizDialog({
     required this.repo,
     required this.studentId,
     required this.studentName,
+    required this.initialAnswers,
   });
 
   final AppDataRepository repo;
   final String studentId;
   final String studentName;
+  final Map<String, String> initialAnswers;
 
   @override
-  State<_AnamneseSheet> createState() => _AnamneseSheetState();
+  State<_AnamneseQuizDialog> createState() => _AnamneseQuizDialogState();
 }
 
-class _AnamneseSheetState extends State<_AnamneseSheet> {
-  final Map<String, String> _selectedAnswers = {};
+class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
+  final Map<String, String> _answers = {};
+  final Map<String, TextEditingController> _textControllers = {};
+  var _index = 0;
   var _saving = false;
-  var _loading = false;
-  List<({DateTime at, Map<String, String> answers})> _history = const [];
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _answers.addAll(widget.initialAnswers);
+    for (final q in _kAnamneseQuestions) {
+      if (q.kind == _AnamneseAnswerKind.text ||
+          q.kind == _AnamneseAnswerKind.number ||
+          q.kind == _AnamneseAnswerKind.date) {
+        _textControllers[q.prompt] = TextEditingController(
+          text: _answers[q.prompt] ?? '',
+        );
+      }
+    }
+    _syncCalculatedAge();
   }
 
   @override
-  void dispose() => super.dispose();
-
-  Future<void> _loadHistory() async {
-    setState(() => _loading = true);
-    final history = await widget.repo.studentAnamneseHistory(
-      studentId: widget.studentId,
-      limit: 20,
-    );
-    if (!mounted) return;
-    _history = history;
-    if (history.isNotEmpty) {
-      final latest = history.first.answers;
-      for (final q in _kAnamneseQuestions) {
-        final existing = _selectedAnswers[q.prompt]?.trim();
-        if (existing != null && existing.isNotEmpty) continue;
-        _selectedAnswers[q.prompt] = latest[q.prompt] ?? '';
-      }
+  void dispose() {
+    for (final c in _textControllers.values) {
+      c.dispose();
     }
-    setState(() => _loading = false);
+    super.dispose();
   }
 
-  Future<void> _save() async {
-    final answers = <String, String>{};
-    for (final q in _kAnamneseQuestions) {
-      answers[q.prompt] = (_selectedAnswers[q.prompt] ?? '').trim();
+  Set<String> _multiSelected(String prompt) {
+    final raw = (_answers[prompt] ?? '').trim();
+    if (raw.isEmpty) return <String>{};
+    return raw
+        .split(';')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+  }
+
+  bool _shouldShow(_AnamneseQuestion q) {
+    final parent = q.showWhenPromptEquals;
+    final expected = q.showWhenValueEquals;
+    if (parent == null || expected == null) return true;
+    return (_answers[parent] ?? '').trim() == expected;
+  }
+
+  List<_AnamneseQuestion> get _visibleQuestions =>
+      _kAnamneseQuestions.where(_shouldShow).toList();
+
+  DateTime? _parseBirthDate(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return null;
+    try {
+      return DateFormat('dd/MM/yyyy').parseStrict(t);
+    } catch (_) {
+      return null;
     }
+  }
+
+  int _calculateAge(DateTime birthDate, DateTime now) {
+    var age = now.year - birthDate.year;
+    final hadBirthdayThisYear =
+        now.month > birthDate.month ||
+        (now.month == birthDate.month && now.day >= birthDate.day);
+    if (!hadBirthdayThisYear) age--;
+    return age < 0 ? 0 : age;
+  }
+
+  void _syncCalculatedAge() {
+    final birth = _parseBirthDate(_answers['Data de nascimento'] ?? '');
+    if (birth == null) {
+      _answers.remove('Idade (calculada)');
+      return;
+    }
+    final age = _calculateAge(birth, DateTime.now());
+    _answers['Idade (calculada)'] = '$age';
+  }
+
+  bool _isAnswered(_AnamneseQuestion q) {
+    final value = (_answers[q.prompt] ?? '').trim();
+    if (!q.required) return true;
+    return value.isNotEmpty;
+  }
+
+  Future<void> _next() async {
+    final visible = _visibleQuestions;
+    final q = visible[_index];
+    if (!_isAnswered(q)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Responda a pergunta para continuar.')),
+      );
+      return;
+    }
+    if (_index < visible.length - 1) {
+      setState(() => _index++);
+      return;
+    }
+    await _finish();
+  }
+
+  Future<void> _finish() async {
+    _syncCalculatedAge();
     setState(() => _saving = true);
     try {
       await widget.repo.saveStudentAnamnese(
         studentId: widget.studentId,
-        answers: answers,
+        answers: _answers,
       );
       if (!mounted) return;
-      await _loadHistory();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Anamnese salva no histórico.')),
-      );
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível salvar: $e')),
+        SnackBar(content: Text('Falha ao salvar questionário: $e')),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1076,185 +1172,248 @@ class _AnamneseSheetState extends State<_AnamneseSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final maxH = MediaQuery.sizeOf(context).height * 0.92;
-    final fmt = DateFormat('dd/MM/yyyy HH:mm');
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxH),
-      decoration: BoxDecoration(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF0D1328),
-            const Color(0xFF1A1030),
-            AppColors.backgroundDeep,
+    final visible = _visibleQuestions;
+    if (visible.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    if (_index >= visible.length) {
+      _index = visible.length - 1;
+    }
+    final q = visible[_index];
+    final total = visible.length;
+    final progress = (_index + 1) / total;
+    final selected = _multiSelected(q.prompt);
+
+    Widget answerWidget() {
+      if (q.kind == _AnamneseAnswerKind.single) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in q.options)
+              ChoiceChip(
+                label: Text(option),
+                selected: (_answers[q.prompt] ?? '') == option,
+                onSelected: (v) {
+                  setState(() {
+                    _answers[q.prompt] = v ? option : '';
+                    for (final dep in _kAnamneseQuestions.where(
+                      (x) => x.showWhenPromptEquals == q.prompt,
+                    )) {
+                      if (!_shouldShow(dep)) {
+                        _answers.remove(dep.prompt);
+                        _textControllers[dep.prompt]?.text = '';
+                      }
+                    }
+                  });
+                },
+              ),
           ],
-        ),
-        border: Border.all(color: AppColors.accentPink.withValues(alpha: 0.42)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
+        );
+      }
+      if (q.kind == _AnamneseAnswerKind.multi) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in q.options)
+              FilterChip(
+                label: Text(option),
+                selected: selected.contains(option),
+                onSelected: (v) {
+                  final next = {...selected};
+                  if (v) {
+                    next.add(option);
+                  } else {
+                    next.remove(option);
+                  }
+                  setState(() {
+                    _answers[q.prompt] = next.join('; ');
+                  });
+                },
+              ),
+          ],
+        );
+      }
+      if (q.kind == _AnamneseAnswerKind.date) {
+        final controller = _textControllers[q.prompt]!;
+        final selectedDate = _parseBirthDate(controller.text);
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 10),
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.28),
-                  borderRadius: BorderRadius.circular(99),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final now = DateTime.now();
+                final initial =
+                    selectedDate ?? DateTime(now.year - 25, now.month, now.day);
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: initial,
+                  firstDate: DateTime(1900, 1, 1),
+                  lastDate: DateTime.now(),
+                  helpText: 'Data de nascimento',
+                );
+                if (picked == null) return;
+                final formatted = DateFormat('dd/MM/yyyy').format(picked);
+                setState(() {
+                  controller.text = formatted;
+                  _answers[q.prompt] = formatted;
+                  _syncCalculatedAge();
+                });
+              },
+              icon: const Icon(Icons.calendar_month_rounded),
+              label: Text(
+                selectedDate == null
+                    ? 'Selecionar data de nascimento'
+                    : DateFormat('dd/MM/yyyy').format(selectedDate),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if ((_answers['Idade (calculada)'] ?? '').isNotEmpty)
+              Text(
+                'Idade calculada automaticamente: ${_answers['Idade (calculada)']} anos',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 12,
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.fact_check_rounded, color: AppColors.splashMint),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Anamnese · ${widget.studentName}',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textPrimary),
-                  ),
-                ],
+          ],
+        );
+      }
+      final controller = _textControllers[q.prompt]!;
+      return TextField(
+        controller: controller,
+        onChanged: (v) => _answers[q.prompt] = v.trim(),
+        keyboardType: q.kind == _AnamneseAnswerKind.number
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : TextInputType.text,
+        minLines: q.kind == _AnamneseAnswerKind.text ? 2 : 1,
+        maxLines: q.kind == _AnamneseAnswerKind.text ? 4 : 1,
+        style: const TextStyle(color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          hintText: q.kind == _AnamneseAnswerKind.number
+              ? 'Digite um valor numérico'
+              : 'Digite sua resposta',
+        ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0D1328), Color(0xFF1A1030), Color(0xFF0B1C2E)],
+              ),
+              border: Border.all(
+                color: AppColors.accentPink.withValues(alpha: 0.42),
               ),
             ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Preencha na primeira vez e sempre que desejar. Cada envio fica no histórico para comparação e entra no relatório do aluno.',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.62),
-                      fontSize: 12.5,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final q in _kAnamneseQuestions) ...[
-                    Text(
-                      q.prompt,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final option in q.options)
-                          ChoiceChip(
-                            label: Text(option),
-                            selected: (_selectedAnswers[q.prompt] ?? '') == option,
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedAnswers[q.prompt] =
-                                    selected ? option : '';
-                              });
-                            },
+                  Row(
+                    children: [
+                      const Icon(Icons.fact_check_rounded, color: AppColors.splashMint),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Anamnese · ${widget.studentName}',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  const SizedBox(height: 4),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   Text(
-                    'Histórico recente',
+                    q.section,
                     style: TextStyle(
-                      color: AppColors.splashMint.withValues(alpha: 0.95),
-                      fontSize: 14,
+                      color: AppColors.splashMint.withValues(alpha: 0.9),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 4,
+                    backgroundColor: Colors.white.withValues(alpha: 0.12),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Pergunta ${_index + 1} de $total',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.58),
+                      fontSize: 11.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    q.prompt,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  if (_history.isEmpty)
-                    Text(
-                      'Sem respostas salvas ainda.',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 12,
+                  const SizedBox(height: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: SingleChildScrollView(child: answerWidget()),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(context).pop(false),
+                        child: const Text('Cancelar quiz'),
                       ),
-                    )
-                  else
-                    ..._history.take(5).map(
-                          (h) => Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.04),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppColors.splashMint.withValues(alpha: 0.22),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  fmt.format(h.at),
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.68),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  h.answers.entries
-                                      .where((e) => e.value.trim().isNotEmpty)
-                                      .take(2)
-                                      .map((e) => '${e.key}: ${e.value}')
-                                      .join('\n'),
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.78),
-                                    fontSize: 11.5,
-                                    height: 1.3,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      const Spacer(),
+                      if (_index > 0)
+                        OutlinedButton(
+                          onPressed: _saving ? null : () => setState(() => _index--),
+                          child: const Text('Voltar'),
                         ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: _saving ? null : _next,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                _index == total - 1
+                                    ? Icons.check_rounded
+                                    : Icons.arrow_forward_rounded,
+                              ),
+                        label: Text(
+                          _index == total - 1 ? 'Finalizar' : 'Próxima',
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_rounded),
-                label: Text(_saving ? 'Salvando...' : 'Salvar anamnese'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1437,9 +1596,11 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       ..sort((a, b) => b.value.compareTo(a.value));
     final topCaloriesExercises = caloriesByExercise.take(5).toList();
 
-    final latestAnamnese = anamneseHistory.isNotEmpty ? anamneseHistory.first : null;
-    final previousAnamnese =
-        anamneseHistory.length > 1 ? anamneseHistory[1] : null;
+    final anamneseChrono = anamneseHistory.reversed.toList();
+    final latestAnamnese =
+        anamneseChrono.isNotEmpty ? anamneseChrono.last : null;
+    final firstAnamnese =
+        anamneseChrono.isNotEmpty ? anamneseChrono.first : null;
     final periodLabel = _period.label;
     final startDate = snapshots.first.workout.dayDate;
     final endDate = snapshots.last.workout.dayDate;
@@ -1514,22 +1675,78 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
 
     if (latestAnamnese != null) {
       final fmtAnam = DateFormat('dd/MM/yyyy HH:mm');
+      final keys = <String>{};
+      final changeCountByKey = <String, int>{};
+      final answerFrequencyByKey = <String, Map<String, int>>{};
+
+      for (final session in anamneseChrono) {
+        for (final entry in session.answers.entries) {
+          final key = entry.key.trim();
+          final value = entry.value.trim();
+          if (key.isEmpty || value.isEmpty) continue;
+          keys.add(key);
+          final freq = answerFrequencyByKey.putIfAbsent(key, () => <String, int>{});
+          freq[value] = (freq[value] ?? 0) + 1;
+        }
+      }
+      for (var i = 1; i < anamneseChrono.length; i++) {
+        final prev = anamneseChrono[i - 1].answers;
+        final curr = anamneseChrono[i].answers;
+        for (final key in keys) {
+          final a = (prev[key] ?? '').trim();
+          final b = (curr[key] ?? '').trim();
+          if (a.isEmpty || b.isEmpty) continue;
+          if (a != b) {
+            changeCountByKey[key] = (changeCountByKey[key] ?? 0) + 1;
+          }
+        }
+      }
+
+      final changedKeys = changeCountByKey.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
       buffer
         ..writeln('')
         ..writeln('6. Anamnese e comparação')
-        ..writeln('- Última anamnese: ${fmtAnam.format(latestAnamnese.at)}')
-        ..writeln('- Registros de anamnese: ${anamneseHistory.length}');
-      final keys = latestAnamnese.answers.keys.toList();
-      for (final key in keys) {
-        final current = latestAnamnese.answers[key] ?? '';
-        final previous = previousAnamnese?.answers[key];
-        if (previous == null || previous.trim().isEmpty) {
-          buffer.writeln('- $key: $current');
-        } else if (previous.trim() == current.trim()) {
-          buffer.writeln('- $key: $current (sem mudança)');
-        } else {
-          buffer.writeln('- $key: $previous -> $current');
+        ..writeln('- Registros de anamnese: ${anamneseChrono.length}')
+        ..writeln('- Primeira resposta: ${fmtAnam.format(firstAnamnese!.at)}')
+        ..writeln('- Última resposta: ${fmtAnam.format(latestAnamnese.at)}');
+
+      if (changedKeys.isEmpty) {
+        buffer.writeln('- Sem mudanças relevantes entre respostas de anamnese.');
+      } else {
+        buffer.writeln('- Principais mudanças observadas no histórico:');
+        for (final e in changedKeys.take(8)) {
+          final key = e.key;
+          final first = (firstAnamnese.answers[key] ?? '').trim();
+          final last = (latestAnamnese.answers[key] ?? '').trim();
+          if (first.isEmpty && last.isEmpty) continue;
+          buffer.writeln(
+            '- $key: $first -> $last (${e.value} mudança(s) entre quizzes)',
+          );
         }
+      }
+
+      final stable = keys.where((k) => (changeCountByKey[k] ?? 0) == 0).toList();
+      if (stable.isNotEmpty) {
+        buffer.writeln(
+          '- Itens estáveis: ${stable.take(5).join(', ')}'
+          '${stable.length > 5 ? '...' : ''}',
+        );
+      }
+
+      final topBehavior = <String>[];
+      for (final entry in answerFrequencyByKey.entries) {
+        final freq = entry.value.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        if (freq.isNotEmpty && freq.first.value >= 2) {
+          topBehavior.add('${entry.key}: ${freq.first.key} (${freq.first.value}x)');
+        }
+      }
+      if (topBehavior.isNotEmpty) {
+        buffer
+          ..writeln('- Padrões mais frequentes de resposta:')
+          ..writeln(topBehavior.take(5).map((e) => '- $e').join('\n'));
       }
     } else {
       buffer
