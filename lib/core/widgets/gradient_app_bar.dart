@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_colors.dart';
+import 'supabase_traffic_indicator.dart';
 
 const BoxDecoration _kAppBarGradientDecoration = BoxDecoration(
   gradient: LinearGradient(
@@ -26,7 +27,17 @@ AppBar buildGradientAppBar({
   bool automaticallyImplyLeading = true,
   List<Widget>? actions,
   bool? centerTitle,
+  bool showSupabaseTrafficIndicator = true,
 }) {
+  final effectiveActions = <Widget>[
+    if (showSupabaseTrafficIndicator)
+      const Padding(
+        padding: EdgeInsets.only(right: 4),
+        child: Center(child: SupabaseTrafficIndicator()),
+      ),
+    ...?actions,
+  ];
+
   return AppBar(
     key: key,
     toolbarHeight: kAppBarToolbarHeight,
@@ -34,7 +45,7 @@ AppBar buildGradientAppBar({
     leading: leading,
     leadingWidth: leadingWidth,
     automaticallyImplyLeading: automaticallyImplyLeading,
-    actions: actions,
+    actions: effectiveActions,
     centerTitle: centerTitle,
     backgroundColor: Colors.transparent,
     elevation: 0,

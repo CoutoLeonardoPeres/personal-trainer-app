@@ -1082,6 +1082,36 @@ class AppDataRepository {
     await _audit('delete', 'workout_group_exercise', entityId: lineId);
   }
 
+  Future<void> reorderWorkoutGroupExerciseLines({
+    required String workoutGroupId,
+    required List<String> orderedLineIds,
+  }) async {
+    if (orderedLineIds.isEmpty) return;
+    final current = await (_db.select(_db.workoutGroupExercises)
+          ..where((t) => t.workoutGroupId.equals(workoutGroupId)))
+        .get();
+    final currentIds = {for (final r in current) r.id};
+    if (currentIds.length != orderedLineIds.length ||
+        orderedLineIds.any((id) => !currentIds.contains(id))) {
+      throw ArgumentError('Ordem inválida para reordenar exercícios do grupo.');
+    }
+
+    await _db.transaction(() async {
+      for (var i = 0; i < orderedLineIds.length; i++) {
+        final lineId = orderedLineIds[i];
+        await (_db.update(_db.workoutGroupExercises)
+              ..where((t) => t.id.equals(lineId)))
+            .write(WorkoutGroupExercisesCompanion(sortOrder: Value(i)));
+      }
+    });
+    await _audit(
+      'reorder',
+      'workout_group_exercise',
+      entityId: workoutGroupId,
+      payload: {'count': orderedLineIds.length},
+    );
+  }
+
   Stream<List<AuditLogEntity>> watchAuditLogsDesc() {
     if (!_session.isAdminPersonal) {
       return Stream.value(const <AuditLogEntity>[]);
@@ -1096,6 +1126,63 @@ class AppDataRepository {
     }
     return (_db.select(_db.auditLogs)..orderBy([(t) => OrderingTerm.desc(t.at)]))
         .get();
+  }
+
+  Future<void> saveStudentAnamnese({
+    required String studentId,
+    required Map<String, String> answers,
+  }) async {
+    await requireStudentAccess(studentId);
+    final clean = <String, String>{};
+    for (final entry in answers.entries) {
+      final key = entry.key.trim();
+      if (key.isEmpty) continue;
+      clean[key] = entry.value.trim();
+    }
+    await _audit(
+      'anamnese_submit',
+      'anamnese',
+      entityId: studentId,
+      payload: {'answers': clean},
+    );
+  }
+
+  Future<List<({DateTime at, Map<String, String> answers})>>
+      studentAnamneseHistory({
+    required String studentId,
+    int limit = 20,
+  }) async {
+    await requireStudentAccess(studentId);
+    final rows = await (_db.select(_db.auditLogs)
+          ..where((a) =>
+              a.entityType.equals('anamnese') &
+              a.entityId.equals(studentId) &
+              a.action.equals('anamnese_submit'))
+          ..orderBy([(a) => OrderingTerm.desc(a.at)])
+          ..limit(limit))
+        .get();
+
+    final out = <({DateTime at, Map<String, String> answers})>[];
+    for (final row in rows) {
+      final payload = row.payloadJson;
+      if (payload == null || payload.trim().isEmpty) continue;
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is! Map) continue;
+        final rawAnswers = decoded['answers'];
+        if (rawAnswers is! Map) continue;
+        final answers = <String, String>{};
+        for (final e in rawAnswers.entries) {
+          final key = '${e.key}'.trim();
+          if (key.isEmpty) continue;
+          answers[key] = '${e.value ?? ''}'.trim();
+        }
+        out.add((at: row.at, answers: answers));
+      } catch (_) {
+        continue;
+      }
+    }
+    return out;
   }
 
   /// Treinos no dia (calendário): incompletos programados em vermelho na UI.
@@ -1562,6 +1649,58 @@ class AppDataRepository {
     await _audit('delete', 'week_schedule_item', entityId: itemId);
   }
 
+  Future<void> reorderWeekScheduleItemsInGroup({
+    required String blockId,
+    required String? sourceWorkoutGroupId,
+    required List<String> orderedItemIds,
+  }) async {
+    if (orderedItemIds.isEmpty) return;
+    final block = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.id.equals(blockId)))
+        .getSingleOrNull();
+    if (block == null) return;
+    await requireStudentAccess(block.studentId);
+
+    final query = _db.select(_db.weekScheduleItems)
+      ..where((i) => i.blockId.equals(blockId));
+    if (sourceWorkoutGroupId == null) {
+      query.where((i) => i.sourceWorkoutGroupId.isNull());
+    } else {
+      query.where((i) => i.sourceWorkoutGroupId.equals(sourceWorkoutGroupId));
+    }
+    final current = await query.get();
+    final currentIds = {for (final r in current) r.id};
+    if (currentIds.length != orderedItemIds.length ||
+        orderedItemIds.any((id) => !currentIds.contains(id))) {
+      throw ArgumentError('Ordem inválida para reordenar itens da semana.');
+    }
+
+    var baseOrder = 0;
+    if (current.isNotEmpty) {
+      baseOrder = current
+          .map((e) => e.sortOrder)
+          .reduce((a, b) => a < b ? a : b);
+    }
+
+    await _db.transaction(() async {
+      for (var i = 0; i < orderedItemIds.length; i++) {
+        final itemId = orderedItemIds[i];
+        await (_db.update(_db.weekScheduleItems)
+              ..where((x) => x.id.equals(itemId)))
+            .write(WeekScheduleItemsCompanion(sortOrder: Value(baseOrder + i)));
+      }
+    });
+    await _audit(
+      'reorder',
+      'week_schedule_item',
+      entityId: blockId,
+      payload: {
+        'sourceWorkoutGroupId': sourceWorkoutGroupId,
+        'count': orderedItemIds.length,
+      },
+    );
+  }
+
   // ——— Calendário: programar / iniciar / timer / concluir ———
 
   Future<List<WeekScheduleRow>> loadWeekScheduleRows({
@@ -1753,6 +1892,38 @@ class AppDataRepository {
         .get();
   }
 
+  Future<List<({DayWorkoutEntity workout, List<DayWorkoutExerciseEntity> exercises})>>
+      completedWorkoutSnapshots({
+    required String studentId,
+    DateTime? fromInclusive,
+    DateTime? toExclusive,
+  }) async {
+    await requireStudentAccess(studentId);
+    final q = _db.select(_db.dayWorkouts)
+      ..where((w) => w.studentId.equals(studentId) & w.status.equals('completed'));
+    if (fromInclusive != null) {
+      q.where((w) => w.dayDate.isBiggerOrEqualValue(fromInclusive));
+    }
+    if (toExclusive != null) {
+      q.where((w) => w.dayDate.isSmallerThanValue(toExclusive));
+    }
+    q.orderBy([
+      (w) => OrderingTerm.asc(w.dayDate),
+      (w) => OrderingTerm.asc(w.completedAt),
+    ]);
+    final workouts = await q.get();
+    final out =
+        <({DayWorkoutEntity workout, List<DayWorkoutExerciseEntity> exercises})>[];
+    for (final workout in workouts) {
+      final exercises = await (_db.select(_db.dayWorkoutExercises)
+            ..where((e) => e.dayWorkoutId.equals(workout.id))
+            ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
+          .get();
+      out.add((workout: workout, exercises: exercises));
+    }
+    return out;
+  }
+
   /// Score do exercício no último treino concluído anterior (mesmo aluno + exercício).
   /// Retorna `null` quando não há histórico.
   Future<double?> previousCompletedExerciseScoreForWorkout({
@@ -1788,6 +1959,48 @@ class AppDataRepository {
     return DayWorkoutPerformedSetCodec.totalVolumeScore(
       DayWorkoutPerformedSetCodec.decode(line.performedSetsJson),
     );
+  }
+
+  /// Última série registrada para o mesmo aluno + exercício da [lineId].
+  /// Não considera a própria linha atual.
+  Future<DayWorkoutPerformedSet?> lastPerformedSetSeedForLine(
+    String lineId,
+  ) async {
+    await _requireAccessForDayWorkoutLineId(lineId);
+    final line = await (_db.select(_db.dayWorkoutExercises)
+          ..where((e) => e.id.equals(lineId)))
+        .getSingleOrNull();
+    if (line == null) return null;
+
+    final workout = await _dayWorkoutRow(line.dayWorkoutId);
+    if (workout == null) return null;
+
+    final q = _db.select(_db.dayWorkoutExercises).join([
+      innerJoin(
+        _db.dayWorkouts,
+        _db.dayWorkouts.id.equalsExp(_db.dayWorkoutExercises.dayWorkoutId),
+      ),
+    ])
+      ..where(
+        _db.dayWorkoutExercises.id.equals(lineId).not() &
+            _db.dayWorkoutExercises.exerciseId.equals(line.exerciseId) &
+            _db.dayWorkouts.studentId.equals(workout.studentId) &
+            _dayWorkoutNotCancelled(_db.dayWorkouts),
+      )
+      ..orderBy([
+        OrderingTerm.desc(_db.dayWorkouts.dayDate),
+        OrderingTerm.desc(_db.dayWorkouts.updatedAt),
+      ]);
+
+    final rows = await q.get();
+    for (final row in rows) {
+      final exerciseRow = row.readTable(_db.dayWorkoutExercises);
+      final performed = DayWorkoutPerformedSetCodec.decode(
+        exerciseRow.performedSetsJson,
+      );
+      if (performed.isNotEmpty) return performed.last;
+    }
+    return null;
   }
 
   /// Últimos [limit] treinos **concluídos**, ordenados do mais **antigo** ao mais **novo** (eixo X).

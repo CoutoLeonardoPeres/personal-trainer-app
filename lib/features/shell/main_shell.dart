@@ -78,6 +78,7 @@ class _MainShellState extends State<MainShell> {
       extendBody: true,
       backgroundColor: AppColors.background,
       appBar: buildGradientAppBar(
+        showSupabaseTrafficIndicator: false,
         leading: const Padding(
           padding: EdgeInsets.only(left: 4),
           child: Align(

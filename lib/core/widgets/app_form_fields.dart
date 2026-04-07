@@ -19,6 +19,7 @@ class AppTextField extends StatelessWidget {
     this.required = false,
     this.readOnly = false,
     this.onTap,
+    this.onChanged,
     this.suffix,
     this.inputFormatters,
   });
@@ -31,6 +32,7 @@ class AppTextField extends StatelessWidget {
   final bool required;
   final bool readOnly;
   final VoidCallback? onTap;
+  final ValueChanged<String>? onChanged;
   final Widget? suffix;
   final List<TextInputFormatter>? inputFormatters;
 
@@ -43,6 +45,7 @@ class AppTextField extends StatelessWidget {
       maxLines: maxLines,
       readOnly: readOnly,
       onTap: onTap,
+      onChanged: onChanged,
       style: const TextStyle(color: AppColors.textPrimary),
       decoration: InputDecoration(
         labelText: label == null

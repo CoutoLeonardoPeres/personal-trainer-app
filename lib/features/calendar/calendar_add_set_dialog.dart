@@ -520,24 +520,55 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   late final TextEditingController _repsCtrl;
   late final FocusNode _cargaFocus;
   late final FocusNode _repsFocus;
+  late final String _initialLoadText;
+  late final String _initialRepsText;
   var _saving = false;
+
+  String _formatLoadText(double? load) {
+    if (load == null) return '';
+    if (load == load.roundToDouble()) return '${load.toInt()}';
+    return '$load'.replaceAll('.', ',');
+  }
+
+  Future<void> _seedFromPreviousStudentRecord() async {
+    final currentPerformed = DayWorkoutPerformedSetCodec.decode(
+      widget.line.performedSetsJson,
+    );
+    if (currentPerformed.isNotEmpty) return;
+
+    final previous = await widget.repo.lastPerformedSetSeedForLine(
+      widget.line.id,
+    );
+    if (!mounted || previous == null) return;
+
+    final canApplyLoad = _cargaCtrl.text.trim() == _initialLoadText.trim();
+    final canApplyReps = _repsCtrl.text.trim() == _initialRepsText.trim();
+    if (canApplyLoad) {
+      _cargaCtrl.text = _formatLoadText(previous.loadKg);
+    }
+    if (canApplyReps) {
+      _repsCtrl.text = '${previous.reps}';
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    final performed = DayWorkoutPerformedSetCodec.decode(widget.line.performedSetsJson);
+    final performed = DayWorkoutPerformedSetCodec.decode(
+      widget.line.performedSetsJson,
+    );
     final last = performed.isNotEmpty ? performed.last : null;
     final loadSeed = last?.loadKg ?? widget.line.loadKg;
+    final repsSeed = last?.reps ?? widget.line.reps;
     _cargaCtrl = TextEditingController(
-      text: loadSeed != null
-          ? (loadSeed == loadSeed.roundToDouble()
-              ? '${loadSeed.toInt()}'
-              : '$loadSeed'.replaceAll('.', ','))
-          : '',
+      text: _formatLoadText(loadSeed),
     );
-    _repsCtrl = TextEditingController(text: '${widget.line.reps}');
+    _repsCtrl = TextEditingController(text: '$repsSeed');
+    _initialLoadText = _cargaCtrl.text;
+    _initialRepsText = _repsCtrl.text;
     _cargaFocus = FocusNode();
     _repsFocus = FocusNode();
+    _seedFromPreviousStudentRecord();
   }
 
   @override

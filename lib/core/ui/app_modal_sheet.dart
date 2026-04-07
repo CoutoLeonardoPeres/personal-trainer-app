@@ -9,9 +9,11 @@ typedef AppModalContentBuilder = Widget Function(
   ScrollController scrollController,
 );
 
-/// Modal ~93% da altura, arraste vertical, fundo escuro — padrão dos cadastros.
+/// Modal em fração da altura da tela (padrão ~93%), arraste vertical, fundo escuro.
 ///
 /// [futuristicChrome] aplica gradiente, faixa superior e borda azul (calendário / ajustes).
+///
+/// [initialChildSize] / [maxChildSize] controlam quanto o sheet ocupa (ex.: 0.85 no calendário).
 Future<T?> showAppModalSheet<T>({
   required BuildContext context,
   required AppModalContentBuilder builder,
@@ -19,6 +21,9 @@ Future<T?> showAppModalSheet<T>({
   String? subtitle,
   List<Widget>? actions,
   bool futuristicChrome = false,
+  double initialChildSize = 0.93,
+  double minChildSize = 0.35,
+  double maxChildSize = 0.97,
 }) {
   return showModalBottomSheet<T>(
     context: context,
@@ -29,9 +34,9 @@ Future<T?> showAppModalSheet<T>({
         : Colors.black.withValues(alpha: 0.55),
     builder: (ctx) {
       return DraggableScrollableSheet(
-        initialChildSize: 0.93,
-        minChildSize: 0.35,
-        maxChildSize: 0.97,
+        initialChildSize: initialChildSize,
+        minChildSize: minChildSize,
+        maxChildSize: maxChildSize,
         expand: false,
         builder: (context, scrollController) {
           final sheetBody = Column(

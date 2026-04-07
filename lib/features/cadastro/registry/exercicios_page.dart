@@ -9,6 +9,7 @@ import '../../../core/widgets/app_form_fields.dart';
 import '../../../core/widgets/exercise_registry_list_row.dart';
 import '../../../core/widgets/gradient_app_bar.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
+import '../../../data/exercise_name_similarity.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/repositories/app_data_repository.dart';
 
@@ -23,13 +24,19 @@ class ExerciciosPage extends StatelessWidget {
 
   Future<void> _addExercise(BuildContext context, AppDataRepository repo) async {
     final g = await repo.watchMuscleGroupsAlphabetical().first;
+    final all = await repo.watchExercisesAlphabetical().first;
     if (!context.mounted) return;
-    _openForm(context, repo, null, g);
+    _openForm(context, repo, null, g, all);
   }
 
   static const double _rowScale = 0.7;
 
-  Widget _exerciseRowCard(BuildContext context, AppDataRepository repo, ExerciseEntity e) {
+  Widget _exerciseRowCard(
+    BuildContext context,
+    AppDataRepository repo,
+    ExerciseEntity e,
+    List<ExerciseEntity> allExercises,
+  ) {
     final iconEdit = 22 * _rowScale;
     final iconPlay = 28 * _rowScale;
     final iconAlt = 24 * _rowScale;
@@ -40,7 +47,7 @@ class ExerciciosPage extends StatelessWidget {
       onTap: () async {
         final gr = await repo.watchMuscleGroupsAlphabetical().first;
         if (!context.mounted) return;
-        _openForm(context, repo, e, gr);
+        _openForm(context, repo, e, gr, allExercises);
       },
       onSlidableDelete: () async {
         final ok = await confirmDeleteDialog(context, itemName: e.name);
@@ -59,7 +66,7 @@ class ExerciciosPage extends StatelessWidget {
           onPressed: () async {
             final gr = await repo.watchMuscleGroupsAlphabetical().first;
             if (!context.mounted) return;
-            _openForm(context, repo, e, gr);
+            _openForm(context, repo, e, gr, allExercises);
           },
         ),
         if (_hasVideoUrl(e.videoUrl))
@@ -165,7 +172,8 @@ class ExerciciosPage extends StatelessWidget {
                             ),
                           )
                         else
-                          for (final e in exercises) _exerciseRowCard(context, repo, e),
+                          for (final e in exercises)
+                            _exerciseRowCard(context, repo, e, list),
                       ],
                     );
                   },
@@ -178,11 +186,19 @@ class ExerciciosPage extends StatelessWidget {
     );
   }
 
+  String? _muscleGroupName(List<MuscleGroupEntity> groups, String muscleGroupId) {
+    for (final g in groups) {
+      if (g.id == muscleGroupId) return g.name;
+    }
+    return null;
+  }
+
   void _openForm(
     BuildContext context,
     AppDataRepository repo,
     ExerciseEntity? existing,
     List<MuscleGroupEntity> groups,
+    List<ExerciseEntity> allExercises,
   ) {
     final nameC = TextEditingController(text: existing?.name ?? '');
     final videoC = TextEditingController(text: existing?.videoUrl ?? '');
@@ -196,11 +212,97 @@ class ExerciciosPage extends StatelessWidget {
       title: existing == null ? 'Cadastrar novo exercício' : 'Editar exercício',
       builder: (ctx, scroll) => StatefulBuilder(
         builder: (ctx, setSt) {
+          final typedName = nameC.text.trim();
+          final dup = typedName.isEmpty
+              ? null
+              : findDuplicateExerciseByNormalizedName(
+                  typedName,
+                  allExercises,
+                  excludeExerciseId: existing?.id,
+                );
+          var similar = typedName.length < 2
+              ? const <ExerciseEntity>[]
+              : exercisesSimilarForCadastro(
+                  typedName,
+                  allExercises,
+                  excludeExerciseId: existing?.id,
+                );
+          if (dup != null) {
+            similar = similar.where((e) => e.id != dup.id).toList();
+          }
+
           return ListView(
             controller: scroll,
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
             children: [
-              AppTextField(controller: nameC, label: 'Nome do exercício', required: true),
+              AppTextField(
+                controller: nameC,
+                label: 'Nome do exercício',
+                required: true,
+                onChanged: (_) => setSt(() {}),
+              ),
+              if (dup != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.danger.withValues(alpha: 0.45)),
+                  ),
+                  child: Text(
+                    'Este nome já existe: "${dup.name}". Altere o nome ou edite o cadastro existente.',
+                    style: TextStyle(
+                      color: Colors.red.shade200,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+              if (similar.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Nomes parecidos já cadastrados',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...similar.map((e) {
+                  final gName = _muscleGroupName(groups, e.muscleGroupId);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      child: ListTile(
+                        dense: true,
+                        title: Text(
+                          e.name,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        subtitle: gName != null
+                            ? Text(
+                                gName,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.45),
+                                  fontSize: 12,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                  );
+                }),
+              ],
               const SizedBox(height: kCadastroFieldGap),
               DropdownButtonFormField<String>(
                 key: ValueKey(muscleId),
@@ -235,21 +337,38 @@ class ExerciciosPage extends StatelessWidget {
               AppPrimaryButton(
                 label: existing == null ? 'Salvar exercício' : 'Atualizar exercício',
                 icon: Icons.check_rounded,
-                onPressed: () async {
-                  final n = nameC.text.trim();
-                  final m = muscleId;
-                  if (n.isEmpty || m == null) return;
-                  await repo.upsertExercise(
-                    id: existing?.id,
-                    name: n,
-                    muscleGroupId: m,
-                    videoUrl: videoC.text.trim().isEmpty ? null : videoC.text.trim(),
-                    alternativeNote: altC.text.trim().isEmpty ? null : altC.text.trim(),
-                    alternativeVideoUrl:
-                        altVidC.text.trim().isEmpty ? null : altVidC.text.trim(),
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
+                onPressed: dup != null
+                    ? null
+                    : () async {
+                        final n = nameC.text.trim();
+                        final m = muscleId;
+                        if (n.isEmpty || m == null) return;
+                        try {
+                          await repo.upsertExercise(
+                            id: existing?.id,
+                            name: n,
+                            muscleGroupId: m,
+                            videoUrl:
+                                videoC.text.trim().isEmpty ? null : videoC.text.trim(),
+                            alternativeNote:
+                                altC.text.trim().isEmpty ? null : altC.text.trim(),
+                            alternativeVideoUrl: altVidC.text.trim().isEmpty
+                                ? null
+                                : altVidC.text.trim(),
+                          );
+                        } on DuplicateExerciseNameException catch (e) {
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Já existe um exercício com esse nome: "${e.existingDisplayName}".',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
               ),
             ],
           );

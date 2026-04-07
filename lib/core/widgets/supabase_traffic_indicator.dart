@@ -377,17 +377,21 @@ class _DataStreamPainter extends CustomPainter {
     }
 
     final scanX = trackLeft + (t % 1.0) * trackW;
+    final bandTop = 2.0;
+    final bandH = h - 4.0;
+    final scanCy = bandTop + bandH / 2;
+    // Dois tons apenas: `dart:ui` exige length 2 se `colorStops` for omitido.
+    // Radial centrado em scanX dá o mesmo “reflexo” sem linear de 3 cores.
     final scan = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(scanX - 6, 0),
-        Offset(scanX + 6, 0),
+      ..shader = ui.Gradient.radial(
+        Offset(scanX, scanCy),
+        10,
         [
-          Colors.transparent,
-          tint.withValues(alpha: 0.22),
+          tint.withValues(alpha: 0.26),
           Colors.transparent,
         ],
       );
-    canvas.drawRect(Rect.fromLTWH(trackLeft, 2, trackW, h - 4), scan);
+    canvas.drawRect(Rect.fromLTWH(trackLeft, bandTop, trackW, bandH), scan);
   }
 
   @override

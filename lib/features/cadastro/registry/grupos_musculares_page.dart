@@ -81,7 +81,19 @@ class GruposMuscularesPage extends StatelessWidget {
             onPressed: () async {
               final n = nameC.text.trim();
               if (n.isEmpty) return;
-              await repo.upsertMuscleGroup(id: existing?.id, name: n);
+              try {
+                await repo.upsertMuscleGroup(id: existing?.id, name: n);
+              } on DuplicateMuscleGroupNameException catch (e) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Já existe um grupo com esse nome: "${e.existingDisplayName}".',
+                    ),
+                  ),
+                );
+                return;
+              }
               if (ctx.mounted) Navigator.pop(ctx);
             },
           ),

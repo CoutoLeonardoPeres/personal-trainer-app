@@ -13,7 +13,8 @@ enum ExerciseVideoPresentation {
   dialog,
 }
 
-/// Reproduz o link do exercício dentro do app (WebView). YouTube e Vimeo viram embed.
+/// Reproduz o link do exercício dentro do app (WebView).
+/// Para YouTube, preferimos URL "watch" (não "embed") para evitar erro 153 em alguns WebViews iOS.
 class ExerciseVideoWebPage extends StatefulWidget {
   const ExerciseVideoWebPage({
     super.key,
@@ -39,22 +40,25 @@ class ExerciseVideoWebPage extends StatefulWidget {
       return;
     }
     if (!context.mounted) return;
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
-      barrierDismissible: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.72),
-      builder: (dialogContext) {
-        final size = MediaQuery.sizeOf(dialogContext);
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 32),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
+      enableDrag: true,
+      showDragHandle: false,
+      useSafeArea: true,
+      isDismissible: true,
+      builder: (sheetContext) {
+        final size = MediaQuery.sizeOf(sheetContext);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             child: SizedBox(
-              width: size.width - 24,
-              height: size.height * 0.84,
+              width: size.width - 20,
+              height: size.height * 0.9,
               child: ExerciseVideoWebPage(
                 initialUrl: initialUrl,
                 title: title,
@@ -67,7 +71,7 @@ class ExerciseVideoWebPage extends StatefulWidget {
     );
   }
 
-  /// Ajusta URLs conhecidas para player embutido; demais https mantém o endereço original.
+  /// Ajusta URLs conhecidas para formato compatível com WebView; demais https mantêm o endereço original.
   static Uri? normalizeVideoUri(String raw) {
     final t = raw.trim();
     final uri = Uri.tryParse(t);
@@ -81,31 +85,25 @@ class ExerciseVideoWebPage extends StatefulWidget {
     if (host.contains('youtube.com')) {
       final v = uri.queryParameters['v'];
       if (v != null && v.isNotEmpty) {
-        return Uri.parse('https://www.youtube.com/embed/$v?playsinline=1');
+        return Uri.https('www.youtube.com', '/watch', {'v': v});
       }
       if (uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'embed') {
-        return uri;
+        final id = uri.pathSegments.length > 1 ? uri.pathSegments[1] : null;
+        if (id != null && id.isNotEmpty) {
+          return Uri.https('www.youtube.com', '/watch', {'v': id});
+        }
       }
       if (uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'shorts') {
         final id = uri.pathSegments.length > 1 ? uri.pathSegments[1] : null;
         if (id != null && id.isNotEmpty) {
-          return Uri.parse('https://www.youtube.com/embed/$id?playsinline=1');
+          return Uri.https('www.youtube.com', '/watch', {'v': id});
         }
       }
     }
     if (host == 'youtu.be') {
       final id = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
       if (id != null && id.isNotEmpty) {
-        return Uri.parse('https://www.youtube.com/embed/$id?playsinline=1');
-      }
-    }
-
-    if (host.contains('vimeo.com')) {
-      final segs = uri.pathSegments;
-      for (final s in segs) {
-        if (RegExp(r'^\d+$').hasMatch(s)) {
-          return Uri.parse('https://player.vimeo.com/video/$s');
-        }
+        return Uri.https('www.youtube.com', '/watch', {'v': id});
       }
     }
 

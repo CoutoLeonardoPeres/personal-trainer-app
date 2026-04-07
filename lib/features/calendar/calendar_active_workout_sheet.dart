@@ -59,9 +59,9 @@ class _ActiveWorkoutSheetState extends State<ActiveWorkoutSheet> {
     final repo = context.watch<AppDataRepository>();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.92,
+      initialChildSize: 0.85,
       minChildSize: 0.45,
-      maxChildSize: 0.97,
+      maxChildSize: 0.85,
       expand: false,
       builder: (context, scroll) {
         return Container(

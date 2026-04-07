@@ -101,5 +101,28 @@ ThemeData buildAppTheme() {
         side: BorderSide(color: Colors.pinkAccent.withValues(alpha: 0.35)),
       ),
     ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xFF101A2C).withValues(alpha: 0.96),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: AppColors.accentPink.withValues(alpha: 0.55),
+          width: 1.2,
+        ),
+      ),
+      insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      contentTextStyle: const TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        height: 1.25,
+      ),
+      actionTextColor: AppColors.splashMint,
+      disabledActionTextColor: AppColors.textMuted,
+      showCloseIcon: true,
+      closeIconColor: AppColors.splashMint,
+    ),
   );
 }

@@ -223,6 +223,25 @@ class _GroupExercisesBody extends StatelessWidget {
     }
   }
 
+  Future<void> _reorderGroupLines(
+    List<WorkoutGroupExerciseEntity> lines,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (lines.length < 2) return;
+    var target = newIndex;
+    if (target > oldIndex) target -= 1;
+    if (target < 0 || target >= lines.length) return;
+
+    final reordered = List<WorkoutGroupExerciseEntity>.from(lines);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(target, moved);
+    await repo.reorderWorkoutGroupExerciseLines(
+      workoutGroupId: group.id,
+      orderedLineIds: reordered.map((e) => e.id).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<WorkoutGroupExerciseEntity>>(
@@ -291,26 +310,43 @@ class _GroupExercisesBody extends StatelessWidget {
                                 ),
                               ),
                             )
-                          : ListView.builder(
+                          : ReorderableListView.builder(
                               padding: const EdgeInsets.only(bottom: 8),
+                              buildDefaultDragHandles: false,
                               itemCount: lines.length,
+                              onReorder: (oldIndex, newIndex) =>
+                                  _reorderGroupLines(lines, oldIndex, newIndex),
                               itemBuilder: (context, i) {
                                 final line = lines[i];
                                 final ex = idToExercise[line.exerciseId];
                                 final name = ex?.name ?? 'Exercício';
                                 final needs = _wgLineIncomplete(line);
                                 final reps = _wgRepsDisplay(line);
-                                return ExerciseRegistryListRow(
-                                  title: name,
-                                  urgent: needs,
-                                  slidableKey: line.id,
-                                  subtitle:
-                                      'Séries: ${line.lastSets ?? '—'}  Reps: ${reps.isEmpty ? '—' : reps}  '
-                                      'Carga: ${line.lastLoadKg != null ? '${line.lastLoadKg} kg' : '—'}',
-                                  onTap: () => _lineDialog(context, repo, line),
-                                  onSlidableDelete: () async {
-                                    await repo.removeWorkoutGroupExerciseLine(line.id);
-                                  },
+                                return KeyedSubtree(
+                                  key: ValueKey('wg_line_${line.id}'),
+                                  child: ExerciseRegistryListRow(
+                                    title: name,
+                                    urgent: needs,
+                                    slidableKey: line.id,
+                                    subtitle:
+                                        'Séries: ${line.lastSets ?? '—'}  Reps: ${reps.isEmpty ? '—' : reps}  '
+                                        'Carga: ${line.lastLoadKg != null ? '${line.lastLoadKg} kg' : '—'}',
+                                    onTap: () => _lineDialog(context, repo, line),
+                                    onSlidableDelete: () async {
+                                      await repo.removeWorkoutGroupExerciseLine(line.id);
+                                    },
+                                    trailing: [
+                                      if (lines.length > 1)
+                                        ReorderableDragStartListener(
+                                          index: i,
+                                          child: Icon(
+                                            Icons.drag_indicator_rounded,
+                                            color: Colors.white.withValues(alpha: 0.58),
+                                            size: 22 * _iconScale,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 );
                               },
                             ),

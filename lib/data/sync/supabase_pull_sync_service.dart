@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
+import '../../core/utils/muscle_group_utils.dart';
+import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
 
 class SupabasePullTableResult {
@@ -90,6 +92,15 @@ class SupabasePullSyncService {
   final AppDatabase _db;
   final SupabaseSyncController _sync;
 
+  /// IDs remotos de `muscle_groups` que foram ignorados no pull porque o nome
+  /// já existia localmente com outro id — [exercises] devem usar o id canônico local.
+  final Map<String, String> _pullMuscleGroupIdRedirect = {};
+
+  /// IDs remotos de `exercises` ignorados quando o nome normalizado já existia localmente.
+  final Map<String, String> _pullExerciseIdRedirect = {};
+
+  String _resolvedExerciseId(String raw) => _pullExerciseIdRedirect[raw] ?? raw;
+
   Future<SupabasePullReport> pullAllFromRemote() async {
     final started = DateTime.now();
     final tables = <SupabasePullTableResult>[];
@@ -121,6 +132,8 @@ class SupabasePullSyncService {
     final client = Supabase.instance.client;
 
     try {
+      _pullMuscleGroupIdRedirect.clear();
+      _pullExerciseIdRedirect.clear();
       tables.add(await _pullMuscleGroups(client));
       tables.add(await _pullExercises(client));
       tables.add(await _pullGyms(client));
@@ -167,15 +180,32 @@ class SupabasePullSyncService {
   Future<SupabasePullTableResult> _pullMuscleGroups(SupabaseClient c) async {
     try {
       final rows = _rows(await c.from('muscle_groups').select());
+      rows.sort((a, b) => _str(a, 'id').compareTo(_str(b, 'id')));
+      var localList = await _db.select(_db.muscleGroups).get();
       for (final r in rows) {
+        final remoteId = _str(r, 'id');
+        final name = _str(r, 'name').trim();
+        final norm = normalizeMuscleGroupName(name);
+        MuscleGroupEntity? sameNameLocal;
+        for (final g in localList) {
+          if (normalizeMuscleGroupName(g.name) == norm) {
+            sameNameLocal = g;
+            break;
+          }
+        }
+        if (sameNameLocal != null && sameNameLocal.id != remoteId) {
+          _pullMuscleGroupIdRedirect[remoteId] = sameNameLocal.id;
+          continue;
+        }
         await _db.into(_db.muscleGroups).insertOnConflictUpdate(
               MuscleGroupsCompanion.insert(
-                id: _str(r, 'id'),
-                name: _str(r, 'name'),
+                id: remoteId,
+                name: name.isEmpty ? 'Sem nome' : name,
                 createdAt: Value(_ts(r['created_at'])),
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        localList = await _db.select(_db.muscleGroups).get();
       }
       return SupabasePullTableResult('muscle_groups', rows.length, true);
     } catch (e) {
@@ -186,12 +216,30 @@ class SupabasePullSyncService {
   Future<SupabasePullTableResult> _pullExercises(SupabaseClient c) async {
     try {
       final rows = _rows(await c.from('exercises').select());
+      rows.sort((a, b) => _str(a, 'id').compareTo(_str(b, 'id')));
+      var localList = await _db.select(_db.exercises).get();
       for (final r in rows) {
+        final remoteId = _str(r, 'id');
+        final name = _str(r, 'name').trim();
+        final norm = normalizeExerciseName(name);
+        ExerciseEntity? sameNameLocal;
+        for (final e in localList) {
+          if (normalizeExerciseName(e.name) == norm) {
+            sameNameLocal = e;
+            break;
+          }
+        }
+        if (sameNameLocal != null && sameNameLocal.id != remoteId) {
+          _pullExerciseIdRedirect[remoteId] = sameNameLocal.id;
+          continue;
+        }
+        final rawMg = _str(r, 'muscle_group_id');
+        final muscleGroupId = _pullMuscleGroupIdRedirect[rawMg] ?? rawMg;
         await _db.into(_db.exercises).insertOnConflictUpdate(
               ExercisesCompanion.insert(
-                id: _str(r, 'id'),
-                name: _str(r, 'name'),
-                muscleGroupId: _str(r, 'muscle_group_id'),
+                id: remoteId,
+                name: name.isEmpty ? 'Sem nome' : name,
+                muscleGroupId: muscleGroupId,
                 videoUrl: Value(_strOpt(r, 'video_url')),
                 alternativeNote: Value(_strOpt(r, 'alternative_note')),
                 alternativeVideoUrl: Value(_strOpt(r, 'alternative_video_url')),
@@ -199,6 +247,7 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        localList = await _db.select(_db.exercises).get();
       }
       return SupabasePullTableResult('exercises', rows.length, true);
     } catch (e) {
@@ -363,7 +412,7 @@ class SupabasePullSyncService {
               WorkoutGroupExercisesCompanion.insert(
                 id: _str(r, 'id'),
                 workoutGroupId: _str(r, 'workout_group_id'),
-                exerciseId: _str(r, 'exercise_id'),
+                exerciseId: _resolvedExerciseId(_str(r, 'exercise_id')),
                 sortOrder: Value(_intOpt(r, 'sort_order', 0)),
                 lastLoadKg: Value(_dblOpt(r, 'last_load_kg')),
                 lastReps: Value(r['last_reps'] == null ? null : _int(r, 'last_reps')),
@@ -411,7 +460,7 @@ class SupabasePullSyncService {
               WeekScheduleItemsCompanion.insert(
                 id: _str(r, 'id'),
                 blockId: _str(r, 'block_id'),
-                exerciseId: _str(r, 'exercise_id'),
+                exerciseId: _resolvedExerciseId(_str(r, 'exercise_id')),
                 sourceWorkoutGroupId: Value(_strOpt(r, 'source_workout_group_id')),
                 sortOrder: Value(_intOpt(r, 'sort_order', 0)),
                 sets: Value(_intOpt(r, 'sets', 0)),
@@ -465,7 +514,7 @@ class SupabasePullSyncService {
               DayWorkoutExercisesCompanion.insert(
                 id: _str(r, 'id'),
                 dayWorkoutId: _str(r, 'day_workout_id'),
-                exerciseId: _str(r, 'exercise_id'),
+                exerciseId: _resolvedExerciseId(_str(r, 'exercise_id')),
                 sortOrder: Value(_intOpt(r, 'sort_order', 0)),
                 sets: _int(r, 'sets'),
                 reps: _int(r, 'reps'),

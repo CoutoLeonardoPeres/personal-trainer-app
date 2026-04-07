@@ -49,6 +49,23 @@ String _formatVolumeScore(double v) {
   return v.toStringAsFixed(1);
 }
 
+enum _ExerciseScoreTrend {
+  better,
+  worse,
+  same,
+  noPrevious,
+}
+
+class _ExerciseScoreVisual {
+  const _ExerciseScoreVisual({
+    required this.icon,
+    required this.color,
+  });
+
+  final IconData icon;
+  final Color color;
+}
+
 /// Cadastro tem vídeo alternativo ou nota alternativa (nome exibido ao alternar).
 bool calendarExerciseHasAlternative(ExerciseEntity? ex) {
   if (ex == null) return false;
@@ -456,6 +473,8 @@ class CalendarExerciseLineCard extends StatefulWidget {
 
 class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   var _expanded = false;
+  Future<double?>? _previousScoreFuture;
+  String? _comparisonKey;
 
   bool get _usesSlidable =>
       widget.onToggleAlternative != null &&
@@ -481,11 +500,66 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   AppDataRepository? get _repoForPerformedSlidable =>
       _canMutatePerformedSets ? widget.performedSetsRepo : null;
 
+  Future<double?> _resolvePreviousScore() async {
+    final repo = widget.performedSetsRepo;
+    if (repo == null) return null;
+    return repo.previousCompletedExerciseScoreForWorkout(
+      dayWorkoutId: widget.line.dayWorkoutId,
+      exerciseId: widget.line.exerciseId,
+    );
+  }
+
+  Future<double?> _previousScore() {
+    final key = '${widget.line.dayWorkoutId}|${widget.line.exerciseId}';
+    if (_previousScoreFuture != null && _comparisonKey == key) {
+      return _previousScoreFuture!;
+    }
+    _comparisonKey = key;
+    _previousScoreFuture = _resolvePreviousScore();
+    return _previousScoreFuture!;
+  }
+
+  _ExerciseScoreTrend _scoreTrend(double current, double? previous) {
+    if (previous == null) return _ExerciseScoreTrend.noPrevious;
+    const eps = 0.0001;
+    final diff = current - previous;
+    if (diff > eps) return _ExerciseScoreTrend.better;
+    if (diff < -eps) return _ExerciseScoreTrend.worse;
+    return _ExerciseScoreTrend.same;
+  }
+
+  _ExerciseScoreVisual _scoreVisual(_ExerciseScoreTrend trend) {
+    return switch (trend) {
+      _ExerciseScoreTrend.better => const _ExerciseScoreVisual(
+          icon: Icons.sentiment_very_satisfied_rounded,
+          color: Color(0xFF4CAF50),
+        ),
+      _ExerciseScoreTrend.worse => const _ExerciseScoreVisual(
+          icon: Icons.sentiment_very_dissatisfied_rounded,
+          color: Color(0xFFEF5350),
+        ),
+      _ExerciseScoreTrend.same => _ExerciseScoreVisual(
+          icon: Icons.sentiment_neutral_rounded,
+          color: Colors.amberAccent.shade200,
+        ),
+      _ExerciseScoreTrend.noPrevious => const _ExerciseScoreVisual(
+          icon: Icons.sentiment_neutral_rounded,
+          color: Color(0xFF64B5F6),
+        ),
+    };
+  }
+
   @override
   void didUpdateWidget(CalendarExerciseLineCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.line.id != widget.line.id) {
       _expanded = false;
+    }
+    if (oldWidget.line.dayWorkoutId != widget.line.dayWorkoutId ||
+        oldWidget.line.exerciseId != widget.line.exerciseId ||
+        oldWidget.performedSetsRepo != widget.performedSetsRepo) {
+      _comparisonKey = null;
+      _previousScoreFuture = null;
     }
   }
 
@@ -756,44 +830,54 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                               const SizedBox(height: 3),
                               Padding(
                                 padding: const EdgeInsets.only(right: 10),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxWidth: 112,
-                                      ),
-                                      child: Text(
-                                        '${line.sets}×${line.reps}$load',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.left,
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.55,
+                                child: FutureBuilder<double?>(
+                                  future: _previousScore(),
+                                  builder: (context, snap) {
+                                    final trend = _scoreTrend(
+                                      displayScore,
+                                      snap.data,
+                                    );
+                                    final v = _scoreVisual(trend);
+                                    return Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 112,
                                           ),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
+                                          child: Text(
+                                            '${line.sets}×${line.reps}$load',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.left,
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.55,
+                                              ),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Icon(
-                                      Icons.sentiment_neutral_rounded,
-                                      size: 15,
-                                      color: Colors.amberAccent.shade200,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      scoreStr,
-                                      style: TextStyle(
-                                        color: Colors.amberAccent.shade200,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          v.icon,
+                                          size: 15,
+                                          color: v.color,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          scoreStr,
+                                          style: TextStyle(
+                                            color: v.color,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ),
                             ],
@@ -967,6 +1051,19 @@ Future<String?> showFuturisticResumeOrCompleteDialog(BuildContext context) {
   );
 }
 
+Future<String?> showFuturisticStartOrSwapDialog(
+  BuildContext context, {
+  required bool canSwap,
+}) {
+  return showDialog<String>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: true,
+    barrierColor: const Color(0xD9000000),
+    builder: (ctx) => _FuturisticStartOrSwapDialog(canSwap: canSwap),
+  );
+}
+
 /// Confirma conclusão quando ainda há exercícios sem todas as séries registradas.
 Future<bool?> showFuturisticIncompleteBeforeCompleteDialog(
   BuildContext context, {
@@ -1027,9 +1124,9 @@ Future<void> showProgrammedDayExercisesSheet({
     backgroundColor: Colors.transparent,
     builder: (sheetCtx) {
       return DraggableScrollableSheet(
-        initialChildSize: 0.92,
+        initialChildSize: 0.87,
         minChildSize: 0.45,
-        maxChildSize: 0.97,
+        maxChildSize: 0.87,
         expand: false,
         builder: (context, scroll) {
           return _DayExercisesSheetScaffold(
@@ -1075,6 +1172,8 @@ class _DayExercisesSheetScaffoldState
     extends State<_DayExercisesSheetScaffold> {
   var _refreshKey = 0;
   final Map<String, bool> _useAlternativeByLineId = {};
+  final Map<String, int> _executionOrderByLineId = {};
+  var _nextExecutionOrder = 0;
   Timer? _tick;
   var _tickerRunning = false;
 
@@ -1096,9 +1195,35 @@ class _DayExercisesSheetScaffoldState
         : null;
   }
 
-  Future<void> _onStartWorkout(DayWorkoutEntity w) async {
-    await widget.repo.startDayWorkout(w.id);
-    if (mounted) setState(() {});
+  Future<void> _onStartWorkout(
+    BuildContext sheetContext,
+    DayWorkoutEntity w,
+  ) async {
+    final canSwap = widget.onSwapWorkout != null;
+    final action = await showFuturisticStartOrSwapDialog(
+      sheetContext,
+      canSwap: canSwap,
+    );
+    if (!mounted) return;
+    if (action == null || action == 'cancel') return;
+    if (action == 'swap' && canSwap) {
+      if (!sheetContext.mounted) return;
+      await widget.onSwapWorkout!(sheetContext);
+      return;
+    }
+    if (action != 'start') return;
+
+    try {
+      await widget.repo.startDayWorkout(w.id);
+      if (mounted) setState(() {});
+    } on ArgumentError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message ?? 'Não foi possível iniciar o treino.'),
+        ),
+      );
+    }
   }
 
   Future<void> _completeWorkoutAfterChecks(
@@ -1151,6 +1276,38 @@ class _DayExercisesSheetScaffoldState
       if (!sheetContext.mounted) return;
       await _completeWorkoutAfterChecks(sheetContext, w);
     }
+  }
+
+  List<DayWorkoutExerciseEntity> _orderLinesForWorkoutExecution(
+    List<DayWorkoutExerciseEntity> plannedLines,
+    String workoutStatus,
+  ) {
+    final isTraining = workoutStatus == 'started';
+    final plannedIds = {for (final l in plannedLines) l.id};
+    _executionOrderByLineId.removeWhere((id, _) => !plannedIds.contains(id));
+
+    for (final line in plannedLines) {
+      final hasPerformed =
+          DayWorkoutPerformedSetCodec.decode(line.performedSetsJson).isNotEmpty;
+      if (hasPerformed) {
+        _executionOrderByLineId.putIfAbsent(line.id, () => _nextExecutionOrder++);
+      } else {
+        _executionOrderByLineId.remove(line.id);
+      }
+    }
+
+    if (!isTraining) return plannedLines;
+
+    final sorted = List<DayWorkoutExerciseEntity>.from(plannedLines);
+    sorted.sort((a, b) {
+      final aExec = _executionOrderByLineId[a.id];
+      final bExec = _executionOrderByLineId[b.id];
+      if (aExec != null && bExec != null) return aExec.compareTo(bExec);
+      if (aExec != null) return -1;
+      if (bExec != null) return 1;
+      return a.sortOrder.compareTo(b.sortOrder);
+    });
+    return sorted;
   }
 
   @override
@@ -1385,7 +1542,8 @@ class _DayExercisesSheetScaffoldState
                                     width: btnW,
                                     child: _FuturisticSheetStartWorkoutCta(
                                       compact: true,
-                                      onPressed: () => _onStartWorkout(w),
+                                      onPressed: () =>
+                                          _onStartWorkout(context, w),
                                     ),
                                   ),
                               ],
@@ -1420,6 +1578,14 @@ class _DayExercisesSheetScaffoldState
                                                   context, w),
                                         ),
                                       ),
+                                    if (w.status == 'completed')
+                                      SizedBox(
+                                        width: btnW,
+                                        child: _FuturisticSheetCompleteWorkoutCta(
+                                          compact: true,
+                                          isCompleted: true,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -1444,7 +1610,11 @@ class _DayExercisesSheetScaffoldState
                           widget.workout.id,
                         ),
                         builder: (context, lineSnap) {
-                          final lines = lineSnap.data ?? [];
+                          final plannedLines = lineSnap.data ?? [];
+                          final lines = _orderLinesForWorkoutExecution(
+                            plannedLines,
+                            w.status,
+                          );
                           if (lines.isEmpty) {
                             return const Center(
                               child: Text(
@@ -1453,6 +1623,16 @@ class _DayExercisesSheetScaffoldState
                               ),
                             );
                           }
+                          final hasPerformedByLineId = {
+                            for (final line in plannedLines)
+                              line.id: DayWorkoutPerformedSetCodec.decode(
+                                line.performedSetsJson,
+                              ).isNotEmpty,
+                          };
+                          final plannedIndexByLineId = {
+                            for (var i = 0; i < plannedLines.length; i++)
+                              plannedLines[i].id: i,
+                          };
                           return SlidableAutoCloseBehavior(
                             child: ListView.builder(
                               controller: widget.scrollController,
@@ -1462,6 +1642,18 @@ class _DayExercisesSheetScaffoldState
                                 final line = lines[i];
                                 final ex = byId[line.exerciseId];
                                 final name = ex?.name ?? 'Exercício';
+                                final plannedIndex =
+                                    plannedIndexByLineId[line.id] ?? 0;
+                                final hasPerformed =
+                                    hasPerformedByLineId[line.id] ?? false;
+                                final outOfOrder = hasPerformed &&
+                                    plannedLines.any((candidate) {
+                                      final cIndex =
+                                          plannedIndexByLineId[candidate.id] ?? 0;
+                                      if (cIndex >= plannedIndex) return false;
+                                      return !(hasPerformedByLineId[candidate.id] ??
+                                          false);
+                                    });
                                 final useAlt =
                                     _useAlternativeByLineId[line.id] ?? false;
                                 final performed =
@@ -1477,33 +1669,63 @@ class _DayExercisesSheetScaffoldState
                                 );
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 12),
-                                  child: CalendarExerciseLineCard(
-                                    line: line,
-                                    exerciseName: name,
-                                    exercise: ex,
-                                    expandable: true,
-                                    workoutStatus: w.status,
-                                    workoutPaused: w.status == 'started' &&
-                                        w.timerResumeAt == null,
-                                    useAlternative: useAlt,
-                                    onToggleAlternative:
-                                        calendarExerciseHasAlternative(ex) &&
-                                                w.status != 'completed'
-                                            ? () => setState(() {
-                                                  _useAlternativeByLineId[line.id] =
-                                                      !(_useAlternativeByLineId[line.id] ??
-                                                          false);
-                                                })
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (outOfOrder)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(left: 6, bottom: 6),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.swap_vert_circle_rounded,
+                                                color: const Color(0xFFFF8A65)
+                                                    .withValues(alpha: 0.95),
+                                                size: 15,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'Executado fora da ordem planejada',
+                                                style: TextStyle(
+                                                  color: const Color(0xFFFF8A65)
+                                                      .withValues(alpha: 0.95),
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      CalendarExerciseLineCard(
+                                        line: line,
+                                        exerciseName: name,
+                                        exercise: ex,
+                                        expandable: true,
+                                        workoutStatus: w.status,
+                                        workoutPaused: w.status == 'started' &&
+                                            w.timerResumeAt == null,
+                                        useAlternative: useAlt,
+                                        onToggleAlternative:
+                                            calendarExerciseHasAlternative(ex) &&
+                                                    w.status != 'completed'
+                                                ? () => setState(() {
+                                                      _useAlternativeByLineId[line.id] =
+                                                          !(_useAlternativeByLineId[line.id] ??
+                                                              false);
+                                                    })
+                                                : null,
+                                        onAdicionar: canAddSerie
+                                            ? () => showCalendarAddSetDialog(
+                                                  context: context,
+                                                  repo: widget.repo,
+                                                  line: line,
+                                                  exerciseName: dialogTitle,
+                                                )
                                             : null,
-                                    onAdicionar: canAddSerie
-                                        ? () => showCalendarAddSetDialog(
-                                              context: context,
-                                              repo: widget.repo,
-                                              line: line,
-                                              exerciseName: dialogTitle,
-                                            )
-                                        : null,
-                                    performedSetsRepo: widget.repo,
+                                        performedSetsRepo: widget.repo,
+                                      ),
+                                    ],
                                   ),
                                 );
                               },
@@ -1625,27 +1847,45 @@ class _FuturisticSheetStartWorkoutCta extends StatelessWidget {
 /// CTA “Concluir Treino” — roxo/rosa para contrastar com o mint do iniciar.
 class _FuturisticSheetCompleteWorkoutCta extends StatelessWidget {
   const _FuturisticSheetCompleteWorkoutCta({
-    required this.onPressed,
+    this.onPressed,
     this.compact = false,
+    this.isCompleted = false,
   });
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool compact;
+  final bool isCompleted;
 
   static const _violet = Color(0xFF7E57C2);
   static const _magenta = Color(0xFFEC407A);
 
   @override
   Widget build(BuildContext context) {
-    final gradient = const LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [_magenta, _violet],
-    );
+    final gradient = isCompleted
+        ? const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
+          )
+        : const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [_magenta, _violet],
+          );
+    final tooltip =
+        isCompleted ? 'Treino concluído' : 'Concluir Treino';
+    final compactLabel =
+        isCompleted ? 'Treino\nconcluído' : 'Concluir\nTreino';
+    final regularLabel =
+        isCompleted ? 'Treino concluído' : 'Concluir Treino';
+    final textColor = Colors.white.withValues(alpha: 0.95);
+    final shadowColor = isCompleted
+        ? const Color(0xFF2E7D32).withValues(alpha: 0.3)
+        : _magenta.withValues(alpha: 0.35);
 
     if (compact) {
       return Tooltip(
-        message: 'Concluir Treino',
+        message: tooltip,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -1657,7 +1897,7 @@ class _FuturisticSheetCompleteWorkoutCta extends StatelessWidget {
                 gradient: gradient,
                 boxShadow: [
                   BoxShadow(
-                    color: _magenta.withValues(alpha: 0.35),
+                    color: shadowColor,
                     blurRadius: 10,
                     offset: const Offset(0, 3),
                   ),
@@ -1667,11 +1907,11 @@ class _FuturisticSheetCompleteWorkoutCta extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  'Concluir\nTreino',
+                  compactLabel,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.95),
+                    color: textColor,
                     fontWeight: FontWeight.w900,
                     fontSize: 11 * 1.3,
                     height: 1.1,
@@ -1696,7 +1936,7 @@ class _FuturisticSheetCompleteWorkoutCta extends StatelessWidget {
             gradient: gradient,
             boxShadow: [
               BoxShadow(
-                color: _violet.withValues(alpha: 0.4),
+                color: shadowColor,
                 blurRadius: 14,
                 offset: const Offset(0, 5),
               ),
@@ -1705,10 +1945,10 @@ class _FuturisticSheetCompleteWorkoutCta extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Center(
             child: Text(
-              'Concluir Treino',
+              regularLabel,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.95),
+                color: textColor,
                 fontWeight: FontWeight.w900,
                 fontSize: 15 * 1.3,
                 letterSpacing: 0.3,
@@ -1812,6 +2052,253 @@ class _FuturisticSheetPausedWorkoutCta extends StatelessWidget {
                 fontSize: 14 * 1.3,
                 letterSpacing: 0.25,
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FuturisticStartOrSwapDialog extends StatelessWidget {
+  const _FuturisticStartOrSwapDialog({required this.canSwap});
+
+  final bool canSwap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(26),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF0B1324),
+                  Color(0xFF171236),
+                  Color(0xFF0A1A2D),
+                ],
+              ),
+              border: Border.all(
+                color: AppColors.splashMint.withValues(alpha: 0.32),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.splashMint.withValues(alpha: 0.12),
+                  blurRadius: 30,
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.splashMint,
+                        const Color(0xFF26C6DA),
+                        AppColors.accentPink.withValues(alpha: 0.9),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.splashMint.withValues(alpha: 0.22),
+                                  const Color(0xFF26C6DA)
+                                      .withValues(alpha: 0.18),
+                                ],
+                              ),
+                              border: Border.all(
+                                color:
+                                    AppColors.splashMint.withValues(alpha: 0.52),
+                              ),
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(11),
+                              child: Icon(
+                                Icons.rocket_launch_rounded,
+                                color: AppColors.splashMint,
+                                size: 28,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          const Expanded(
+                            child: Text(
+                              'Iniciar este treino?',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                                height: 1.15,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        canSwap
+                            ? 'Você pode iniciar o treino agora ou trocar o grupo de treino antes de começar.'
+                            : 'Confirme para iniciar o treino agora.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.62),
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(context, 'start'),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: const LinearGradient(
+                                colors: [
+                                  AppColors.splashMint,
+                                  Color(0xFF26C6DA),
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      AppColors.splashMint.withValues(alpha: 0.35),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 15,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  color: Colors.black.withValues(alpha: 0.84),
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Iniciar treino',
+                                  style: TextStyle(
+                                    color: Colors.black.withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (canSwap) ...[
+                        const SizedBox(height: 12),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.pop(context, 'swap'),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color:
+                                    const Color(0xFF17133A).withValues(alpha: 0.95),
+                                border: Border.all(
+                                  color: AppColors.accentPink.withValues(
+                                    alpha: 0.55,
+                                  ),
+                                  width: 1.5,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.swap_horiz_rounded,
+                                    color: AppColors.accentPink
+                                        .withValues(alpha: 0.95),
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Trocar grupo de treino',
+                                    style: TextStyle(
+                                      color: AppColors.accentPink
+                                          .withValues(alpha: 0.95),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(context, 'cancel'),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            child: Center(
+                              child: Text(
+                                'Cancelar',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),

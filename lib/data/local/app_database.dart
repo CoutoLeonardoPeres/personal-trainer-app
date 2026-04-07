@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/utils/muscle_group_utils.dart';
 import 'exercise_seed_defaults.dart';
 
 part 'app_database.g.dart';
@@ -304,7 +305,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 13;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -315,6 +316,14 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
       await _seedMuscleGroupsFromDefaults();
       await _seedExercisesFromDefaults();
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS muscle_groups_unique_normalized_name '
+        'ON muscle_groups (lower(trim(name)))',
+      );
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS exercises_unique_normalized_name '
+        'ON exercises (lower(trim(name)))',
+      );
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
@@ -367,24 +376,86 @@ class AppDatabase extends _$AppDatabase {
           'WHERE last_reps IS NOT NULL AND (last_reps_text IS NULL OR last_reps_text = \'\');',
         );
       }
+      if (from < 12) {
+        await _dedupeMuscleGroupsByNormalizedName();
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS muscle_groups_unique_normalized_name '
+          'ON muscle_groups (lower(trim(name)))',
+        );
+      }
+      if (from < 13) {
+        await _dedupeExercisesByNormalizedName();
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS exercises_unique_normalized_name '
+          'ON exercises (lower(trim(name)))',
+        );
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON;');
     },
   );
 
-  /// Insere grupos musculares do [kDefaultMuscleGroupNames] se ainda não existir linha com o mesmo [name].
+  /// Insere grupos de [kDefaultMuscleGroupNames] se não existir nenhum com o mesmo nome normalizado.
   Future<void> _seedMuscleGroupsFromDefaults() async {
     const uuid = Uuid();
+    final existing = await select(muscleGroups).get();
+    final norms = existing.map((e) => normalizeMuscleGroupName(e.name)).toSet();
     for (final name in kDefaultMuscleGroupNames) {
-      final existing = await (select(
-        muscleGroups,
-      )..where((t) => t.name.equals(name))).getSingleOrNull();
-      if (existing != null) continue;
-      await into(
-        muscleGroups,
-      ).insert(MuscleGroupsCompanion.insert(id: uuid.v4(), name: name));
+      final trimmed = name.trim();
+      if (norms.contains(normalizeMuscleGroupName(trimmed))) continue;
+      await into(muscleGroups).insert(
+        MuscleGroupsCompanion.insert(id: uuid.v4(), name: trimmed),
+      );
+      norms.add(normalizeMuscleGroupName(trimmed));
     }
+  }
+
+  /// Une grupos com o mesmo nome (ignorando maiúsculas e espaços) e remonta FKs de [exercises].
+  Future<void> _dedupeMuscleGroupsByNormalizedName() async {
+    await transaction(() async {
+      final all = await select(muscleGroups).get();
+      final byNorm = <String, List<MuscleGroupEntity>>{};
+      for (final g in all) {
+        var k = normalizeMuscleGroupName(g.name);
+        if (k.isEmpty) k = '\u0000empty';
+        byNorm.putIfAbsent(k, () => []).add(g);
+      }
+
+      for (final list in byNorm.values) {
+        if (list.length == 1) {
+          final only = list.single;
+          if (only.name.trim().isEmpty) {
+            await (update(muscleGroups)..where((t) => t.id.equals(only.id))).write(
+              MuscleGroupsCompanion(
+                name: const Value('Sem nome'),
+                updatedAt: Value(DateTime.now()),
+              ),
+            );
+          }
+          continue;
+        }
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        final keeper = list.first;
+        final keeperId = keeper.id;
+        final emptyName = keeper.name.trim().isEmpty;
+        final keeperName = emptyName ? 'Sem nome' : keeper.name.trim();
+        if (emptyName) {
+          await (update(muscleGroups)..where((t) => t.id.equals(keeperId))).write(
+            MuscleGroupsCompanion(
+              name: Value(keeperName),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        }
+        for (var i = 1; i < list.length; i++) {
+          final dup = list[i];
+          await (update(exercises)..where((e) => e.muscleGroupId.equals(dup.id)))
+              .write(ExercisesCompanion(muscleGroupId: Value(keeperId)));
+          await (delete(muscleGroups)..where((t) => t.id.equals(dup.id))).go();
+        }
+      }
+    });
   }
 
   static Value<String?> _optionalSeedText(String? s) {
@@ -398,28 +469,46 @@ class AppDatabase extends _$AppDatabase {
   Future<void> _seedExercisesFromDefaults() async {
     const uuid = Uuid();
     final now = DateTime.now();
+    final muscleRows = await select(muscleGroups).get();
+    MuscleGroupEntity? muscleForSeed(String muscleGroupName) {
+      final norm = normalizeMuscleGroupName(muscleGroupName);
+      for (final g in muscleRows) {
+        if (normalizeMuscleGroupName(g.name) == norm) return g;
+      }
+      return null;
+    }
+
+    var exerciseRows = await select(exercises).get();
+    ExerciseEntity? exerciseForSeedName(String seedName) {
+      final norm = _normExerciseName(seedName);
+      for (final e in exerciseRows) {
+        if (_normExerciseName(e.name) == norm) return e;
+      }
+      return null;
+    }
+
     for (final seed in kDefaultExerciseSeeds) {
-      final mg = await (select(
-        muscleGroups,
-      )..where((t) => t.name.equals(seed.muscleGroupName))).getSingleOrNull();
+      final mg = muscleForSeed(seed.muscleGroupName);
       if (mg == null) continue;
-      final existing = await (select(
-        exercises,
-      )..where((t) => t.name.equals(seed.name))).getSingleOrNull();
+      final existing = exerciseForSeedName(seed.name);
       final v = _optionalSeedText(seed.videoUrl);
       final alt = _optionalSeedText(seed.alternativeName);
       final altV = _optionalSeedText(seed.alternativeVideoUrl);
       if (existing == null) {
+        final newId = uuid.v4();
         await into(exercises).insert(
           ExercisesCompanion.insert(
-            id: uuid.v4(),
-            name: seed.name,
+            id: newId,
+            name: seed.name.trim(),
             muscleGroupId: mg.id,
             videoUrl: v,
             alternativeNote: alt,
             alternativeVideoUrl: altV,
           ),
         );
+        final inserted = await (select(exercises)..where((t) => t.id.equals(newId)))
+            .getSingle();
+        exerciseRows = [...exerciseRows, inserted];
       } else {
         await (update(exercises)..where((t) => t.id.equals(existing.id))).write(
           ExercisesCompanion(
@@ -429,6 +518,105 @@ class AppDatabase extends _$AppDatabase {
             updatedAt: Value(now),
           ),
         );
+      }
+    }
+  }
+
+  static String _normExerciseName(String raw) => raw.trim().toLowerCase();
+
+  /// Une exercícios com o mesmo nome normalizado; remonta FKs em templates, planejamento e treinos.
+  Future<void> _dedupeExercisesByNormalizedName() async {
+    await transaction(() async {
+      final all = await select(exercises).get();
+      final byNorm = <String, List<ExerciseEntity>>{};
+      for (final e in all) {
+        var k = _normExerciseName(e.name);
+        if (k.isEmpty) k = '\u0000empty';
+        byNorm.putIfAbsent(k, () => []).add(e);
+      }
+
+      for (final list in byNorm.values) {
+        if (list.length == 1) {
+          final only = list.single;
+          if (only.name.trim().isEmpty) {
+            await (update(exercises)..where((t) => t.id.equals(only.id))).write(
+              ExercisesCompanion(
+                name: const Value('Sem nome'),
+                updatedAt: Value(DateTime.now()),
+              ),
+            );
+          }
+          continue;
+        }
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        final keeper = list.first;
+        final keeperId = keeper.id;
+        if (keeper.name.trim().isEmpty) {
+          await (update(exercises)..where((t) => t.id.equals(keeperId))).write(
+            ExercisesCompanion(
+              name: const Value('Sem nome'),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        }
+        for (var i = 1; i < list.length; i++) {
+          final dupId = list[i].id;
+          await _repointExerciseReferencesToKeeper(dupId, keeperId);
+          await (delete(exercises)..where((t) => t.id.equals(dupId))).go();
+        }
+      }
+    });
+  }
+
+  Future<void> _repointExerciseReferencesToKeeper(String dupId, String keeperId) async {
+    final wges =
+        await (select(workoutGroupExercises)..where((w) => w.exerciseId.equals(dupId))).get();
+    for (final row in wges) {
+      final clash = await (select(workoutGroupExercises)
+            ..where(
+              (w) =>
+                  w.workoutGroupId.equals(row.workoutGroupId) &
+                  w.exerciseId.equals(keeperId),
+            ))
+          .getSingleOrNull();
+      if (clash != null) {
+        await (delete(workoutGroupExercises)..where((w) => w.id.equals(row.id))).go();
+      } else {
+        await (update(workoutGroupExercises)..where((w) => w.id.equals(row.id)))
+            .write(WorkoutGroupExercisesCompanion(exerciseId: Value(keeperId)));
+      }
+    }
+
+    final wis = await (select(weekScheduleItems)..where((w) => w.exerciseId.equals(dupId))).get();
+    for (final row in wis) {
+      final clash = await (select(weekScheduleItems)
+            ..where(
+              (w) => w.blockId.equals(row.blockId) & w.exerciseId.equals(keeperId),
+            ))
+          .getSingleOrNull();
+      if (clash != null) {
+        await (delete(weekScheduleItems)..where((w) => w.id.equals(row.id))).go();
+      } else {
+        await (update(weekScheduleItems)..where((w) => w.id.equals(row.id)))
+            .write(WeekScheduleItemsCompanion(exerciseId: Value(keeperId)));
+      }
+    }
+
+    final dwes =
+        await (select(dayWorkoutExercises)..where((w) => w.exerciseId.equals(dupId))).get();
+    for (final row in dwes) {
+      final clash = await (select(dayWorkoutExercises)
+            ..where(
+              (w) =>
+                  w.dayWorkoutId.equals(row.dayWorkoutId) &
+                  w.exerciseId.equals(keeperId),
+            ))
+          .getSingleOrNull();
+      if (clash != null) {
+        await (delete(dayWorkoutExercises)..where((w) => w.id.equals(row.id))).go();
+      } else {
+        await (update(dayWorkoutExercises)..where((w) => w.id.equals(row.id)))
+            .write(DayWorkoutExercisesCompanion(exerciseId: Value(keeperId)));
       }
     }
   }

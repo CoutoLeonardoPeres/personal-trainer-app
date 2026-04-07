@@ -374,6 +374,28 @@ class _PlanningPageState extends State<PlanningPage> {
     }
   }
 
+  Future<void> _reorderGroupWeekItems(
+    AppDataRepository repo,
+    List<WeekScheduleRow> groupRows,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (groupRows.length < 2) return;
+    var target = newIndex;
+    if (target > oldIndex) target -= 1;
+    if (target < 0 || target >= groupRows.length) return;
+
+    final reordered = List<WeekScheduleRow>.from(groupRows);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(target, moved);
+
+    await repo.reorderWeekScheduleItemsInGroup(
+      blockId: groupRows.first.item.blockId,
+      sourceWorkoutGroupId: groupRows.first.item.sourceWorkoutGroupId,
+      orderedItemIds: reordered.map((r) => r.item.id).toList(),
+    );
+  }
+
   Widget _weekGroupCard(
     BuildContext context,
     AppDataRepository repo,
@@ -454,16 +476,39 @@ class _PlanningPageState extends State<PlanningPage> {
                   ),
                 ),
               ),
-              for (final r in rows)
+              if (rows.length > 1)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _scheduledExerciseCard(
-                    context,
-                    repo,
-                    pageMonday,
-                    r,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: Text(
+                    'Arraste pelo ícone para alterar a ordem de execução.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 11.5,
+                    ),
                   ),
                 ),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: rows.length,
+                onReorder: (oldIndex, newIndex) =>
+                    _reorderGroupWeekItems(repo, rows, oldIndex, newIndex),
+                itemBuilder: (context, index) {
+                  final r = rows[index];
+                  return KeyedSubtree(
+                    key: ValueKey('week_item_${r.item.id}'),
+                    child: _scheduledExerciseCard(
+                      context,
+                      repo,
+                      pageMonday,
+                      r,
+                      dragIndex: index,
+                      allowReorder: rows.length > 1,
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -475,7 +520,10 @@ class _PlanningPageState extends State<PlanningPage> {
     BuildContext context,
     AppDataRepository repo,
     DateTime weekMonday,
-    WeekScheduleRow row,
+    WeekScheduleRow row, {
+    int? dragIndex,
+    bool allowReorder = false,
+  }
   ) {
     final i = row.item;
     final subtitle = StringBuffer()
@@ -493,9 +541,33 @@ class _PlanningPageState extends State<PlanningPage> {
           await repo.deleteWeekScheduleItem(i.id);
         }
       },
-      trailing: row.needsAttention
-          ? Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 22)
-          : Icon(Icons.check_circle_outline, color: AppColors.accentGreen, size: 22),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          row.needsAttention
+              ? Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppColors.danger,
+                  size: 22,
+                )
+              : Icon(
+                  Icons.check_circle_outline,
+                  color: AppColors.accentGreen,
+                  size: 22,
+                ),
+          if (allowReorder && dragIndex != null) ...[
+            const SizedBox(width: 8),
+            ReorderableDragStartListener(
+              index: dragIndex,
+              child: Icon(
+                Icons.drag_indicator_rounded,
+                color: Colors.white.withValues(alpha: 0.58),
+                size: 22,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

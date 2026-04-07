@@ -15,6 +15,9 @@ install! 'cocoapods', :disable_input_output_paths => true
 # 3) Xcode → Settings → Locations → Derived Data: "Default" (evita caminho legacy).
 # 4) Depois do clean: Product → Clean Build Folder (⇧⌘K).
 # 5) Preferir `flutter run` / `flutter build ios` em vez de Archive direto no Xcode, se possível.
+#
+# Arranque no ícone / sem cabo (iOS 26 + ProMotion): use o Xcode scheme **Runner-Dispositivo**
+# (Release) ou `flutter run --release` — Debug no dispositivo pode crashar fora do debugger (#183900).
 
 project 'Runner', {
   'Debug' => :debug,

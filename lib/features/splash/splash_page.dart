@@ -94,9 +94,8 @@ class _SplashPageState extends State<SplashPage> {
           letterSpacing: 0.4,
         );
 
-    // Sem Image.asset aqui: decode da foto de fundo atrasava o 1º frame ~10s no dispositivo
-    // e gerava “gesture gate timed out” / inversão de prioridade no Skia (font metrics).
-    // Mantemos a imagem com opacidade + filtro baixo para reduzir custo visual no boot.
+    // Foto de fundo com [FilterQuality.low] e overlays sem opacidade total para o 1º frame
+    // não travar no decode e a imagem continuar visível (gradiente opaco cobria tudo).
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -113,15 +112,15 @@ class _SplashPageState extends State<SplashPage> {
               color: Colors.black.withValues(alpha: 0.34),
             ),
           ),
-          const DecoratedBox(
+          DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.background,
-                  AppColors.backgroundDeep,
-                  AppColors.background,
+                  AppColors.background.withValues(alpha: 0.45),
+                  AppColors.backgroundDeep.withValues(alpha: 0.55),
+                  AppColors.background.withValues(alpha: 0.45),
                 ],
               ),
             ),

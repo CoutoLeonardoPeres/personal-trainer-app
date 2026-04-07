@@ -66,6 +66,8 @@ class CalendarDayFlow {
     await showAppModalSheet<void>(
       context: context,
       title: label,
+      initialChildSize: 0.85,
+      maxChildSize: 0.85,
       builder: (ctx, scroll) => FuturisticBackground(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -161,6 +163,8 @@ class CalendarDayFlow {
     await showAppModalSheet<void>(
       context: context,
       title: 'O que programar?',
+      initialChildSize: 0.85,
+      maxChildSize: 0.85,
       builder: (ctx, scroll) => FuturisticBackground(
         child: ListView.builder(
           controller: scroll,
@@ -199,6 +203,8 @@ class CalendarDayFlow {
           'Alterações valem só para este dia no calendário. '
           'Deslize o card do exercício para a esquerda para excluir.',
       futuristicChrome: true,
+      initialChildSize: 0.85,
+      maxChildSize: 0.85,
       builder: (ctx, scroll) => _ProgramSnapshotEditor(
         scrollController: scroll,
         bundle: bundle,
@@ -258,6 +264,8 @@ class CalendarDayFlow {
     await showAppModalSheet<void>(
       context: context,
       title: label,
+      initialChildSize: 0.85,
+      maxChildSize: 0.85,
       builder: (ctx, scroll) => FuturisticBackground(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
