@@ -925,19 +925,77 @@ class _FuturisticAnamneseButton extends StatelessWidget {
   }
 }
 
-const List<String> _kAnamneseQuestions = [
-  'Qual é o objetivo principal do aluno neste momento?',
-  'Há dor atual, limitação articular ou lesão prévia relevante?',
-  'Usa alguma medicação que impacte treino, pressão ou frequência cardíaca?',
-  'Como está o nível de energia e disposição na rotina?',
-  'Como avalia a qualidade do sono na última semana?',
-  'Nível de estresse diário (baixo, moderado, alto)?',
-  'Como está a alimentação e hidratação atualmente?',
-  'Qual a percepção de esforço nos treinos recentes (0 a 10)?',
-  'Quais exercícios o aluno relata maior facilidade?',
-  'Quais exercícios ou grupos musculares têm mais dificuldade?',
-  'Há alguma restrição médica atual para exercícios?',
-  'Observações adicionais para o plano de treino.',
+class _AnamneseQuestion {
+  const _AnamneseQuestion({
+    required this.prompt,
+    required this.options,
+  });
+
+  final String prompt;
+  final List<String> options;
+}
+
+const List<_AnamneseQuestion> _kAnamneseQuestions = [
+  _AnamneseQuestion(
+    prompt: 'Objetivo principal',
+    options: [
+      'Emagrecimento',
+      'Hipertrofia',
+      'Condicionamento',
+      'Reabilitação',
+      'Performance esportiva',
+    ],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Dor, limitação articular ou lesão',
+    options: ['Nenhuma', 'Leve', 'Moderada', 'Alta'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Uso de medicação que impacta treino',
+    options: ['Não', 'Sim (acompanhado)', 'Sim (sem acompanhamento)'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Nível de energia/disposição',
+    options: ['Muito baixa', 'Baixa', 'Média', 'Boa', 'Muito boa'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Qualidade do sono',
+    options: ['Ruim', 'Regular', 'Boa', 'Excelente'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Nível de estresse diário',
+    options: ['Baixo', 'Moderado', 'Alto', 'Muito alto'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Alimentação/hidratação',
+    options: ['Ruim', 'Regular', 'Boa', 'Excelente'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Percepção de esforço recente',
+    options: ['3/10', '4/10', '5/10', '6/10', '7/10', '8/10', '9/10'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Grupo com maior facilidade',
+    options: ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Core', 'Cardio'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Grupo com maior dificuldade',
+    options: ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Core', 'Cardio'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Restrição médica para exercício',
+    options: ['Nenhuma', 'Parcial', 'Importante'],
+  ),
+  _AnamneseQuestion(
+    prompt: 'Prioridade de atenção atual',
+    options: [
+      'Técnica de execução',
+      'Dor/desconforto',
+      'Sono/recuperação',
+      'Estresse',
+      'Alimentação',
+    ],
+  ),
 ];
 
 class _AnamneseSheet extends StatefulWidget {
@@ -956,7 +1014,7 @@ class _AnamneseSheet extends StatefulWidget {
 }
 
 class _AnamneseSheetState extends State<_AnamneseSheet> {
-  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, String> _selectedAnswers = {};
   var _saving = false;
   var _loading = false;
   List<({DateTime at, Map<String, String> answers})> _history = const [];
@@ -964,19 +1022,11 @@ class _AnamneseSheetState extends State<_AnamneseSheet> {
   @override
   void initState() {
     super.initState();
-    for (final q in _kAnamneseQuestions) {
-      _controllers[q] = TextEditingController();
-    }
     _loadHistory();
   }
 
   @override
-  void dispose() {
-    for (final c in _controllers.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
+  void dispose() => super.dispose();
 
   Future<void> _loadHistory() async {
     setState(() => _loading = true);
@@ -989,8 +1039,9 @@ class _AnamneseSheetState extends State<_AnamneseSheet> {
     if (history.isNotEmpty) {
       final latest = history.first.answers;
       for (final q in _kAnamneseQuestions) {
-        if (_controllers[q]!.text.trim().isNotEmpty) continue;
-        _controllers[q]!.text = latest[q] ?? '';
+        final existing = _selectedAnswers[q.prompt]?.trim();
+        if (existing != null && existing.isNotEmpty) continue;
+        _selectedAnswers[q.prompt] = latest[q.prompt] ?? '';
       }
     }
     setState(() => _loading = false);
@@ -999,7 +1050,7 @@ class _AnamneseSheetState extends State<_AnamneseSheet> {
   Future<void> _save() async {
     final answers = <String, String>{};
     for (final q in _kAnamneseQuestions) {
-      answers[q] = _controllers[q]!.text.trim();
+      answers[q.prompt] = (_selectedAnswers[q.prompt] ?? '').trim();
     }
     setState(() => _saving = true);
     try {
@@ -1101,7 +1152,7 @@ class _AnamneseSheetState extends State<_AnamneseSheet> {
                   const SizedBox(height: 10),
                   for (final q in _kAnamneseQuestions) ...[
                     Text(
-                      q,
+                      q.prompt,
                       style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 13,
@@ -1109,17 +1160,22 @@ class _AnamneseSheetState extends State<_AnamneseSheet> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    TextField(
-                      controller: _controllers[q],
-                      minLines: 2,
-                      maxLines: 4,
-                      style: const TextStyle(color: AppColors.textPrimary),
-                      decoration: InputDecoration(
-                        hintText: 'Resposta...',
-                        hintStyle: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                        ),
-                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final option in q.options)
+                          ChoiceChip(
+                            label: Text(option),
+                            selected: (_selectedAnswers[q.prompt] ?? '') == option,
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedAnswers[q.prompt] =
+                                    selected ? option : '';
+                              });
+                            },
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                   ],
