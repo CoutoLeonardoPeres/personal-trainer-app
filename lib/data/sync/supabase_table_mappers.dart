@@ -47,6 +47,8 @@ Map<String, dynamic> supabasePersonal(PersonalEntity e) => {
       'state_uf': e.stateUf,
       'cep': e.cep,
       'email': e.email,
+      'phone_commercial': e.phoneCommercial,
+      'phone_mobile': e.phoneMobile,
       'must_change_password': e.mustChangePassword,
       'password_hash': e.passwordHash,
       'is_admin': e.isAdmin,
@@ -68,6 +70,8 @@ Map<String, dynamic> supabaseStudent(StudentEntity e) => {
       'city': e.city,
       'state_uf': e.stateUf,
       'cep': e.cep,
+      'phone_commercial': e.phoneCommercial,
+      'phone_mobile': e.phoneMobile,
       'must_change_password': e.mustChangePassword,
       'password_hash': e.passwordHash,
       'created_by_personal_id': e.createdByPersonalId,
@@ -105,6 +109,10 @@ Map<String, dynamic> supabaseWorkoutGroupExercise(WorkoutGroupExerciseEntity e) 
       'last_reps': e.lastReps,
       'last_reps_text': e.lastRepsText,
       'last_sets': e.lastSets,
+      'rest_between_sets_sec': e.restBetweenSetsSec,
+      'training_method_id': e.trainingMethodId,
+      'combo_id': e.comboId,
+      'updated_at': supabaseTs(e.updatedAt),
     };
 
 Map<String, dynamic> supabaseWeekBlock(WeekScheduleBlockEntity e) => {
@@ -123,8 +131,13 @@ Map<String, dynamic> supabaseWeekItem(WeekScheduleItemEntity e) => {
       'sort_order': e.sortOrder,
       'sets': e.sets,
       'reps': e.reps,
+      'reps_text': e.repsText,
       'load_kg': e.loadKg,
       'needs_detail': e.needsDetail,
+      'rest_between_sets_sec': e.restBetweenSetsSec,
+      'training_method_id': e.trainingMethodId,
+      'combo_id': e.comboId,
+      'updated_at': supabaseTs(e.updatedAt),
     };
 
 Map<String, dynamic> supabaseDayWorkout(DayWorkoutEntity e) => {
@@ -141,6 +154,8 @@ Map<String, dynamic> supabaseDayWorkout(DayWorkoutEntity e) => {
       'created_at': supabaseTs(e.createdAt),
       'updated_at': supabaseTs(e.updatedAt),
       'source_workout_group_id': e.sourceWorkoutGroupId,
+      'watch_calories_kcal': e.watchCaloriesKcal,
+      'watch_avg_heart_rate_bpm': e.watchAvgHeartRateBpm,
     };
 
 Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
@@ -150,9 +165,14 @@ Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
       'sort_order': e.sortOrder,
       'sets': e.sets,
       'reps': e.reps,
+      'reps_text': e.repsText,
       'load_kg': e.loadKg,
       'exercise_score': e.exerciseScore,
       'performed_sets_json': e.performedSetsJson,
+      'rest_between_sets_sec': e.restBetweenSetsSec,
+      'training_method_id': e.trainingMethodId,
+      'combo_id': e.comboId,
+      'updated_at': supabaseTs(e.updatedAt),
     };
 
 Map<String, dynamic> supabaseAuditLog(AuditLogEntity e) => {

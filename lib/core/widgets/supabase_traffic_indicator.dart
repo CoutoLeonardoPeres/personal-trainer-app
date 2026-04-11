@@ -28,7 +28,7 @@ class SupabaseTrafficIndicator extends StatelessWidget {
         return Tooltip(
           message: fid == null ? '$base$trafficHint' : '$base$trafficHint\n$fid',
           child: Padding(
-            padding: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsets.only(right: 2),
             child: _SupabaseLinkBadge(sync: sync),
           ),
         );
@@ -47,8 +47,9 @@ class _SupabaseLinkBadge extends StatelessWidget {
     if (!sync.supabaseConfigured) {
       return const _UnconfiguredChip();
     }
-    final online = sync.cloudStatus == SupabaseCloudStatus.online;
-    final traffic = sync.isTrafficActive && online;
+    // Vermelho só após falha de contacto com o Supabase; verde em "unknown"/online.
+    final contactFailed = sync.cloudStatus == SupabaseCloudStatus.offline;
+    final traffic = sync.isTrafficActive;
     final upload = sync.trafficKind == SupabaseTrafficKind.uploading;
 
     if (traffic) {
@@ -57,7 +58,7 @@ class _SupabaseLinkBadge extends StatelessWidget {
         coreColor: AppColors.accentGreen,
       );
     }
-    return _IdleLinkCapsule(online: online);
+    return _IdleLinkCapsule(contactFailed: contactFailed);
   }
 }
 
@@ -90,19 +91,19 @@ class _UnconfiguredChip extends StatelessWidget {
 const Color _kDisconnectedRed = Color(0xFFE53935);
 
 class _IdleLinkCapsule extends StatelessWidget {
-  const _IdleLinkCapsule({required this.online});
+  const _IdleLinkCapsule({required this.contactFailed});
 
-  final bool online;
+  final bool contactFailed;
 
   @override
   Widget build(BuildContext context) {
-    final c = online ? AppColors.accentGreen : _kDisconnectedRed;
+    final c = contactFailed ? _kDisconnectedRed : AppColors.accentGreen;
     return CustomPaint(
       painter: _CapsuleChromePainter(
         phase: 0,
         animateChrome: false,
         accent: c,
-        dim: !online,
+        dim: contactFailed,
       ),
       child: SizedBox(
         width: _kCapsuleW,

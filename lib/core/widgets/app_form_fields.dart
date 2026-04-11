@@ -8,6 +8,126 @@ import 'brazil_state_picker_sheet.dart';
 /// Espaço vertical entre campos nos modais de cadastro.
 const double kCadastroFieldGap = 14;
 
+/// Cartão de campo: borda azul e preenchimento azul bem levemente translúcido.
+InputDecoration cadastroFieldInputDecoration({
+  String? labelText,
+  bool requiredField = false,
+  String? hintText,
+  Widget? suffixIcon,
+}) {
+  final blue = AppColors.cadastroCardBorder;
+  final r = BorderRadius.circular(14);
+  final edge = BorderSide(color: blue.withValues(alpha: 0.44));
+  return InputDecoration(
+    labelText: labelText == null
+        ? null
+        : (requiredField ? '$labelText *' : labelText),
+    hintText: hintText,
+    suffixIcon: suffixIcon,
+    filled: true,
+    fillColor: blue.withValues(alpha: 0.048),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    border: OutlineInputBorder(borderRadius: r, borderSide: edge),
+    enabledBorder: OutlineInputBorder(borderRadius: r, borderSide: edge),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: r,
+      borderSide: BorderSide(color: blue.withValues(alpha: 0.78), width: 1.1),
+    ),
+    labelStyle: TextStyle(
+      color: AppColors.splashMint.withValues(alpha: 0.82),
+      fontSize: 14,
+    ),
+    floatingLabelStyle: TextStyle(
+      color: blue.withValues(alpha: 0.88),
+      fontWeight: FontWeight.w600,
+      fontSize: 12.5,
+    ),
+    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.34)),
+  );
+}
+
+/// Campo de busca nos modais de cadastro: preenchimento e borda mais visíveis que [cadastroFieldInputDecoration].
+InputDecoration cadastroSearchFieldInputDecoration({
+  required String labelText,
+  String? hintText,
+  Widget? suffixIcon,
+}) {
+  final blue = AppColors.cadastroCardBorder;
+  final r = BorderRadius.circular(14);
+  final borderColor = blue.withValues(alpha: 0.72);
+  return InputDecoration(
+    labelText: labelText,
+    hintText: hintText,
+    suffixIcon: suffixIcon,
+    filled: true,
+    fillColor: const Color(0xFF141C2C),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    border: OutlineInputBorder(
+      borderRadius: r,
+      borderSide: BorderSide(color: borderColor, width: 1.35),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: r,
+      borderSide: BorderSide(color: borderColor, width: 1.35),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: r,
+      borderSide: BorderSide(
+        color: AppColors.splashMint.withValues(alpha: 0.9),
+        width: 1.4,
+      ),
+    ),
+    labelStyle: TextStyle(
+      color: AppColors.registrySectionBlueLight.withValues(alpha: 0.95),
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+    ),
+    floatingLabelStyle: TextStyle(
+      color: blue.withValues(alpha: 0.95),
+      fontSize: 12.5,
+      fontWeight: FontWeight.w700,
+    ),
+    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.42)),
+  );
+}
+
+class AppCadastroSearchField extends StatelessWidget {
+  const AppCadastroSearchField({
+    super.key,
+    required this.controller,
+    required this.label,
+    this.hint,
+    this.onChanged,
+    this.autofocus = false,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String? hint;
+  final ValueChanged<String>? onChanged;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      autofocus: autofocus,
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+      cursorColor: AppColors.splashMint,
+      onChanged: onChanged,
+      decoration: cadastroSearchFieldInputDecoration(
+        labelText: label,
+        hintText: hint,
+        suffixIcon: Icon(
+          Icons.search_rounded,
+          color: AppColors.splashMint.withValues(alpha: 0.88),
+          size: 22,
+        ),
+      ),
+    );
+  }
+}
+
 class AppTextField extends StatelessWidget {
   const AppTextField({
     super.key,
@@ -47,10 +167,9 @@ class AppTextField extends StatelessWidget {
       onTap: onTap,
       onChanged: onChanged,
       style: const TextStyle(color: AppColors.textPrimary),
-      decoration: InputDecoration(
-        labelText: label == null
-            ? null
-            : (required ? '$label *' : label),
+      decoration: cadastroFieldInputDecoration(
+        labelText: label,
+        requiredField: required,
         hintText: hint,
         suffixIcon: suffix,
       ),
@@ -92,8 +211,9 @@ class BrazilStateDropdown extends StatelessWidget {
         splashColor: AppColors.splashMint.withValues(alpha: 0.12),
         highlightColor: AppColors.accentPink.withValues(alpha: 0.06),
         child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: requiredField ? '$label *' : label,
+          decoration: cadastroFieldInputDecoration(
+            labelText: label,
+            requiredField: requiredField,
             suffixIcon: Icon(
               Icons.map_rounded,
               color: AppColors.splashMint.withValues(alpha: 0.88),

@@ -22,6 +22,7 @@ class MetodosTreinoPage extends StatelessWidget {
         onPressed: () => _form(context, repo, null),
         child: const Icon(Icons.add),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: FuturisticBackground(
         child: StreamBuilder<List<TrainingMethodEntity>>(
           stream: repo.watchTrainingMethodsAlphabetical(),
@@ -36,15 +37,18 @@ class MetodosTreinoPage extends StatelessWidget {
               );
             }
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
               itemCount: list.length,
               itemBuilder: (_, i) {
                 final e = list[i];
+                void openForm() => _form(context, repo, e);
                 return SwipeableRegistryCard(
                   slidableKey: e.id,
                   title: e.method,
                   subtitle: e.description,
-                  onEdit: () => _form(context, repo, e),
+                  onEdit: openForm,
+                  onCardTap: openForm,
+                  showEditOnSwipe: false,
                   onDelete: () async {
                     final ok = await confirmDeleteDialog(context, itemName: e.method);
                     if (ok == true && context.mounted) {

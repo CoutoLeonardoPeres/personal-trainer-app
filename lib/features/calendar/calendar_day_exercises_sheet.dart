@@ -2,18 +2,31 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/auth/app_session.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/combo_line_grouping_utils.dart';
+import '../../core/utils/day_workout_line_order_utils.dart';
+import '../../core/utils/reps_text_utils.dart';
+import '../../core/ui/keyboard_bottom_inset.dart';
 import '../../core/ui/exercise_video_web_page.dart';
 import '../../core/widgets/swipeable_registry_card.dart'
     show kRegistrySlidableActionRadius;
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
+import 'watch_metrics_after_workout_dialog.dart';
 import 'calendar_add_set_dialog.dart'
     show
         showCalendarAddSetDialog,
         showCalendarEditPerformedSetDialog,
         showFuturisticDeletePerformedSeriesDialog;
+
+String _dweRepsCompact(DayWorkoutExerciseEntity line) {
+  final d = dayWorkoutRepsDisplay(line);
+  return d.isNotEmpty ? d : '${line.reps}';
+}
 
 /// Data longa em português, ex.: "31 de março de 2026"
 String formatCalendarDayHeaderDate(DateTime d) {
@@ -36,6 +49,16 @@ String formatCalendarDayHeaderDate(DateTime d) {
   return '${d.day} de $monthTitle de ${d.year}';
 }
 
+/// Linhas com série registrada primeiro, por ordem do primeiro registro
+/// ([DayWorkoutPerformedSet.loggedAtMs]); sem registro ou legado sem timestamp ficam por [sortOrder].
+List<DayWorkoutExerciseEntity> orderDayWorkoutLinesByPerformedHistory(
+  List<DayWorkoutExerciseEntity> plannedLines,
+) {
+  final sorted = List<DayWorkoutExerciseEntity>.from(plannedLines)
+    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  return orderDayWorkoutLinesByPerformedHistoryRespectingCombos(sorted);
+}
+
 String _workoutTagLabel(String status) => switch (status) {
   'programmed' => 'Treino programado',
   'started' => 'Em andamento',
@@ -43,24 +66,87 @@ String _workoutTagLabel(String status) => switch (status) {
   _ => 'Treino',
 };
 
+/// Valor do score no canto direito do card do cabeçalho (ícone + número), alinhado ao layout único da sheet.
+Widget _calendarSheetHeaderScoreValue({
+  required DayWorkoutEntity workout,
+  required AppDataRepository repo,
+}) {
+  const iconSize = 16.0;
+  const valueFs = 17.0;
+  final iconColor = AppColors.splashMint.withValues(alpha: 0.9);
+  final valueStyle = TextStyle(
+    fontWeight: FontWeight.w800,
+    fontSize: valueFs,
+    height: 1.05,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
+  if (workout.status == 'completed') {
+    final has = workout.workoutScore != null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+        const SizedBox(width: 4),
+        Text(
+          has ? workout.workoutScore!.toStringAsFixed(2) : '—',
+          style: valueStyle.copyWith(
+            color: has
+                ? AppColors.splashMint.withValues(alpha: 0.98)
+                : AppColors.textMuted,
+          ),
+        ),
+      ],
+    );
+  }
+  if (workout.status == 'started') {
+    return StreamBuilder<List<DayWorkoutExerciseEntity>>(
+      stream: repo.watchDayWorkoutExercises(workout.id),
+      builder: (context, lineSnap) {
+        final exerciseLines = lineSnap.data ?? [];
+        final score = repo.liveWorkoutScorePerActiveMinute(
+          workout: workout,
+          exercises: exerciseLines,
+        );
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+            const SizedBox(width: 4),
+            Text(
+              score.toStringAsFixed(2),
+              style: valueStyle.copyWith(
+                color: AppColors.splashMint.withValues(alpha: 0.98),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+      const SizedBox(width: 4),
+      Text(
+        '—',
+        style: valueStyle.copyWith(color: AppColors.textMuted),
+      ),
+    ],
+  );
+}
+
 String _formatVolumeScore(double v) {
   if (v == 0) return '0';
   if (v == v.roundToDouble()) return '${v.toInt()}';
   return v.toStringAsFixed(1);
 }
 
-enum _ExerciseScoreTrend {
-  better,
-  worse,
-  same,
-  noPrevious,
-}
+enum _ExerciseScoreTrend { better, worse, same, noPrevious }
 
 class _ExerciseScoreVisual {
-  const _ExerciseScoreVisual({
-    required this.icon,
-    required this.color,
-  });
+  const _ExerciseScoreVisual({required this.icon, required this.color});
 
   final IconData icon;
   final Color color;
@@ -94,14 +180,19 @@ String calendarExerciseDisplayName(
 const double _kSerieScale = 0.7;
 
 /// Linha prescrita (meta da série) — fundo azulado.
+/// [onTap] na próxima série vazia: mesmo fluxo do botão Adicionar.
 class _SeriePrescribedRow extends StatelessWidget {
   const _SeriePrescribedRow({
     required this.index,
-    required this.prescribedReps,
+    required this.prescribedRepsLabel,
+    this.onTap,
+    this.tooltip,
   });
 
   final int index;
-  final int prescribedReps;
+  final String prescribedRepsLabel;
+  final VoidCallback? onTap;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -116,14 +207,16 @@ class _SeriePrescribedRow extends StatelessWidget {
     final fsVal = 15 * _kSerieScale;
     final fsIdx = 13 * _kSerieScale;
 
-    return Container(
+    final borderColor = onTap != null
+        ? const Color(0xFF42A5F5).withValues(alpha: 0.75)
+        : const Color(0xFF2A5080).withValues(alpha: 0.55);
+
+    final body = Container(
       padding: EdgeInsets.symmetric(horizontal: padH, vertical: padV),
       decoration: BoxDecoration(
         color: const Color(0xFF1A2744),
         borderRadius: BorderRadius.circular(r),
-        border: Border.all(
-          color: const Color(0xFF2A5080).withValues(alpha: 0.55),
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
@@ -154,7 +247,7 @@ class _SeriePrescribedRow extends StatelessWidget {
             ),
           ),
           Text(
-            '$prescribedReps',
+            prescribedRepsLabel,
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -164,6 +257,24 @@ class _SeriePrescribedRow extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap == null) return body;
+
+    Widget ink = Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(r),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(r),
+        child: body,
+      ),
+    );
+
+    final t = tooltip;
+    if (t != null && t.isNotEmpty) {
+      return Tooltip(message: t, child: ink);
+    }
+    return ink;
   }
 }
 
@@ -303,10 +414,9 @@ Future<bool?> _confirmDialogAfterSlidableClose(
       completer.complete(null);
       return;
     }
-    showConfirm(ctx).then(
-      completer.complete,
-      onError: (_) => completer.complete(null),
-    );
+    showConfirm(
+      ctx,
+    ).then(completer.complete, onError: (_) => completer.complete(null));
   });
   return completer.future;
 }
@@ -347,9 +457,9 @@ class _PerformedSerieSlidableRow extends StatelessWidget {
         performedIndex: performedIndex,
       );
       if (snackAnchor.mounted) {
-        ScaffoldMessenger.of(snackAnchor).showSnackBar(
-          const SnackBar(content: Text('Série removida.')),
-        );
+        ScaffoldMessenger.of(
+          snackAnchor,
+        ).showSnackBar(const SnackBar(content: Text('Série removida.')));
       }
     } on ArgumentError catch (e) {
       if (snackAnchor.mounted) {
@@ -432,6 +542,7 @@ class CalendarExerciseLineCard extends StatefulWidget {
     this.useAlternative = false,
     this.onToggleAlternative,
     this.performedSetsRepo,
+    this.executedOutOfPlannedOrder = false,
   });
 
   final DayWorkoutExerciseEntity line;
@@ -453,6 +564,9 @@ class CalendarExerciseLineCard extends StatefulWidget {
 
   /// Quando não nulo, séries registradas na expansão ganham slide Editar/Excluir.
   final AppDataRepository? performedSetsRepo;
+
+  /// Exercício com série registrada antes de algum anterior ainda não iniciado na ordem planejada.
+  final bool executedOutOfPlannedOrder;
 
   static bool hasMainVideoLink(ExerciseEntity? ex) {
     if (ex == null) return false;
@@ -477,8 +591,7 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   String? _comparisonKey;
 
   bool get _usesSlidable =>
-      widget.onToggleAlternative != null &&
-      widget.workoutStatus != 'completed';
+      widget.onToggleAlternative != null && widget.workoutStatus != 'completed';
 
   List<DayWorkoutPerformedSet> get _performed =>
       DayWorkoutPerformedSetCodec.decode(widget.line.performedSetsJson);
@@ -531,21 +644,21 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   _ExerciseScoreVisual _scoreVisual(_ExerciseScoreTrend trend) {
     return switch (trend) {
       _ExerciseScoreTrend.better => const _ExerciseScoreVisual(
-          icon: Icons.sentiment_very_satisfied_rounded,
-          color: Color(0xFF4CAF50),
-        ),
+        icon: Icons.sentiment_very_satisfied_rounded,
+        color: Color(0xFF4CAF50),
+      ),
       _ExerciseScoreTrend.worse => const _ExerciseScoreVisual(
-          icon: Icons.sentiment_very_dissatisfied_rounded,
-          color: Color(0xFFEF5350),
-        ),
+        icon: Icons.sentiment_very_dissatisfied_rounded,
+        color: Color(0xFFEF5350),
+      ),
       _ExerciseScoreTrend.same => _ExerciseScoreVisual(
-          icon: Icons.sentiment_neutral_rounded,
-          color: Colors.amberAccent.shade200,
-        ),
+        icon: Icons.sentiment_neutral_rounded,
+        color: Colors.amberAccent.shade200,
+      ),
       _ExerciseScoreTrend.noPrevious => const _ExerciseScoreVisual(
-          icon: Icons.sentiment_neutral_rounded,
-          color: Color(0xFF64B5F6),
-        ),
+        icon: Icons.sentiment_neutral_rounded,
+        color: Color(0xFF64B5F6),
+      ),
     };
   }
 
@@ -605,7 +718,9 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
         line.sets > 0 &&
         _performed.length < line.sets;
     final canAddMoreSeries =
-        line.sets > 0 && _performed.length < line.sets && widget.onAdicionar != null;
+        line.sets > 0 &&
+        _performed.length < line.sets &&
+        widget.onAdicionar != null;
 
     late final Color fillColor;
     late final Color borderColor;
@@ -719,8 +834,8 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                             child: Icon(
                               widget.expandable
                                   ? (_expanded
-                                      ? Icons.expand_more_rounded
-                                      : Icons.chevron_right_rounded)
+                                        ? Icons.expand_more_rounded
+                                        : Icons.chevron_right_rounded)
                                   : Icons.chevron_right_rounded,
                               color: iconTint,
                               size: 20,
@@ -734,10 +849,7 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.only(
-                                top: 1,
-                                bottom: 1,
-                              ),
+                              padding: const EdgeInsets.only(top: 1, bottom: 1),
                               child: Text(
                                 displayName,
                                 maxLines: 1,
@@ -765,16 +877,18 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                     Tooltip(
                                       message: _addSeriesTooltip,
                                       child: Opacity(
-                                        opacity:
-                                            _canMutatePerformedSets ? 1 : 0.38,
+                                        opacity: _canMutatePerformedSets
+                                            ? 1
+                                            : 0.38,
                                         child: Material(
                                           color: Colors.transparent,
                                           child: InkWell(
                                             onTap: _canMutatePerformedSets
                                                 ? widget.onAdicionar
                                                 : null,
-                                            borderRadius:
-                                                BorderRadius.circular(999),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
                                             child: Ink(
                                               padding: EdgeInsets.symmetric(
                                                 horizontal: addPadH,
@@ -785,23 +899,27 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                                     BorderRadius.circular(999),
                                                 gradient: LinearGradient(
                                                   colors: [
-                                                    const Color(0xFF26C6DA)
-                                                        .withValues(alpha: 0.95),
+                                                    const Color(
+                                                      0xFF26C6DA,
+                                                    ).withValues(alpha: 0.95),
                                                     AppColors.splashMint
                                                         .withValues(alpha: 0.9),
                                                   ],
                                                 ),
-                                                boxShadow: _canMutatePerformedSets
+                                                boxShadow:
+                                                    _canMutatePerformedSets
                                                     ? [
                                                         BoxShadow(
                                                           color: AppColors
                                                               .splashMint
                                                               .withValues(
-                                                            alpha: 0.25,
-                                                          ),
+                                                                alpha: 0.25,
+                                                              ),
                                                           blurRadius: 7,
-                                                          offset:
-                                                              const Offset(0, 1),
+                                                          offset: const Offset(
+                                                            0,
+                                                            1,
+                                                          ),
                                                         ),
                                                       ]
                                                     : null,
@@ -809,12 +927,11 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                               child: Text(
                                                 'Adicionar',
                                                 style: TextStyle(
-                                                  color: Colors.black87
-                                                      .withValues(
+                                                  color: Colors.black87.withValues(
                                                     alpha:
                                                         _canMutatePerformedSets
-                                                            ? 1
-                                                            : 0.55,
+                                                        ? 1
+                                                        : 0.55,
                                                   ),
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: addFontSize,
@@ -840,14 +957,15 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                     final v = _scoreVisual(trend);
                                     return Row(
                                       mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
                                       children: [
                                         ConstrainedBox(
                                           constraints: const BoxConstraints(
                                             maxWidth: 112,
                                           ),
                                           child: Text(
-                                            '${line.sets}×${line.reps}$load',
+                                            '${line.sets}×${_dweRepsCompact(line)}$load',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             textAlign: TextAlign.left,
@@ -861,11 +979,7 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                           ),
                                         ),
                                         const SizedBox(width: 6),
-                                        Icon(
-                                          v.icon,
-                                          size: 15,
-                                          color: v.color,
-                                        ),
+                                        Icon(v.icon, size: 15, color: v.color),
                                         const SizedBox(width: 4),
                                         Text(
                                           scoreStr,
@@ -886,6 +1000,35 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                       ),
                     ),
                   ),
+                  if (widget.executedOutOfPlannedOrder)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.swap_vert_circle_rounded,
+                            color: const Color(
+                              0xFFFF8A65,
+                            ).withValues(alpha: 0.95),
+                            size: 15,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Executado fora da ordem planejada',
+                              style: TextStyle(
+                                color: const Color(
+                                  0xFFFF8A65,
+                                ).withValues(alpha: 0.95),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (widget.expandable && _expanded && line.sets > 0) ...[
                     SizedBox(height: 10 * _kSerieScale),
                     Padding(
@@ -908,7 +1051,19 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                           for (var i = 0; i < line.sets; i++) ...[
                             _SeriePrescribedRow(
                               index: i + 1,
-                              prescribedReps: line.reps,
+                              prescribedRepsLabel: _dweRepsCompact(line),
+                              onTap:
+                                  i == _performed.length &&
+                                      canAddMoreSeries &&
+                                      _canMutatePerformedSets
+                                  ? widget.onAdicionar
+                                  : null,
+                              tooltip:
+                                  i == _performed.length &&
+                                      canAddMoreSeries &&
+                                      _canMutatePerformedSets
+                                  ? _addSeriesTooltip
+                                  : null,
                             ),
                             if (i < _performed.length) ...[
                               SizedBox(height: 6 * _kSerieScale),
@@ -1084,6 +1239,7 @@ Future<bool?> showFuturisticIncompleteBeforeCompleteDialog(
 Future<bool> tryCompleteDayWorkoutWithIncompletePrompt({
   required BuildContext context,
   required AppDataRepository repo,
+  required AppSession session,
   required String dayWorkoutId,
 }) async {
   final lines = await repo.getDayWorkoutExercises(dayWorkoutId);
@@ -1104,6 +1260,13 @@ Future<bool> tryCompleteDayWorkoutWithIncompletePrompt({
   }
   if (!context.mounted) return false;
   await repo.completeDayWorkout(dayWorkoutId);
+  if (session.isStudent && context.mounted) {
+    await showWatchMetricsAfterWorkoutDialog(
+      context: context,
+      repo: repo,
+      dayWorkoutId: dayWorkoutId,
+    );
+  }
   return true;
 }
 
@@ -1123,22 +1286,24 @@ Future<void> showProgrammedDayExercisesSheet({
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (sheetCtx) {
-      return DraggableScrollableSheet(
-        initialChildSize: 0.87,
-        minChildSize: 0.45,
-        maxChildSize: 0.87,
-        expand: false,
-        builder: (context, scroll) {
-          return _DayExercisesSheetScaffold(
-            scrollController: scroll,
-            repo: repo,
-            studentName: studentName,
-            day: day,
-            workout: workout,
-            workoutBadgeLabel: workoutBadgeLabel,
-            onSwapWorkout: onSwapWorkout,
-          );
-        },
+      return KeyboardBottomInsetPadding(
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.87,
+          minChildSize: 0.45,
+          maxChildSize: 0.87,
+          expand: false,
+          builder: (context, scroll) {
+            return _DayExercisesSheetScaffold(
+              scrollController: scroll,
+              repo: repo,
+              studentName: studentName,
+              day: day,
+              workout: workout,
+              workoutBadgeLabel: workoutBadgeLabel,
+              onSwapWorkout: onSwapWorkout,
+            );
+          },
+        ),
       );
     },
   );
@@ -1172,8 +1337,6 @@ class _DayExercisesSheetScaffoldState
     extends State<_DayExercisesSheetScaffold> {
   var _refreshKey = 0;
   final Map<String, bool> _useAlternativeByLineId = {};
-  final Map<String, int> _executionOrderByLineId = {};
-  var _nextExecutionOrder = 0;
   Timer? _tick;
   var _tickerRunning = false;
 
@@ -1230,9 +1393,11 @@ class _DayExercisesSheetScaffoldState
     BuildContext sheetContext,
     DayWorkoutEntity w,
   ) async {
+    final session = context.read<AppSession>();
     final ok = await tryCompleteDayWorkoutWithIncompletePrompt(
       context: sheetContext,
       repo: widget.repo,
+      session: session,
       dayWorkoutId: w.id,
     );
     if (!ok || !mounted) return;
@@ -1276,38 +1441,6 @@ class _DayExercisesSheetScaffoldState
       if (!sheetContext.mounted) return;
       await _completeWorkoutAfterChecks(sheetContext, w);
     }
-  }
-
-  List<DayWorkoutExerciseEntity> _orderLinesForWorkoutExecution(
-    List<DayWorkoutExerciseEntity> plannedLines,
-    String workoutStatus,
-  ) {
-    final isTraining = workoutStatus == 'started';
-    final plannedIds = {for (final l in plannedLines) l.id};
-    _executionOrderByLineId.removeWhere((id, _) => !plannedIds.contains(id));
-
-    for (final line in plannedLines) {
-      final hasPerformed =
-          DayWorkoutPerformedSetCodec.decode(line.performedSetsJson).isNotEmpty;
-      if (hasPerformed) {
-        _executionOrderByLineId.putIfAbsent(line.id, () => _nextExecutionOrder++);
-      } else {
-        _executionOrderByLineId.remove(line.id);
-      }
-    }
-
-    if (!isTraining) return plannedLines;
-
-    final sorted = List<DayWorkoutExerciseEntity>.from(plannedLines);
-    sorted.sort((a, b) {
-      final aExec = _executionOrderByLineId[a.id];
-      final bExec = _executionOrderByLineId[b.id];
-      if (aExec != null && bExec != null) return aExec.compareTo(bExec);
-      if (aExec != null) return -1;
-      if (bExec != null) return 1;
-      return a.sortOrder.compareTo(b.sortOrder);
-    });
-    return sorted;
   }
 
   @override
@@ -1369,7 +1502,8 @@ class _DayExercisesSheetScaffoldState
                         ],
                       ),
                     ),
-                    if (w.status == 'programmed' && widget.onSwapWorkout != null)
+                    if (w.status == 'programmed' &&
+                        widget.onSwapWorkout != null)
                       IconButton(
                         icon: Icon(
                           Icons.swap_horiz_rounded,
@@ -1387,7 +1521,10 @@ class _DayExercisesSheetScaffoldState
                       onPressed: () => setState(() => _refreshKey++),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                      icon: const Icon(
+                        Icons.close,
+                        color: AppColors.textPrimary,
+                      ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
@@ -1417,7 +1554,7 @@ class _DayExercisesSheetScaffoldState
                   ),
                   padding: const EdgeInsets.all(1.5),
                   child: Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16.5),
                       color: const Color(0xFF15182A).withValues(alpha: 0.98),
@@ -1425,26 +1562,38 @@ class _DayExercisesSheetScaffoldState
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final btnW = constraints.maxWidth * 0.32;
-                        const iconW = 28.0;
-                        const gap = 10.0;
-                        final textInset = iconW + gap;
+                        const iconW = 26.0;
+                        const gap = 8.0;
                         final showTimerRow =
                             w.status == 'started' || w.status == 'completed';
+                        final workoutTitle =
+                            widget.workoutBadgeLabel ??
+                            _workoutTagLabel(w.status);
 
-                        Widget timerLeading() {
+                        /// Nome do treino: +20% em relação à base 15 → 18.
+                        const kStudentNameFontSize = 16.0;
+                        final workoutTitleFontSize = 15.0 * 1.2;
+                        const kGapStudentToWorkout = 12.0;
+                        const kGapWorkoutToTimer = 12.0;
+
+                        Widget timerLeading({bool compact = false}) {
+                          final iconSz = compact ? 17.0 : 20.0;
+                          final timeFs = compact ? 16.0 : 20.0;
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 Icons.timer_outlined,
-                                color: w.status == 'started' &&
+                                color:
+                                    w.status == 'started' &&
                                         w.timerResumeAt == null
                                     ? const Color(0xFFFFB74D)
-                                    : AppColors.accentGreen
-                                        .withValues(alpha: 0.9),
-                                size: 20,
+                                    : AppColors.accentGreen.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                size: iconSz,
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 5),
                               Text(
                                 _formatWorkoutTimer(
                                   widget.repo.effectiveActiveSeconds(
@@ -1453,12 +1602,14 @@ class _DayExercisesSheetScaffoldState
                                   ),
                                 ),
                                 style: TextStyle(
-                                  color: w.status == 'started' &&
+                                  color:
+                                      w.status == 'started' &&
                                           w.timerResumeAt == null
                                       ? const Color(0xFFFFE082)
                                       : AppColors.textPrimary,
                                   fontWeight: FontWeight.w800,
-                                  fontSize: 20,
+                                  fontSize: timeFs,
+                                  height: 1.05,
                                   fontFeatures: const [
                                     FontFeature.tabularFigures(),
                                   ],
@@ -1466,14 +1617,13 @@ class _DayExercisesSheetScaffoldState
                               ),
                               if (w.status == 'started' &&
                                   w.timerResumeAt == null) ...[
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 6),
                                 Text(
                                   'Pausado',
                                   style: TextStyle(
-                                    color: Colors.white
-                                        .withValues(alpha: 0.45),
+                                    color: Colors.white.withValues(alpha: 0.45),
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                                    fontSize: 11,
                                   ),
                                 ),
                               ],
@@ -1500,96 +1650,99 @@ class _DayExercisesSheetScaffoldState
                                     children: [
                                       Text(
                                         widget.studentName,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           color: AppColors.textPrimary,
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          fontSize: kStudentNameFontSize,
+                                          height: 1.15,
                                         ),
                                       ),
-                                      const SizedBox(height: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
+                                      const SizedBox(
+                                        height: kGapStudentToWorkout,
+                                      ),
+                                      Text(
+                                        workoutTitle,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
                                           color: const Color(
-                                            0xFF1565C0,
-                                          ).withValues(alpha: 0.45),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                          border: Border.all(
-                                            color: const Color(
-                                              0xFF42A5F5,
-                                            ).withValues(alpha: 0.6),
-                                          ),
+                                            0xFF90CAF9,
+                                          ).withValues(alpha: 0.98),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: workoutTitleFontSize,
+                                          height: 1.2,
                                         ),
-                                        child: Text(
-                                          widget.workoutBadgeLabel ??
-                                              _workoutTagLabel(w.status),
-                                          style: const TextStyle(
-                                            color: Color(0xFF90CAF9),
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
+                                      ),
+                                      if (showTimerRow) ...[
+                                        const SizedBox(
+                                          height: kGapWorkoutToTimer,
+                                        ),
+                                        timerLeading(compact: true),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: btnW,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (w.status == 'completed')
+                                        const _FuturisticSheetCompleteWorkoutCta(
+                                          compact: true,
+                                          isCompleted: true,
+                                        )
+                                      else if (w.status == 'started' &&
+                                          w.timerResumeAt != null)
+                                        _FuturisticSheetCompleteWorkoutCta(
+                                          compact: true,
+                                          onPressed: () =>
+                                              _onRunningPrimaryCta(context, w),
+                                        )
+                                      else if (w.status == 'started' &&
+                                          w.timerResumeAt == null)
+                                        _FuturisticSheetPausedWorkoutCta(
+                                          compact: true,
+                                          onPressed: () =>
+                                              _onPausedPrimaryCta(context, w),
+                                        )
+                                      else if (w.status == 'programmed')
+                                        _FuturisticSheetStartWorkoutCta(
+                                          compact: true,
+                                          onPressed: () =>
+                                              _onStartWorkout(context, w),
+                                        )
+                                      else
+                                        const SizedBox(height: 42),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Score',
+                                        textAlign: TextAlign.right,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.45,
                                           ),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: _calendarSheetHeaderScoreValue(
+                                          workout: w,
+                                          repo: widget.repo,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                                if (w.status == 'programmed')
-                                  SizedBox(
-                                    width: btnW,
-                                    child: _FuturisticSheetStartWorkoutCta(
-                                      compact: true,
-                                      onPressed: () =>
-                                          _onStartWorkout(context, w),
-                                    ),
-                                  ),
                               ],
                             ),
-                            if (showTimerRow) ...[
-                              const SizedBox(height: 10),
-                              Padding(
-                                padding: EdgeInsets.only(left: textInset),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(child: timerLeading()),
-                                    if (w.status == 'started' &&
-                                        w.timerResumeAt != null)
-                                      SizedBox(
-                                        width: btnW,
-                                        child: _FuturisticSheetCompleteWorkoutCta(
-                                          compact: true,
-                                          onPressed: () =>
-                                              _onRunningPrimaryCta(
-                                                  context, w),
-                                        ),
-                                      ),
-                                    if (w.status == 'started' &&
-                                        w.timerResumeAt == null)
-                                      SizedBox(
-                                        width: btnW,
-                                        child: _FuturisticSheetPausedWorkoutCta(
-                                          compact: true,
-                                          onPressed: () =>
-                                              _onPausedPrimaryCta(
-                                                  context, w),
-                                        ),
-                                      ),
-                                    if (w.status == 'completed')
-                                      SizedBox(
-                                        width: btnW,
-                                        child: _FuturisticSheetCompleteWorkoutCta(
-                                          compact: true,
-                                          isCompleted: true,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
                           ],
                         );
                       },
@@ -1597,7 +1750,7 @@ class _DayExercisesSheetScaffoldState
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Expanded(
                 child: KeyedSubtree(
                   key: ValueKey(_refreshKey),
@@ -1610,11 +1763,17 @@ class _DayExercisesSheetScaffoldState
                           widget.workout.id,
                         ),
                         builder: (context, lineSnap) {
-                          final plannedLines = lineSnap.data ?? [];
-                          final lines = _orderLinesForWorkoutExecution(
-                            plannedLines,
-                            w.status,
+                          final plannedLinesRaw = lineSnap.data ?? [];
+                          final plannedOrder =
+                              List<DayWorkoutExerciseEntity>.from(plannedLinesRaw)
+                                ..sort(
+                                  (a, b) =>
+                                      a.sortOrder.compareTo(b.sortOrder),
+                                );
+                          final lines = orderDayWorkoutLinesByPerformedHistory(
+                            plannedLinesRaw,
                           );
+                          final blocks = dayWorkoutLinesAsComboBlocks(lines);
                           if (lines.isEmpty) {
                             return const Center(
                               child: Text(
@@ -1623,108 +1782,103 @@ class _DayExercisesSheetScaffoldState
                               ),
                             );
                           }
-                          final hasPerformedByLineId = {
-                            for (final line in plannedLines)
-                              line.id: DayWorkoutPerformedSetCodec.decode(
-                                line.performedSetsJson,
-                              ).isNotEmpty,
-                          };
-                          final plannedIndexByLineId = {
-                            for (var i = 0; i < plannedLines.length; i++)
-                              plannedLines[i].id: i,
-                          };
                           return SlidableAutoCloseBehavior(
                             child: ListView.builder(
                               controller: widget.scrollController,
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                              itemCount: lines.length,
-                              itemBuilder: (_, i) {
-                                final line = lines[i];
-                                final ex = byId[line.exerciseId];
-                                final name = ex?.name ?? 'Exercício';
-                                final plannedIndex =
-                                    plannedIndexByLineId[line.id] ?? 0;
-                                final hasPerformed =
-                                    hasPerformedByLineId[line.id] ?? false;
-                                final outOfOrder = hasPerformed &&
-                                    plannedLines.any((candidate) {
-                                      final cIndex =
-                                          plannedIndexByLineId[candidate.id] ?? 0;
-                                      if (cIndex >= plannedIndex) return false;
-                                      return !(hasPerformedByLineId[candidate.id] ??
-                                          false);
-                                    });
-                                final useAlt =
-                                    _useAlternativeByLineId[line.id] ?? false;
-                                final performed =
-                                    DayWorkoutPerformedSetCodec.decode(
-                                      line.performedSetsJson,
-                                    );
-                                final canAddSerie =
-                                    line.sets > 0 && performed.length < line.sets;
-                                final dialogTitle = calendarExerciseDisplayName(
-                                  name,
-                                  ex,
-                                  useAlt,
-                                );
+                              itemCount: blocks.length,
+                              itemBuilder: (_, bi) {
+                                final block = blocks[bi];
+                                Widget lineCard(DayWorkoutExerciseEntity line) {
+                                  final ex = byId[line.exerciseId];
+                                  final name = ex?.name ?? 'Exercício';
+                                  final outOfOrder =
+                                      dayWorkoutLineExecutedOutOfPlannedOrder(
+                                    plannedOrder,
+                                    line,
+                                  );
+                                  final useAlt =
+                                      _useAlternativeByLineId[line.id] ??
+                                      false;
+                                  final performed =
+                                      DayWorkoutPerformedSetCodec.decode(
+                                        line.performedSetsJson,
+                                      );
+                                  final canAddSerie =
+                                      line.sets > 0 &&
+                                      performed.length < line.sets;
+                                  final dialogTitle =
+                                      calendarExerciseDisplayName(
+                                    name,
+                                    ex,
+                                    useAlt,
+                                  );
+                                  return CalendarExerciseLineCard(
+                                    line: line,
+                                    exerciseName: name,
+                                    exercise: ex,
+                                    expandable: true,
+                                    workoutStatus: w.status,
+                                    workoutPaused:
+                                        w.status == 'started' &&
+                                        w.timerResumeAt == null,
+                                    useAlternative: useAlt,
+                                    executedOutOfPlannedOrder: outOfOrder,
+                                    onToggleAlternative:
+                                        calendarExerciseHasAlternative(ex) &&
+                                                w.status != 'completed'
+                                            ? () => setState(() {
+                                                  _useAlternativeByLineId[
+                                                          line.id] =
+                                                      !(_useAlternativeByLineId[
+                                                              line.id] ??
+                                                          false);
+                                                })
+                                            : null,
+                                    onAdicionar: canAddSerie
+                                        ? () => showCalendarAddSetDialog(
+                                              context: context,
+                                              restFlowContext: context,
+                                              repo: widget.repo,
+                                              line: line,
+                                              exerciseName: dialogTitle,
+                                            )
+                                        : null,
+                                    performedSetsRepo: widget.repo,
+                                  );
+                                }
+
+                                if (block.length == 1) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: lineCard(block.single),
+                                  );
+                                }
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 12),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
                                     children: [
-                                      if (outOfOrder)
-                                        Padding(
-                                          padding:
-                                              const EdgeInsets.only(left: 6, bottom: 6),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.swap_vert_circle_rounded,
-                                                color: const Color(0xFFFF8A65)
-                                                    .withValues(alpha: 0.95),
-                                                size: 15,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                'Executado fora da ordem planejada',
-                                                style: TextStyle(
-                                                  color: const Color(0xFFFF8A65)
-                                                      .withValues(alpha: 0.95),
-                                                  fontSize: 11.5,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 4,
+                                          bottom: 8,
+                                        ),
+                                        child: Text(
+                                          'Combinação (sem intervalo entre estes)',
+                                          style: TextStyle(
+                                            color: AppColors.splashMint
+                                                .withValues(alpha: 0.88),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
                                           ),
                                         ),
-                                      CalendarExerciseLineCard(
-                                        line: line,
-                                        exerciseName: name,
-                                        exercise: ex,
-                                        expandable: true,
-                                        workoutStatus: w.status,
-                                        workoutPaused: w.status == 'started' &&
-                                            w.timerResumeAt == null,
-                                        useAlternative: useAlt,
-                                        onToggleAlternative:
-                                            calendarExerciseHasAlternative(ex) &&
-                                                    w.status != 'completed'
-                                                ? () => setState(() {
-                                                      _useAlternativeByLineId[line.id] =
-                                                          !(_useAlternativeByLineId[line.id] ??
-                                                              false);
-                                                    })
-                                                : null,
-                                        onAdicionar: canAddSerie
-                                            ? () => showCalendarAddSetDialog(
-                                                  context: context,
-                                                  repo: widget.repo,
-                                                  line: line,
-                                                  exerciseName: dialogTitle,
-                                                )
-                                            : null,
-                                        performedSetsRepo: widget.repo,
                                       ),
+                                      for (var j = 0; j < block.length; j++) ...[
+                                        if (j > 0) const SizedBox(height: 8),
+                                        lineCard(block[j]),
+                                      ],
                                     ],
                                   ),
                                 );
@@ -1872,12 +2026,9 @@ class _FuturisticSheetCompleteWorkoutCta extends StatelessWidget {
             end: Alignment.bottomRight,
             colors: [_magenta, _violet],
           );
-    final tooltip =
-        isCompleted ? 'Treino concluído' : 'Concluir Treino';
-    final compactLabel =
-        isCompleted ? 'Treino\nconcluído' : 'Concluir\nTreino';
-    final regularLabel =
-        isCompleted ? 'Treino concluído' : 'Concluir Treino';
+    final tooltip = isCompleted ? 'Treino concluído' : 'Concluir Treino';
+    final compactLabel = isCompleted ? 'Treino\nconcluído' : 'Concluir\nTreino';
+    final regularLabel = isCompleted ? 'Treino concluído' : 'Concluir Treino';
     final textColor = Colors.white.withValues(alpha: 0.95);
     final shadowColor = isCompleted
         ? const Color(0xFF2E7D32).withValues(alpha: 0.3)
@@ -2126,13 +2277,15 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                               gradient: LinearGradient(
                                 colors: [
                                   AppColors.splashMint.withValues(alpha: 0.22),
-                                  const Color(0xFF26C6DA)
-                                      .withValues(alpha: 0.18),
+                                  const Color(
+                                    0xFF26C6DA,
+                                  ).withValues(alpha: 0.18),
                                 ],
                               ),
                               border: Border.all(
-                                color:
-                                    AppColors.splashMint.withValues(alpha: 0.52),
+                                color: AppColors.splashMint.withValues(
+                                  alpha: 0.52,
+                                ),
                               ),
                             ),
                             child: const Padding(
@@ -2187,8 +2340,9 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color:
-                                      AppColors.splashMint.withValues(alpha: 0.35),
+                                  color: AppColors.splashMint.withValues(
+                                    alpha: 0.35,
+                                  ),
                                   blurRadius: 16,
                                   offset: const Offset(0, 5),
                                 ),
@@ -2230,8 +2384,9 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                             child: Ink(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
-                                color:
-                                    const Color(0xFF17133A).withValues(alpha: 0.95),
+                                color: const Color(
+                                  0xFF17133A,
+                                ).withValues(alpha: 0.95),
                                 border: Border.all(
                                   color: AppColors.accentPink.withValues(
                                     alpha: 0.55,
@@ -2248,16 +2403,18 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.swap_horiz_rounded,
-                                    color: AppColors.accentPink
-                                        .withValues(alpha: 0.95),
+                                    color: AppColors.accentPink.withValues(
+                                      alpha: 0.95,
+                                    ),
                                     size: 24,
                                   ),
                                   const SizedBox(width: 10),
                                   Text(
                                     'Trocar grupo de treino',
                                     style: TextStyle(
-                                      color: AppColors.accentPink
-                                          .withValues(alpha: 0.95),
+                                      color: AppColors.accentPink.withValues(
+                                        alpha: 0.95,
+                                      ),
                                       fontWeight: FontWeight.w800,
                                       fontSize: 16,
                                     ),
@@ -2371,11 +2528,15 @@ class _FuturisticPauseOrCompleteDialog extends StatelessWidget {
                               gradient: LinearGradient(
                                 colors: [
                                   AppColors.accentPink.withValues(alpha: 0.22),
-                                  const Color(0xFF7E57C2).withValues(alpha: 0.18),
+                                  const Color(
+                                    0xFF7E57C2,
+                                  ).withValues(alpha: 0.18),
                                 ],
                               ),
                               border: Border.all(
-                                color: AppColors.accentPink.withValues(alpha: 0.5),
+                                color: AppColors.accentPink.withValues(
+                                  alpha: 0.5,
+                                ),
                               ),
                             ),
                             child: const Padding(
@@ -2421,9 +2582,13 @@ class _FuturisticPauseOrCompleteDialog extends StatelessWidget {
                           child: Ink(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
-                              color: const Color(0xFF1A1424).withValues(alpha: 0.95),
+                              color: const Color(
+                                0xFF1A1424,
+                              ).withValues(alpha: 0.95),
                               border: Border.all(
-                                color: AppColors.splashMint.withValues(alpha: 0.55),
+                                color: AppColors.splashMint.withValues(
+                                  alpha: 0.55,
+                                ),
                                 width: 1.5,
                               ),
                             ),
@@ -2436,14 +2601,18 @@ class _FuturisticPauseOrCompleteDialog extends StatelessWidget {
                               children: [
                                 Icon(
                                   Icons.pause_circle_outline_rounded,
-                                  color: AppColors.splashMint.withValues(alpha: 0.95),
+                                  color: AppColors.splashMint.withValues(
+                                    alpha: 0.95,
+                                  ),
                                   size: 24,
                                 ),
                                 const SizedBox(width: 10),
                                 Text(
                                   'Pausar treino',
                                   style: TextStyle(
-                                    color: AppColors.splashMint.withValues(alpha: 0.95),
+                                    color: AppColors.splashMint.withValues(
+                                      alpha: 0.95,
+                                    ),
                                     fontWeight: FontWeight.w800,
                                     fontSize: 16,
                                   ),
@@ -2464,13 +2633,19 @@ class _FuturisticPauseOrCompleteDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16),
                               gradient: LinearGradient(
                                 colors: [
-                                  const Color(0xFFEC407A).withValues(alpha: 0.95),
-                                  const Color(0xFF7E57C2).withValues(alpha: 0.92),
+                                  const Color(
+                                    0xFFEC407A,
+                                  ).withValues(alpha: 0.95),
+                                  const Color(
+                                    0xFF7E57C2,
+                                  ).withValues(alpha: 0.92),
                                 ],
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFEC407A).withValues(alpha: 0.35),
+                                  color: const Color(
+                                    0xFFEC407A,
+                                  ).withValues(alpha: 0.35),
                                   blurRadius: 16,
                                   offset: const Offset(0, 5),
                                 ),
@@ -2578,12 +2753,18 @@ class _FuturisticResumeOrCompleteDialog extends StatelessWidget {
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
                                 colors: [
-                                  const Color(0xFFFFB74D).withValues(alpha: 0.22),
-                                  const Color(0xFFE65100).withValues(alpha: 0.15),
+                                  const Color(
+                                    0xFFFFB74D,
+                                  ).withValues(alpha: 0.22),
+                                  const Color(
+                                    0xFFE65100,
+                                  ).withValues(alpha: 0.15),
                                 ],
                               ),
                               border: Border.all(
-                                color: const Color(0xFFFFB74D).withValues(alpha: 0.55),
+                                color: const Color(
+                                  0xFFFFB74D,
+                                ).withValues(alpha: 0.55),
                               ),
                             ),
                             child: const Padding(
@@ -2630,11 +2811,16 @@ class _FuturisticResumeOrCompleteDialog extends StatelessWidget {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
                               gradient: const LinearGradient(
-                                colors: [AppColors.splashMint, Color(0xFF26C6DA)],
+                                colors: [
+                                  AppColors.splashMint,
+                                  Color(0xFF26C6DA),
+                                ],
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.splashMint.withValues(alpha: 0.35),
+                                  color: AppColors.splashMint.withValues(
+                                    alpha: 0.35,
+                                  ),
                                   blurRadius: 16,
                                   offset: const Offset(0, 5),
                                 ),
@@ -2677,13 +2863,19 @@ class _FuturisticResumeOrCompleteDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16),
                               gradient: LinearGradient(
                                 colors: [
-                                  const Color(0xFFEC407A).withValues(alpha: 0.95),
-                                  const Color(0xFF7E57C2).withValues(alpha: 0.92),
+                                  const Color(
+                                    0xFFEC407A,
+                                  ).withValues(alpha: 0.95),
+                                  const Color(
+                                    0xFF7E57C2,
+                                  ).withValues(alpha: 0.92),
                                 ],
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFEC407A).withValues(alpha: 0.35),
+                                  color: const Color(
+                                    0xFFEC407A,
+                                  ).withValues(alpha: 0.35),
                                   blurRadius: 16,
                                   offset: const Offset(0, 5),
                                 ),
@@ -2797,9 +2989,13 @@ class _FuturisticIncompleteBeforeCompleteDialog extends StatelessWidget {
                           DecoratedBox(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: AppColors.accentPink.withValues(alpha: 0.15),
+                              color: AppColors.accentPink.withValues(
+                                alpha: 0.15,
+                              ),
                               border: Border.all(
-                                color: AppColors.accentPink.withValues(alpha: 0.5),
+                                color: AppColors.accentPink.withValues(
+                                  alpha: 0.5,
+                                ),
                               ),
                             ),
                             child: const Padding(
@@ -2857,7 +3053,9 @@ class _FuturisticIncompleteBeforeCompleteDialog extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: Colors.white.withValues(alpha: 0.35),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.35,
+                                      ),
                                     ),
                                   ),
                                   padding: const EdgeInsets.symmetric(
@@ -2867,7 +3065,9 @@ class _FuturisticIncompleteBeforeCompleteDialog extends StatelessWidget {
                                     child: Text(
                                       'Cancelar',
                                       style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.85),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.85,
+                                        ),
                                         fontWeight: FontWeight.w700,
                                         fontSize: 15,
                                       ),
@@ -2889,8 +3089,12 @@ class _FuturisticIncompleteBeforeCompleteDialog extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(14),
                                     gradient: LinearGradient(
                                       colors: [
-                                        const Color(0xFFEC407A).withValues(alpha: 0.95),
-                                        const Color(0xFF7E57C2).withValues(alpha: 0.9),
+                                        const Color(
+                                          0xFFEC407A,
+                                        ).withValues(alpha: 0.95),
+                                        const Color(
+                                          0xFF7E57C2,
+                                        ).withValues(alpha: 0.9),
                                       ],
                                     ),
                                   ),

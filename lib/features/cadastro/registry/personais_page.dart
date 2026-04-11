@@ -15,6 +15,14 @@ import '../../../data/repositories/app_data_repository.dart';
 class PersonaisPage extends StatelessWidget {
   const PersonaisPage({super.key});
 
+  static String _personalSubtitle(PersonalEntity e) {
+    final parts = <String>[
+      if (e.email.isNotEmpty) e.email,
+      if ((e.phoneMobile ?? '').isNotEmpty) brFormatPhoneDisplay(e.phoneMobile!),
+    ];
+    return parts.isEmpty ? '—' : parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<AppDataRepository>();
@@ -24,6 +32,7 @@ class PersonaisPage extends StatelessWidget {
         onPressed: () => _form(context, repo, null),
         child: const Icon(Icons.add),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: FuturisticBackground(
         child: StreamBuilder<List<PersonalEntity>>(
           stream: repo.watchPersonalsAlphabetical(),
@@ -38,15 +47,18 @@ class PersonaisPage extends StatelessWidget {
               );
             }
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
               itemCount: list.length,
               itemBuilder: (_, i) {
                 final e = list[i];
+                void openForm() => _form(context, repo, e);
                 return SwipeableRegistryCard(
                   slidableKey: e.id,
                   title: e.name,
-                  subtitle: e.email,
-                  onEdit: () => _form(context, repo, e),
+                  subtitle: _personalSubtitle(e),
+                  onEdit: openForm,
+                  onCardTap: openForm,
+                  showEditOnSwipe: false,
                   onDelete: () async {
                     final ok = await confirmDeleteDialog(context, itemName: e.name);
                     if (ok == true && context.mounted) await repo.deletePersonal(e.id);
@@ -74,6 +86,12 @@ class PersonaisPage extends StatelessWidget {
       text: brFormatCepDisplay(x?.cep ?? ''),
     );
     final email = TextEditingController(text: x?.email ?? '');
+    final phoneCommercialC = TextEditingController(
+      text: brFormatPhoneDisplay(x?.phoneCommercial ?? ''),
+    );
+    final phoneMobileC = TextEditingController(
+      text: brFormatPhoneDisplay(x?.phoneMobile ?? ''),
+    );
     String? uf = x?.stateUf;
     var isAdmin = x?.isAdmin ?? false;
 
@@ -142,6 +160,22 @@ class PersonaisPage extends StatelessWidget {
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: kCadastroFieldGap),
+            AppTextField(
+              controller: phoneCommercialC,
+              label: 'Telefone comercial',
+              hint: '(11) 3456-7890',
+              keyboardType: TextInputType.phone,
+              inputFormatters: [BrPhoneLandlineInputFormatter()],
+            ),
+            const SizedBox(height: kCadastroFieldGap),
+            AppTextField(
+              controller: phoneMobileC,
+              label: 'Celular',
+              hint: '(11) 98765-4321',
+              keyboardType: TextInputType.phone,
+              inputFormatters: [BrPhoneMobileInputFormatter()],
+            ),
+            const SizedBox(height: kCadastroFieldGap),
             Text(
               'Senha provisória: enviar por e-mail quando o serviço de e-mail estiver configurado.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
@@ -186,6 +220,8 @@ class PersonaisPage extends StatelessWidget {
                   }
                   return;
                 }
+                final telCom = brDigitsOnly(phoneCommercialC.text);
+                final telCel = brDigitsOnly(phoneMobileC.text);
                 await repo.upsertPersonal(
                   id: x?.id,
                   name: name.text.trim(),
@@ -197,6 +233,8 @@ class PersonaisPage extends StatelessWidget {
                   city: cidade.text.trim(),
                   stateUf: uf!,
                   cep: cepDigits,
+                  phoneCommercial: telCom.isEmpty ? null : telCom,
+                  phoneMobile: telCel.isEmpty ? null : telCel,
                   email: email.text.trim(),
                   mustChangePassword: x?.mustChangePassword ?? true,
                   passwordHash: x?.passwordHash,

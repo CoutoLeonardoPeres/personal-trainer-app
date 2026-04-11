@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/inter_set_rest_modal.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
@@ -12,6 +13,8 @@ Future<void> showCalendarAddSetDialog({
   required AppDataRepository repo,
   required DayWorkoutExerciseEntity line,
   required String exerciseName,
+  /// Contexto ainda montado após fechar o diálogo (ex.: folha do calendário) — modal de descanso.
+  required BuildContext restFlowContext,
 }) {
   return showDialog<void>(
     context: context,
@@ -22,6 +25,7 @@ Future<void> showCalendarAddSetDialog({
       repo: repo,
       line: line,
       exerciseName: exerciseName,
+      restFlowContext: restFlowContext,
     ),
   );
 }
@@ -505,11 +509,13 @@ class _AddSetDialog extends StatefulWidget {
     required this.repo,
     required this.line,
     required this.exerciseName,
+    required this.restFlowContext,
   });
 
   final AppDataRepository repo;
   final DayWorkoutExerciseEntity line;
   final String exerciseName;
+  final BuildContext restFlowContext;
 
   @override
   State<_AddSetDialog> createState() => _AddSetDialogState();
@@ -606,6 +612,9 @@ class _AddSetDialogState extends State<_AddSetDialog> {
 
     setState(() => _saving = true);
     try {
+      final performedBefore = DayWorkoutPerformedSetCodec.decode(
+        widget.line.performedSetsJson,
+      ).length;
       await widget.repo.appendDayWorkoutExercisePerformedSet(
         lineId: widget.line.id,
         loadKg: loadKg,
@@ -617,6 +626,28 @@ class _AddSetDialogState extends State<_AddSetDialog> {
         messenger.showSnackBar(
           const SnackBar(content: Text('Série registrada.')),
         );
+        final planned = widget.line.sets;
+        final restSec = widget.line.restBetweenSetsSec;
+        final nextCount = performedBefore + 1;
+        final lastInCombo =
+            await widget.repo.isLastLineInExerciseCombo(widget.line.id);
+        if (nextCount < planned &&
+            restSec > 0 &&
+            lastInCombo &&
+            widget.restFlowContext.mounted) {
+          final metrics = await showInterSetRestModal(
+            context: widget.restFlowContext,
+            prescribedSec: restSec,
+          );
+          if (metrics != null && widget.restFlowContext.mounted) {
+            await widget.repo.patchLastPerformedSetRestTelemetry(
+              lineId: widget.line.id,
+              prescribedSec: metrics.prescribedSec,
+              countdownElapsedMs: metrics.countdownElapsedMs,
+              postPhaseMs: metrics.postPhaseMs,
+            );
+          }
+        }
       }
     } on ArgumentError catch (e) {
       if (mounted) {

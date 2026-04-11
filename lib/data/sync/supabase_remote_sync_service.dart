@@ -8,6 +8,7 @@ import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import 'remote_sync_service.dart';
+import 'supabase_catalog_cloud_reconcile.dart';
 import 'supabase_table_mappers.dart';
 
 class _QueuedAudit {
@@ -26,12 +27,17 @@ class _QueuedAudit {
   final Map<String, Object?>? payload;
 }
 
-/// Espelha o SQLite no Supabase **depois** das gravações locais (via auditoria).
-/// Fila única + processamento serial evita rajadas de HTTP que travam frames.
+/// Espelha o SQLite no Supabase **logo após** cada gravação local que regista auditoria
+/// ([AppDataRepository._audit]): [enqueueAudit] arranca a fila de imediato (`unawaited`)
+/// e os pedidos são processados em série (com pequeno intervalo entre um e outro para
+/// não bloquear a UI).
+///
+/// O “envio completo” periódico ([SupabaseAutoPushScheduler]) é redundância / recuperação;
+/// o fluxo normal é **incremental** por entidade.
 ///
 /// Falha de rede ou JWT **não** apaga nem altera o SQLite: o utilizador continua com
-/// os dados no telemóvel; quando a API voltar, a fila reprocessa auditorias pendentes
-/// (e pode usar “Enviar tudo” em Configurações). A nuvem é espelho, não fonte única.
+/// os dados no telemóvel; ao arranque, [recoverPendingWork] volta a enfileirar envios
+/// a partir dos `audit_logs`. A nuvem é espelho, não fonte única.
 class SupabaseRemoteSyncService implements RemoteSyncService {
   SupabaseRemoteSyncService(this._db, this._controller);
 
@@ -136,6 +142,21 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
 
     _controller.beginUpload();
     try {
+      const catalogThrottleTypes = {
+        'muscle_group',
+        'exercise',
+        'workout_group',
+        'workout_group_exercise',
+        'week_schedule',
+        'week_schedule_item',
+        'day_workout',
+        'day_workout_exercise',
+      };
+      if (catalogThrottleTypes.contains(job.entityType)) {
+        // Sem throttle: vários jobs seguidos (ex.: linhas de treino) precisam de
+        // reconciliação fresh antes de cada upsert — senão 23505 em exercises / muscle_groups.
+        await reconcileLocalCatalogWithCloud(_db, client);
+      }
       try {
         await client.from('audit_logs').upsert(supabaseAuditLog(auditRow));
       } catch (e, st) {
@@ -158,6 +179,85 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     } finally {
       _controller.endUpload();
     }
+  }
+
+  static bool _isExerciseNormalizedNameConflict(Object e) {
+    final s = e.toString();
+    return s.contains('23505') && s.contains('exercises_unique_normalized_name');
+  }
+
+  Future<({MuscleGroupEntity mg, ExerciseEntity ex})?> _bundledExerciseForPush(
+    String exerciseId,
+  ) async {
+    final e = await (_db.select(_db.exercises)..where((t) => t.id.equals(exerciseId)))
+        .getSingleOrNull();
+    if (e == null) return null;
+    final m = await (_db.select(_db.muscleGroups)
+          ..where((t) => t.id.equals(e.muscleGroupId)))
+        .getSingleOrNull();
+    if (m == null) {
+      debugPrint(
+        'SupabaseRemoteSyncService: exercício ${e.id} referencia muscle_group '
+        '${e.muscleGroupId} inexistente no SQLite; não enviar exercises.',
+      );
+      return null;
+    }
+    return (mg: m, ex: e);
+  }
+
+  Future<void> _pushMuscleGroupAndExercise(
+    SupabaseClient client,
+    MuscleGroupEntity mg,
+    ExerciseEntity e,
+  ) async {
+    await client.from('muscle_groups').upsert(supabaseMuscleGroup(mg));
+    await client.from('exercises').upsert(supabaseExercise(e));
+  }
+
+  /// Envia primeiro o grupo muscular e depois o exercício (FK `muscle_group_id`).
+  Future<void> _mirrorExerciseWithDependencies(
+    SupabaseClient client,
+    ExerciseEntity ex,
+  ) async {
+    final first = await _bundledExerciseForPush(ex.id);
+    if (first == null) return;
+
+    try {
+      await _pushMuscleGroupAndExercise(client, first.mg, first.ex);
+    } catch (e, st) {
+      if (!_isExerciseNormalizedNameConflict(e)) {
+        debugPrint('SupabaseRemoteSyncService: $e\n$st');
+        rethrow;
+      }
+      await reconcileLocalCatalogWithCloud(_db, client);
+      final again = await _bundledExerciseForPush(ex.id);
+      if (again == null) {
+        debugPrint(
+          'SupabaseRemoteSyncService: após reconciliar, exercício ${ex.id} '
+          'sumiu do SQLite (fundido a id remoto); upsert em exercises não necessário.',
+        );
+        return;
+      }
+      await _pushMuscleGroupAndExercise(client, again.mg, again.ex);
+    }
+  }
+
+  /// Garante `muscle_groups` + `exercises` na nuvem antes de FK `exercise_id`
+  /// em tabelas filhas (evita 23503 com fila fora de ordem).
+  Future<void> _ensureExerciseDependenciesMirrored(
+    SupabaseClient client,
+    String exerciseId,
+  ) async {
+    final ex = await (_db.select(_db.exercises)..where((t) => t.id.equals(exerciseId)))
+        .getSingleOrNull();
+    if (ex == null) {
+      debugPrint(
+        'SupabaseRemoteSyncService: exercise id=$exerciseId ausente no SQLite; '
+        'sem pré-sync para FK.',
+      );
+      return;
+    }
+    await _mirrorExerciseWithDependencies(client, ex);
   }
 
   Future<void> _mirrorAfterAudit(
@@ -190,7 +290,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         } else {
           final row = await (_db.select(_db.exercises)..where((t) => t.id.equals(eid)))
               .getSingleOrNull();
-          if (row != null) await client.from('exercises').upsert(supabaseExercise(row));
+          if (row != null) await _mirrorExerciseWithDependencies(client, row);
         }
       case 'gym':
         if (isDelete) {
@@ -256,6 +356,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
               .get();
           for (var i = 0; i < lines.length; i++) {
             final l = lines[i];
+            await _ensureExerciseDependenciesMirrored(client, l.exerciseId);
             await client.from('workout_group_exercises').upsert(supabaseWorkoutGroupExercise(l));
             if (i % 8 == 7) await Future<void>.delayed(Duration.zero);
           }
@@ -268,6 +369,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
                 ..where((t) => t.id.equals(eid)))
               .getSingleOrNull();
           if (row != null) {
+            await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
             await client.from('workout_group_exercises').upsert(supabaseWorkoutGroupExercise(row));
           }
         }
@@ -292,11 +394,20 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
                 ..where((t) => t.id.equals(eid)))
               .getSingleOrNull();
           if (row != null) {
+            await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
             await client.from('week_schedule_items').upsert(supabaseWeekItem(row));
           }
         }
       case 'day_workout':
-        await _mirrorDayWorkoutBundle(client, eid);
+        if (isDelete) {
+          await client
+              .from('day_workout_exercises')
+              .delete()
+              .eq('day_workout_id', eid);
+          await client.from('day_workouts').delete().eq('id', eid);
+        } else {
+          await _mirrorDayWorkoutBundle(client, eid);
+        }
       case 'day_workout_exercise':
         if (isDelete) {
           await client.from('day_workout_exercises').delete().eq('id', eid);
@@ -305,6 +416,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
                 ..where((t) => t.id.equals(eid)))
               .getSingleOrNull();
           if (row != null) {
+            await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
             await client.from('day_workout_exercises').upsert(supabaseDayWorkoutExercise(row));
           }
         }
@@ -323,7 +435,9 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
           ..where((i) => i.blockId.equals(blockId)))
         .get();
     for (var i = 0; i < items.length; i++) {
-      await client.from('week_schedule_items').upsert(supabaseWeekItem(items[i]));
+      final it = items[i];
+      await _ensureExerciseDependenciesMirrored(client, it.exerciseId);
+      await client.from('week_schedule_items').upsert(supabaseWeekItem(it));
       if (i % 10 == 9) await Future<void>.delayed(Duration.zero);
     }
   }
@@ -337,7 +451,9 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
           ..where((e) => e.dayWorkoutId.equals(workoutId)))
         .get();
     for (var i = 0; i < lines.length; i++) {
-      await client.from('day_workout_exercises').upsert(supabaseDayWorkoutExercise(lines[i]));
+      final line = lines[i];
+      await _ensureExerciseDependenciesMirrored(client, line.exerciseId);
+      await client.from('day_workout_exercises').upsert(supabaseDayWorkoutExercise(line));
       if (i % 8 == 7) await Future<void>.delayed(Duration.zero);
     }
   }

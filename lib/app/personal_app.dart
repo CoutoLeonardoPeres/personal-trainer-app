@@ -10,9 +10,12 @@ import '../core/supabase/supabase_app_init.dart';
 import '../core/supabase/supabase_sync_controller.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
+import '../core/workout/rest_live_activity_controller.dart';
+import '../core/widgets/student_workout_live_activity_bar.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/app_data_repository.dart';
 import '../data/sync/remote_sync_service.dart';
+import '../data/sync/supabase_auto_pull_scheduler.dart';
 import '../data/sync/supabase_auto_push_scheduler.dart';
 import '../data/sync/supabase_cloud_fidelity_checker.dart';
 import '../data/sync/supabase_remote_sync_service.dart';
@@ -130,7 +133,16 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     await s.remoteSync.recoverPendingWork();
     s.sync.startHeartbeat();
     s.fidelity.start();
-    SupabaseAutoPushScheduler.scheduleAfterResume(db: s.db, sync: s.sync);
+    SupabaseAutoPushScheduler.scheduleAfterResume(
+      db: s.db,
+      sync: s.sync,
+      session: s.session,
+    );
+    SupabaseAutoPullScheduler.scheduleAfterResume(
+      db: s.db,
+      sync: s.sync,
+      session: s.session,
+    );
   }
 
   void _retryLoad() {
@@ -178,18 +190,27 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       if (s == null) return;
       if (state == AppLifecycleState.resumed) {
         SchedulerBinding.instance.scheduleTask(
-          () => SupabaseAutoPushScheduler.scheduleAfterResume(
-            db: s.db,
-            sync: s.sync,
-          ),
+          () {
+            SupabaseAutoPushScheduler.scheduleAfterResume(
+              db: s.db,
+              sync: s.sync,
+              session: s.session,
+            );
+            SupabaseAutoPullScheduler.scheduleAfterResume(
+              db: s.db,
+              sync: s.sync,
+              session: s.session,
+            );
+          },
           Priority.idle,
-          debugLabel: 'personalApp.supabaseAutoPushAfterResume',
+          debugLabel: 'personalApp.supabaseAutoSyncAfterResume',
         );
       } else if (state == AppLifecycleState.inactive ||
           state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
         SupabaseAutoPushScheduler.cancelScheduledWork();
+        SupabaseAutoPullScheduler.cancelScheduledWork();
       }
     });
   }
@@ -232,11 +253,16 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         ChangeNotifierProvider<AppSession>.value(value: s.session),
         ChangeNotifierProvider<SupabaseSyncController>.value(value: s.sync),
         Provider<AppDataRepository>.value(value: s.repo),
+        ChangeNotifierProvider<RestLiveActivityController>(
+          create: (_) => RestLiveActivityController(),
+        ),
       ],
       child: MaterialApp(
         title: 'Personal Trainer',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
+        builder: (context, child) =>
+            StudentWorkoutLiveActivityLayer(child: child),
         home: const SplashPage(),
         routes: {
           MainShell.routeName: (_) => const MainShell(),

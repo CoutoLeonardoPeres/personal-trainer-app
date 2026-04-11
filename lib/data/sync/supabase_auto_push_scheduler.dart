@@ -3,15 +3,16 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/auth/app_session.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import 'supabase_manual_sync_service.dart';
 
-/// Envia todo o SQLite para o Supabase **depois que o app volta a ficar ativo**
-/// e a UI já estabilizou.
+/// Envia **todo** o SQLite para o Supabase (backup / consistência), tipicamente após
+/// o app voltar ao primeiro plano. O dia a dia já é coberto pelo envio **incremental**
+/// imediato via [SupabaseRemoteSyncService] (auditoria por gravação).
 ///
-/// Leituras/gravações do app usam só o SQLite; este job só espelha a nuvem.
 /// Após sucesso: mínimo 30 min até outro envio completo; entre tentativas: 4 min.
 abstract final class SupabaseAutoPushScheduler {
   static const _kLastSuccessMs = 'supabase_auto_full_push_success_ms';
@@ -24,13 +25,14 @@ abstract final class SupabaseAutoPushScheduler {
   static void scheduleAfterResume({
     required AppDatabase db,
     required SupabaseSyncController sync,
+    required AppSession session,
     Duration delay = const Duration(seconds: 8),
   }) {
     _scheduledRun?.cancel();
     if (!supabaseAppEnabled) return;
     _scheduledRun = Timer(delay, () {
       _scheduledRun = null;
-      unawaited(_run(db, sync));
+      unawaited(_run(db, sync, session));
     });
   }
 
@@ -42,6 +44,7 @@ abstract final class SupabaseAutoPushScheduler {
   static Future<void> _run(
     AppDatabase db,
     SupabaseSyncController sync,
+    AppSession session,
   ) async {
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!supabaseAppEnabled) return;
@@ -78,7 +81,7 @@ abstract final class SupabaseAutoPushScheduler {
     }
 
     final svc = SupabaseManualSyncService(db, sync);
-    final report = await svc.testConnectionAndPushAll();
+    final report = await svc.testConnectionAndPushAll(session: session);
 
     final allOk = report.connectionTest.ok &&
         report.tables.isNotEmpty &&

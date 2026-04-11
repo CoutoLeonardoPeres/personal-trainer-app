@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/calendar_day_utils.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
 import 'calendar_day_flow.dart';
@@ -150,7 +151,8 @@ class _CalendarPageState extends State<CalendarPage> {
         final workouts = snap.data ?? const <DayWorkoutEntity>[];
         final byDay = <String, List<DayWorkoutEntity>>{};
         for (final w in workouts) {
-          final k = '${w.dayDate.year}-${w.dayDate.month}-${w.dayDate.day}';
+          final cal = weekScheduleLocalCalendarDate(w.dayDate);
+          final k = '${cal.year}-${cal.month}-${cal.day}';
           byDay.putIfAbsent(k, () => []).add(w);
         }
 

@@ -5,14 +5,35 @@ class DayWorkoutPerformedSet {
   const DayWorkoutPerformedSet({
     this.loadKg,
     required this.reps,
+    this.loggedAtMs,
+    this.restPrescribedSec,
+    this.restCountdownElapsedMs,
+    this.postRestModalMs,
   });
 
   final double? loadKg;
   final int reps;
 
+  /// Momento em que a série foi registrada (epoch ms). Usado para ordenar exercícios no calendário.
+  final int? loggedAtMs;
+
+  /// Descanso prescrito entre esta série e a próxima (s), no momento do registro.
+  final int? restPrescribedSec;
+
+  /// Tempo real do timer regressivo até o fim do descanso (ms).
+  final int? restCountdownElapsedMs;
+
+  /// Tempo na modal após o bipe até o aluno fechar (ms) — uso em relatórios.
+  final int? postRestModalMs;
+
   Map<String, dynamic> toJson() => {
         'loadKg': loadKg,
         'reps': reps,
+        if (loggedAtMs != null) 'loggedAtMs': loggedAtMs,
+        if (restPrescribedSec != null) 'restPrescribedSec': restPrescribedSec,
+        if (restCountdownElapsedMs != null)
+          'restCountdownElapsedMs': restCountdownElapsedMs,
+        if (postRestModalMs != null) 'postRestModalMs': postRestModalMs,
       };
 
   static DayWorkoutPerformedSet? fromJson(Object? e) {
@@ -31,7 +52,28 @@ class DayWorkoutPerformedSet {
         loadKg = double.tryParse('$loadRaw'.replaceAll(',', '.'));
       }
     }
-    return DayWorkoutPerformedSet(loadKg: loadKg, reps: reps);
+    final atRaw = m['loggedAtMs'];
+    int? loggedAtMs;
+    if (atRaw is num) {
+      loggedAtMs = atRaw.toInt();
+    } else if (atRaw != null) {
+      loggedAtMs = int.tryParse('$atRaw');
+    }
+    int? optInt(String k) {
+      final v = m[k];
+      if (v is num) return v.toInt();
+      if (v != null) return int.tryParse('$v');
+      return null;
+    }
+
+    return DayWorkoutPerformedSet(
+      loadKg: loadKg,
+      reps: reps,
+      loggedAtMs: loggedAtMs,
+      restPrescribedSec: optInt('restPrescribedSec'),
+      restCountdownElapsedMs: optInt('restCountdownElapsedMs'),
+      postRestModalMs: optInt('postRestModalMs'),
+    );
   }
 }
 
@@ -50,6 +92,16 @@ abstract final class DayWorkoutPerformedSetCodec {
 
   static String encode(List<DayWorkoutPerformedSet> list) {
     return jsonEncode(list.map((e) => e.toJson()).toList());
+  }
+
+  /// Menor [DayWorkoutPerformedSet.loggedAtMs] da lista (séries antigas sem campo → ignora).
+  static int? minLoggedAtMs(List<DayWorkoutPerformedSet> list) {
+    int? minMs;
+    for (final s in list) {
+      final t = s.loggedAtMs;
+      if (t != null && (minMs == null || t < minMs)) minMs = t;
+    }
+    return minMs;
   }
 
   /// Score do exercício: soma de (carga × repetições) por série (carga nula = 0).

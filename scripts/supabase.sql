@@ -1,6 +1,28 @@
--- Schema COMPLETO do app para Supabase (Postgres)
--- Inclui: núcleo do app + anamnese histórica + relatórios por aluno + RLS permissivo (dev)
--- Uso: Supabase Dashboard -> SQL Editor -> Execute
+-- =============================================================================
+-- Supabase / Postgres — único script SQL do projeto (schema + migrações + reparo)
+-- =============================================================================
+-- Execute no Supabase Dashboard → SQL Editor. Idempotente: pode rodar várias vezes.
+--
+-- Colunas: usa ADD IF NOT EXISTS onde basta; para `rest_between_sets_sec` também
+-- corrige tipo (→ integer), preenche NULLs, alinha DEFAULT 60 e NOT NULL.
+--
+-- RLS permissivo (anon/authenticated) é para desenvolvimento/sync; em produção,
+-- substitua por políticas restritivas.
+--
+-- Paridade SQLite (Drift) ↔ nuvem (envio completo + sync incremental):
+--   muscle_groups, exercises, gyms, personals, students, student_gyms,
+--   training_methods, workout_groups, workout_group_exercises,
+--   week_schedule_blocks, week_schedule_items, day_workouts,
+--   day_workout_exercises, audit_logs
+-- Reconciliação de id por nome normalizado (evita 23505): ver no app
+--   supabase_muscle_group_cloud_reconcile.dart, supabase_exercise_cloud_reconcile.dart,
+--   supabase_catalog_cloud_reconcile.dart.
+-- Se a nuvem já ficou inconsistente (23505 em exercises / 23503 nas filhas), rode no
+--   SQL Editor: scripts/supabase_repair_exercises_dedupe.sql
+--
+-- Só Postgres hoje (app não envia ainda): anamnese_sessions, anamnese_answers,
+-- student_performance_reports. Anamnese no app fica em audit_logs (JSON).
+-- =============================================================================
 
 create extension if not exists "pgcrypto";
 
@@ -73,6 +95,8 @@ create table if not exists public.personals (
   city text not null,
   state_uf text not null,
   cep text null,
+  phone_commercial text null,
+  phone_mobile text null,
   email text not null,
   must_change_password boolean not null default true,
   password_hash text null,
@@ -95,6 +119,8 @@ create table if not exists public.students (
   city text null,
   state_uf text null,
   cep text null,
+  phone_commercial text null,
+  phone_mobile text null,
   must_change_password boolean not null default true,
   password_hash text null,
   created_by_personal_id text null references public.personals(id) on delete set null,
@@ -132,7 +158,10 @@ create table if not exists public.workout_group_exercises (
   last_load_kg double precision null,
   last_reps integer null,
   last_reps_text text null,
-  last_sets integer null
+  last_sets integer null,
+  rest_between_sets_sec integer not null default 60,
+  training_method_id text null references public.training_methods(id) on delete set null,
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.week_schedule_blocks (
@@ -151,8 +180,12 @@ create table if not exists public.week_schedule_items (
   sort_order integer not null default 0,
   sets integer not null default 0,
   reps integer not null default 0,
+  reps_text text null,
   load_kg double precision null,
-  needs_detail boolean not null default false
+  needs_detail boolean not null default false,
+  rest_between_sets_sec integer not null default 60,
+  training_method_id text null references public.training_methods(id) on delete set null,
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.day_workouts (
@@ -168,7 +201,9 @@ create table if not exists public.day_workouts (
   timer_resume_at timestamptz null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  source_workout_group_id text null
+  source_workout_group_id text null,
+  watch_calories_kcal double precision null,
+  watch_avg_heart_rate_bpm integer null
 );
 
 create table if not exists public.day_workout_exercises (
@@ -178,9 +213,13 @@ create table if not exists public.day_workout_exercises (
   sort_order integer not null default 0,
   sets integer not null,
   reps integer not null,
+  reps_text text null,
   load_kg double precision null,
   exercise_score double precision null,
-  performed_sets_json text null
+  performed_sets_json text null,
+  rest_between_sets_sec integer not null default 60,
+  training_method_id text null references public.training_methods(id) on delete set null,
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.audit_logs (
@@ -234,7 +273,98 @@ create table if not exists public.student_performance_reports (
 -- -----------------------------
 
 alter table public.personals add column if not exists cep text;
+alter table public.personals add column if not exists phone_commercial text;
+alter table public.personals add column if not exists phone_mobile text;
+alter table public.students add column if not exists phone_commercial text;
+alter table public.students add column if not exists phone_mobile text;
 alter table public.workout_group_exercises add column if not exists last_reps_text text;
+
+alter table public.workout_group_exercises
+  add column if not exists training_method_id text null
+  references public.training_methods(id) on delete set null;
+
+alter table public.week_schedule_items
+  add column if not exists reps_text text null;
+
+alter table public.week_schedule_items
+  add column if not exists training_method_id text null
+  references public.training_methods(id) on delete set null;
+
+alter table public.day_workout_exercises
+  add column if not exists reps_text text null;
+
+alter table public.day_workout_exercises
+  add column if not exists training_method_id text null
+  references public.training_methods(id) on delete set null;
+
+alter table public.workout_group_exercises add column if not exists combo_id text null;
+alter table public.week_schedule_items add column if not exists combo_id text null;
+alter table public.day_workout_exercises add column if not exists combo_id text null;
+
+-- Descanso entre séries (segundos): cria se faltar; se existir com tipo/default errados, alinha.
+do $$
+declare
+  t text;
+  dt text;
+begin
+  foreach t in array array[
+    'workout_group_exercises',
+    'week_schedule_items',
+    'day_workout_exercises'
+  ]::text[]
+  loop
+    if to_regclass('public.' || t) is null then
+      continue;
+    end if;
+    if not exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = t
+        and c.column_name = 'rest_between_sets_sec'
+    ) then
+      execute format(
+        'alter table public.%I add column rest_between_sets_sec integer not null default 60',
+        t
+      );
+    else
+      select c.data_type into dt
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = t
+        and c.column_name = 'rest_between_sets_sec';
+      if dt is distinct from 'integer' then
+        execute format(
+          $s$
+          alter table public.%I
+            alter column rest_between_sets_sec type integer
+            using (trim(both from rest_between_sets_sec::text))::integer
+          $s$,
+          t
+        );
+      end if;
+      execute format(
+        'update public.%I set rest_between_sets_sec = 60 where rest_between_sets_sec is null',
+        t
+      );
+      execute format(
+        'alter table public.%I alter column rest_between_sets_sec set default 60',
+        t
+      );
+      execute format(
+        'alter table public.%I alter column rest_between_sets_sec set not null',
+        t
+      );
+    end if;
+  end loop;
+end $$;
+
+comment on column public.workout_group_exercises.rest_between_sets_sec is
+  'Intervalo prescrito entre séries neste exercício do modelo de grupo (segundos).';
+comment on column public.week_schedule_items.rest_between_sets_sec is
+  'Intervalo entre séries no planejamento semanal (segundos); pode divergir do grupo.';
+comment on column public.day_workout_exercises.rest_between_sets_sec is
+  'Intervalo entre séries no treino agendado (segundos); cópia do planejamento na programação.';
 
 -- -----------------------------
 -- DEDUP (MUSCLE GROUPS / EXERCISES)
@@ -360,6 +490,14 @@ create index if not exists idx_anamnese_answers_session_order
 create index if not exists idx_reports_student_created
   on public.student_performance_reports(student_id, created_at desc);
 
+-- Colunas updated_at em tabelas criadas antes desta revisão (idempotente).
+alter table public.workout_group_exercises
+  add column if not exists updated_at timestamptz not null default now();
+alter table public.week_schedule_items
+  add column if not exists updated_at timestamptz not null default now();
+alter table public.day_workout_exercises
+  add column if not exists updated_at timestamptz not null default now();
+
 -- -----------------------------
 -- TRIGGERS (updated_at)
 -- -----------------------------
@@ -412,6 +550,21 @@ for each row execute function public.set_updated_at();
 drop trigger if exists trg_week_schedule_blocks_updated_at on public.week_schedule_blocks;
 create trigger trg_week_schedule_blocks_updated_at
 before update on public.week_schedule_blocks
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_week_schedule_items_updated_at on public.week_schedule_items;
+create trigger trg_week_schedule_items_updated_at
+before update on public.week_schedule_items
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_workout_group_exercises_updated_at on public.workout_group_exercises;
+create trigger trg_workout_group_exercises_updated_at
+before update on public.workout_group_exercises
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_day_workout_exercises_updated_at on public.day_workout_exercises;
+create trigger trg_day_workout_exercises_updated_at
+before update on public.day_workout_exercises
 for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_day_workouts_updated_at on public.day_workouts;
@@ -502,3 +655,107 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to anon;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 
+-- =============================================================================
+-- Reparo de integridade referencial (23503 / sync / linhas órfãs)
+-- Idempotente. Remove ou corrige linhas que violam FK; o app pode reenviar do SQLite.
+-- =============================================================================
+
+update public.students s
+set created_by_personal_id = null
+where s.created_by_personal_id is not null
+  and not exists (
+    select 1 from public.personals p where p.id = s.created_by_personal_id
+  );
+
+insert into public.muscle_groups (id, name, created_at, updated_at)
+values (
+  '__sync_orphan_muscle_group__',
+  '(Correção sync) Grupo indeterminado',
+  now(),
+  now()
+)
+on conflict (id) do nothing;
+
+update public.exercises e
+set muscle_group_id = '__sync_orphan_muscle_group__',
+    updated_at = now()
+where not exists (
+  select 1 from public.muscle_groups mg where mg.id = e.muscle_group_id
+);
+
+update public.week_schedule_items i
+set source_workout_group_id = null
+where i.source_workout_group_id is not null
+  and not exists (
+    select 1 from public.workout_groups g where g.id = i.source_workout_group_id
+  );
+
+update public.day_workouts dw
+set source_workout_group_id = null
+where dw.source_workout_group_id is not null
+  and not exists (
+    select 1 from public.workout_groups g where g.id = dw.source_workout_group_id
+  );
+
+update public.day_workouts dw
+set week_item_id = null
+where dw.week_item_id is not null
+  and not exists (
+    select 1 from public.week_schedule_items wsi where wsi.id = dw.week_item_id
+  );
+
+delete from public.workout_group_exercises w
+where not exists (select 1 from public.workout_groups g where g.id = w.workout_group_id)
+   or not exists (select 1 from public.exercises x where x.id = w.exercise_id);
+
+delete from public.week_schedule_items i
+where not exists (select 1 from public.week_schedule_blocks b where b.id = i.block_id)
+   or not exists (select 1 from public.exercises x where x.id = i.exercise_id);
+
+delete from public.week_schedule_blocks b
+where not exists (select 1 from public.students s where s.id = b.student_id);
+
+delete from public.day_workout_exercises d
+where not exists (select 1 from public.day_workouts w where w.id = d.day_workout_id)
+   or not exists (select 1 from public.exercises x where x.id = d.exercise_id);
+
+delete from public.day_workouts dw
+where not exists (select 1 from public.students s where s.id = dw.student_id);
+
+delete from public.student_gyms sg
+where not exists (select 1 from public.students s where s.id = sg.student_id)
+   or not exists (select 1 from public.gyms g where g.id = sg.gym_id);
+
+do $$
+begin
+  if to_regclass('public.anamnese_answers') is not null then
+    delete from public.anamnese_answers a
+    where not exists (
+      select 1 from public.anamnese_sessions sess where sess.id = a.session_id
+    );
+  end if;
+
+  if to_regclass('public.anamnese_sessions') is not null then
+    delete from public.anamnese_sessions sess
+    where not exists (
+      select 1 from public.students s where s.id = sess.student_id
+    );
+  end if;
+
+  if to_regclass('public.student_performance_reports') is not null then
+    delete from public.student_performance_reports r
+    where not exists (
+      select 1 from public.students s where s.id = r.student_id
+    );
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Migração: colunas opcionais do relógio em treinos concluídos (aluno).
+-- Executar no SQL Editor do Supabase em projetos criados antes desta alteração.
+-- Idempotente: pode voltar a correr sem erro se as colunas já existirem.
+-- ---------------------------------------------------------------------------
+alter table public.day_workouts
+  add column if not exists watch_calories_kcal double precision null;
+alter table public.day_workouts
+  add column if not exists watch_avg_heart_rate_bpm integer null;

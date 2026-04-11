@@ -1,3 +1,4 @@
+import '../../core/utils/reps_text_utils.dart';
 import '../local/app_database.dart';
 
 /// Item agendado na semana com nome do exercício resolvido (join).
@@ -11,5 +12,5 @@ class WeekScheduleRow {
   final String exerciseName;
 
   bool get needsAttention =>
-      item.needsDetail || item.sets <= 0 || item.reps <= 0;
+      item.needsDetail || !weekScheduleItemHasValidPrescription(item);
 }

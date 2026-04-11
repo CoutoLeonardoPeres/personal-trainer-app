@@ -15,8 +15,19 @@ double workoutScore({
   return exercisesScoreSum / activeDurationSeconds;
 }
 
-/// Score do treino: soma dos scores dos exercícios ÷ tempo ativo em **minutos**.
-/// Ex.: soma de volumes ÷ (segundos/60).
+/// Volume já registrado (soma carga×reps das séries) ÷ minutos de treino **ativo**,
+/// multiplicado por **10** — valor gravado em [DayWorkoutEntity.workoutScore] no instante
+/// do registro da série (com o tempo ativo daquele momento).
+double workoutScoreStoredAtInstant({
+  required double performedVolumeSum,
+  required int activeDurationSeconds,
+}) {
+  final minutes = activeDurationSeconds / 60.0;
+  if (minutes <= 0) return 0;
+  return 10.0 * performedVolumeSum / minutes;
+}
+
+/// Legado (sem fator 10). Preferir [workoutScoreStoredAtInstant].
 double workoutScorePerActiveMinute({
   required double exercisesScoreSum,
   required int activeDurationSeconds,

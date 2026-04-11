@@ -15,6 +15,15 @@ import '../../../data/repositories/app_data_repository.dart';
 class AlunosPage extends StatelessWidget {
   const AlunosPage({super.key});
 
+  static String _studentSubtitle(StudentEntity e) {
+    final parts = <String>[
+      if ((e.email ?? '').trim().isNotEmpty) e.email!.trim(),
+      if ((e.phoneMobile ?? '').isNotEmpty) brFormatPhoneDisplay(e.phoneMobile!),
+      if ((e.city ?? '').trim().isNotEmpty) e.city!.trim(),
+    ];
+    return parts.isEmpty ? '—' : parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<AppDataRepository>();
@@ -28,6 +37,7 @@ class AlunosPage extends StatelessWidget {
         },
         child: const Icon(Icons.add),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: FuturisticBackground(
         child: StreamBuilder<List<StudentEntity>>(
           stream: repo.watchStudentsAlphabetical(),
@@ -42,20 +52,23 @@ class AlunosPage extends StatelessWidget {
               );
             }
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
               itemCount: list.length,
               itemBuilder: (_, i) {
                 final e = list[i];
+                Future<void> openForm() async {
+                  final gList = await repo.watchGymsAlphabetical().first;
+                  final sel = await repo.gymIdsForStudent(e.id);
+                  if (!context.mounted) return;
+                  _form(context, repo, e, gList, sel.toSet());
+                }
                 return SwipeableRegistryCard(
                   slidableKey: e.id,
                   title: e.name,
-                  subtitle: e.email ?? e.city ?? '',
-                  onEdit: () async {
-                    final gList = await repo.watchGymsAlphabetical().first;
-                    final sel = await repo.gymIdsForStudent(e.id);
-                    if (!context.mounted) return;
-                    _form(context, repo, e, gList, sel.toSet());
-                  },
+                  subtitle: _studentSubtitle(e),
+                  onEdit: () => openForm(),
+                  onCardTap: () => openForm(),
+                  showEditOnSwipe: false,
                   onDelete: () async {
                     final ok = await confirmDeleteDialog(context, itemName: e.name);
                     if (ok == true && context.mounted) await repo.deleteStudent(e.id);
@@ -88,6 +101,12 @@ class AlunosPage extends StatelessWidget {
     final bairro = TextEditingController(text: x?.district ?? '');
     final cidade = TextEditingController(text: x?.city ?? '');
     final cep = TextEditingController(text: x?.cep ?? '');
+    final phoneCommercialC = TextEditingController(
+      text: brFormatPhoneDisplay(x?.phoneCommercial ?? ''),
+    );
+    final phoneMobileC = TextEditingController(
+      text: brFormatPhoneDisplay(x?.phoneMobile ?? ''),
+    );
     DateTime? birth = x?.birthDate;
     String? uf = x?.stateUf;
     var sel = Set<String>.from(selectedGymIds);
@@ -107,6 +126,22 @@ class AlunosPage extends StatelessWidget {
             AppTextField(controller: goal, label: 'Objetivo', maxLines: 2),
             const SizedBox(height: kCadastroFieldGap),
             AppTextField(
+              controller: phoneCommercialC,
+              label: 'Telefone comercial',
+              hint: '(11) 3456-7890',
+              keyboardType: TextInputType.phone,
+              inputFormatters: [BrPhoneLandlineInputFormatter()],
+            ),
+            const SizedBox(height: kCadastroFieldGap),
+            AppTextField(
+              controller: phoneMobileC,
+              label: 'Celular',
+              hint: '(11) 98765-4321',
+              keyboardType: TextInputType.phone,
+              inputFormatters: [BrPhoneMobileInputFormatter()],
+            ),
+            const SizedBox(height: kCadastroFieldGap),
+            AppTextField(
               controller: cpf,
               label: 'CPF',
               keyboardType: TextInputType.number,
@@ -114,34 +149,44 @@ class AlunosPage extends StatelessWidget {
             ),
             const SizedBox(height: kCadastroFieldGap),
             Material(
-              color: const Color(0xFF12121C),
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(14),
-              child: ListTile(
-                shape: RoundedRectangleBorder(
+              child: Container(
+                decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(
-                    color: AppColors.cadastroCardBorder.withValues(alpha: 0.55),
+                  color: AppColors.cadastroCardBorder.withValues(alpha: 0.048),
+                  border: Border.all(
+                    color: AppColors.cadastroCardBorder.withValues(alpha: 0.44),
                   ),
                 ),
-                title: const Text(
-                  'Data de nascimento',
-                  style: TextStyle(color: AppColors.splashMint, fontSize: 13, fontWeight: FontWeight.w500),
+                child: ListTile(
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                  ),
+                  title: const Text(
+                    'Data de nascimento',
+                    style: TextStyle(
+                      color: AppColors.splashMint,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    birth == null
+                        ? 'Toque para escolher'
+                        : '${birth!.day}/${birth!.month}/${birth!.year}',
+                    style: const TextStyle(color: AppColors.textPrimary),
+                  ),
+                  onTap: () async {
+                    final d = await showDatePicker(
+                      context: ctx,
+                      initialDate: birth ?? DateTime(2000),
+                      firstDate: DateTime(1900),
+                      lastDate: DateTime.now(),
+                    );
+                    if (d != null) setSt(() => birth = d);
+                  },
                 ),
-                subtitle: Text(
-                  birth == null
-                      ? 'Toque para escolher'
-                      : '${birth!.day}/${birth!.month}/${birth!.year}',
-                  style: const TextStyle(color: AppColors.textPrimary),
-                ),
-                onTap: () async {
-                  final d = await showDatePicker(
-                    context: ctx,
-                    initialDate: birth ?? DateTime(2000),
-                    firstDate: DateTime(1900),
-                    lastDate: DateTime.now(),
-                  );
-                  if (d != null) setSt(() => birth = d);
-                },
               ),
             ),
             const SizedBox(height: kCadastroFieldGap),
@@ -226,6 +271,8 @@ class AlunosPage extends StatelessWidget {
                   }
                   return;
                 }
+                final telCom = brDigitsOnly(phoneCommercialC.text);
+                final telCel = brDigitsOnly(phoneMobileC.text);
                 await repo.upsertStudent(
                   id: x?.id,
                   name: name.text.trim(),
@@ -240,6 +287,8 @@ class AlunosPage extends StatelessWidget {
                   city: cidade.text.trim().isEmpty ? null : cidade.text.trim(),
                   stateUf: uf?.isEmpty ?? true ? null : uf,
                   cep: cep.text.trim().isEmpty ? null : cep.text.trim(),
+                  phoneCommercial: telCom.isEmpty ? null : telCom,
+                  phoneMobile: telCel.isEmpty ? null : telCel,
                   gymIds: sel.toList(),
                   mustChangePassword: x?.mustChangePassword ?? true,
                   passwordHash: x?.passwordHash,

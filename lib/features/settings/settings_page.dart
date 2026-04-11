@@ -8,7 +8,9 @@ import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_constants.dart';
 import '../../core/supabase/supabase_prefs_config.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
+import '../../core/preferences/rest_timer_prefs.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/ui/keyboard_bottom_inset.dart';
 import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../data/local/app_database.dart';
@@ -31,9 +33,17 @@ class SettingsPage extends StatelessWidget {
             const SizedBox(height: 8),
             const _SupabaseSyncSection(),
             const SizedBox(height: 8),
+            const _RestTimerSoundTile(),
+            const SizedBox(height: 8),
             ListTile(
-              leading: const Icon(Icons.password_rounded, color: AppColors.accentGreen),
-              title: const Text('Alterar senha', style: TextStyle(color: AppColors.textPrimary)),
+              leading: const Icon(
+                Icons.password_rounded,
+                color: AppColors.accentGreen,
+              ),
+              title: const Text(
+                'Alterar senha',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               subtitle: const Text(
                 'Primeiro acesso e troca de senha provisória (fluxo completo com auth).',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 12),
@@ -41,20 +51,32 @@ class SettingsPage extends StatelessWidget {
               onTap: () => _passwordSheet(context),
             ),
             ListTile(
-              leading: const Icon(Icons.logout_rounded, color: AppColors.accentPink),
-              title: const Text('Sair da conta', style: TextStyle(color: AppColors.textPrimary)),
+              leading: const Icon(
+                Icons.logout_rounded,
+                color: AppColors.accentPink,
+              ),
+              title: const Text(
+                'Sair da conta',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 showDialog<void>(
                   context: context,
                   builder: (ctx) => AlertDialog(
                     backgroundColor: AppColors.barBackground,
-                    title: const Text('Conta', style: TextStyle(color: AppColors.textPrimary)),
+                    title: const Text(
+                      'Conta',
+                      style: TextStyle(color: AppColors.textPrimary),
+                    ),
                     content: const Text(
                       'Logout local — integrar com Supabase Auth quando o backend estiver ativo.',
                       style: TextStyle(color: AppColors.textMuted),
                     ),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('OK'),
+                      ),
                     ],
                   ),
                 );
@@ -62,13 +84,22 @@ class SettingsPage extends StatelessWidget {
             ),
             Consumer<AppSession>(
               builder: (context, session, _) => ListTile(
-                leading: const Icon(Icons.article_outlined, color: AppColors.accentGreen),
-                title: const Text('Logs do app', style: TextStyle(color: AppColors.textPrimary)),
+                leading: const Icon(
+                  Icons.article_outlined,
+                  color: AppColors.accentGreen,
+                ),
+                title: const Text(
+                  'Logs do app',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
                 subtitle: Text(
                   session.isAdminPersonal
                       ? 'Auditoria gravada no SQLite (ações e cadastros).'
                       : 'Disponível apenas para o perfil administrador.',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
                 ),
                 onTap: () => _logsSheet(context),
               ),
@@ -86,44 +117,41 @@ class SettingsPage extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.barBackground,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.viewInsetsOf(ctx).bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Nova senha',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      builder: (ctx) => KeyboardBottomInsetPadding(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Nova senha',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: c1,
-              obscureText: true,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(labelText: 'Senha'),
-            ),
-            TextField(
-              controller: c2,
-              obscureText: true,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(labelText: 'Confirmar'),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Salvar (stub)'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: c1,
+                obscureText: true,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: const InputDecoration(labelText: 'Senha'),
+              ),
+              TextField(
+                controller: c2,
+                obscureText: true,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: const InputDecoration(labelText: 'Confirmar'),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Salvar (stub)'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -135,7 +163,9 @@ class SettingsPage extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Somente administradores podem ver os logs de auditoria.'),
+          content: Text(
+            'Somente administradores podem ver os logs de auditoria.',
+          ),
         ),
       );
       return;
@@ -143,8 +173,10 @@ class SettingsPage extends StatelessWidget {
     final repo = context.read<AppDataRepository>();
     final logs = await repo.allAuditLogs();
     final text = logs
-        .map((e) =>
-            '${e.at.toIso8601String()} [${e.action}] ${e.entityType} ${e.entityId ?? ''} ${e.payloadJson ?? ''}')
+        .map(
+          (e) =>
+              '${e.at.toIso8601String()} [${e.action}] ${e.entityType} ${e.entityId ?? ''} ${e.payloadJson ?? ''}',
+        )
         .join('\n');
 
     if (!context.mounted) return;
@@ -152,69 +184,71 @@ class SettingsPage extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.barBackground,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.93,
-        minChildSize: 0.4,
-        maxChildSize: 0.97,
-        expand: false,
-        builder: (context, scroll) => Column(
-          children: [
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 16),
-                  child: Text(
-                    'Logs',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+      builder: (ctx) => KeyboardBottomInsetPadding(
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.93,
+          minChildSize: 0.4,
+          maxChildSize: 0.97,
+          expand: false,
+          builder: (context, scroll) => Column(
+            children: [
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(left: 16),
+                    child: Text(
+                      'Logs',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
-                ),
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: text));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Logs copiados')),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('Copiar'),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: text));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Logs copiados')),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.copy, size: 18),
+                        label: const Text('Copiar'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          if (text.trim().isEmpty) return;
+                          SharePlus.instance.share(ShareParams(text: text));
+                        },
+                        icon: const Icon(Icons.share, size: 18),
+                        label: const Text('Compartilhar'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scroll,
+                  padding: const EdgeInsets.all(16),
+                  child: SelectableText(
+                    text.isEmpty ? '(sem registros ainda)' : text,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
                     ),
-                    TextButton.icon(
-                      onPressed: () {
-                        if (text.trim().isEmpty) return;
-                        SharePlus.instance.share(ShareParams(text: text));
-                      },
-                      icon: const Icon(Icons.share, size: 18),
-                      label: const Text('Compartilhar'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scroll,
-                padding: const EdgeInsets.all(16),
-                child: SelectableText(
-                  text.isEmpty ? '(sem registros ainda)' : text,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -286,6 +320,7 @@ class SettingsPage extends StatelessWidget {
     }
     final db = context.read<AppDatabase>();
     final sync = context.read<SupabaseSyncController>();
+    final session = context.read<AppSession>();
 
     if (!context.mounted) return;
     // Não use await em showDialog aqui: o Future só completa quando o diálogo
@@ -304,7 +339,7 @@ class SettingsPage extends StatelessWidget {
               SizedBox(width: 20),
               Expanded(
                 child: Text(
-                  'Testando conexão e enviando tabelas…',
+                  'Testando conexão e enviando dados (perfil atual)…',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
               ),
@@ -317,7 +352,7 @@ class SettingsPage extends StatelessWidget {
     final SupabaseManualSyncReport report;
     try {
       final svc = SupabaseManualSyncService(db, sync);
-      report = await svc.testConnectionAndPushAll();
+      report = await svc.testConnectionAndPushAll(session: session);
     } finally {
       if (context.mounted) {
         final nav = Navigator.of(context, rootNavigator: true);
@@ -390,6 +425,7 @@ class SettingsPage extends StatelessWidget {
     }
     final db = context.read<AppDatabase>();
     final sync = context.read<SupabaseSyncController>();
+    final session = context.read<AppSession>();
 
     if (!context.mounted) return;
     showDialog<void>(
@@ -406,7 +442,7 @@ class SettingsPage extends StatelessWidget {
               SizedBox(width: 20),
               Expanded(
                 child: Text(
-                  'Baixando dados da nuvem para o SQLite…',
+                  'Baixando da nuvem (escopo do perfil atual)…',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
               ),
@@ -418,7 +454,7 @@ class SettingsPage extends StatelessWidget {
 
     final SupabasePullReport report;
     try {
-      final svc = SupabasePullSyncService(db, sync);
+      final svc = SupabasePullSyncService(db, sync, session: session);
       report = await svc.pullAllFromRemote();
     } finally {
       if (context.mounted) {
@@ -514,9 +550,9 @@ class _SupabaseSyncSection extends StatelessWidget {
             Text(
               'Nuvem (Supabase)',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -560,14 +596,14 @@ class _SupabaseSyncSection extends StatelessWidget {
                           fidOk == true
                               ? 'Fidelidade (contagens): alinhado com a nuvem · ${fidAt.toLocal()}'
                               : fidOk == false
-                                  ? 'Fidelidade: divergência · ${fidAt.toLocal()}'
-                                  : 'Fidelidade: verificação falhou · ${fidAt.toLocal()}',
+                              ? 'Fidelidade: divergência · ${fidAt.toLocal()}'
+                              : 'Fidelidade: verificação falhou · ${fidAt.toLocal()}',
                           style: TextStyle(
                             color: fidOk == true
                                 ? AppColors.accentGreen.withValues(alpha: 0.9)
                                 : fidOk == false
-                                    ? Colors.orange.shade200
-                                    : Colors.red.shade200,
+                                ? Colors.orange.shade200
+                                : Colors.red.shade200,
                             fontSize: 11,
                           ),
                         ),
@@ -680,9 +716,9 @@ class _SupabaseLocalCredentialsCardState
       anon = anon.substring(1, anon.length - 1).trim();
     }
     if (anon.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cole a chave anon (JWT).')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cole a chave anon (JWT).')));
       return;
     }
     if (anon.startsWith('sb_publishable_')) {
@@ -844,10 +880,7 @@ class _SupabaseLocalCredentialsCardState
               ),
             ),
             const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: _clear,
-              child: const Text('Apagar'),
-            ),
+            OutlinedButton(onPressed: _clear, child: const Text('Apagar')),
           ],
         ),
       ],
@@ -900,7 +933,8 @@ class _SessionProfileSection extends StatelessWidget {
           return;
         }
         final preferred = session.personalId;
-        final id = (preferred != null && personals.any((p) => p.id == preferred))
+        final id =
+            (preferred != null && personals.any((p) => p.id == preferred))
             ? preferred
             : personals.first.id;
         await session.setSession(
@@ -948,14 +982,17 @@ class _SessionProfileSection extends StatelessWidget {
             Text(
               'Perfil da sessão',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               'Quem está usando o app neste aparelho (até haver login). Define quais alunos e treinos aparecem.',
-              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.95), fontSize: 12),
+              style: TextStyle(
+                color: AppColors.textMuted.withValues(alpha: 0.95),
+                fontSize: 12,
+              ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<SessionRole>(
@@ -988,11 +1025,15 @@ class _SessionProfileSection extends StatelessWidget {
                   if (list.isEmpty) {
                     return const Text(
                       'Nenhum personal cadastrado.',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
                     );
                   }
                   final pid = session.personalId;
-                  final effective = (pid != null && list.any((p) => p.id == pid))
+                  final effective =
+                      (pid != null && list.any((p) => p.id == pid))
                       ? pid
                       : list.first.id;
                   return DropdownButtonFormField<String>(
@@ -1032,11 +1073,15 @@ class _SessionProfileSection extends StatelessWidget {
                   if (list.isEmpty) {
                     return const Text(
                       'Nenhum aluno cadastrado.',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
                     );
                   }
                   final sid = session.studentId;
-                  final effective = (sid != null && list.any((s) => s.id == sid))
+                  final effective =
+                      (sid != null && list.any((s) => s.id == sid))
                       ? sid
                       : list.first.id;
                   return DropdownButtonFormField<String>(
@@ -1070,6 +1115,53 @@ class _SessionProfileSection extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _RestTimerSoundTile extends StatefulWidget {
+  const _RestTimerSoundTile();
+
+  @override
+  State<_RestTimerSoundTile> createState() => _RestTimerSoundTileState();
+}
+
+class _RestTimerSoundTileState extends State<_RestTimerSoundTile> {
+  bool? _soundEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    RestTimerPrefs.isSoundEnabled().then((v) {
+      if (mounted) setState(() => _soundEnabled = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loaded = _soundEnabled;
+    return SwitchListTile(
+      secondary: const Icon(
+        Icons.timer_outlined,
+        color: AppColors.accentGreen,
+      ),
+      title: const Text(
+        'Som no timer de descanso',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      subtitle: Text(
+        loaded == null
+            ? 'Carregando…'
+            : 'Tocar um aviso ao fim do intervalo entre séries durante o treino.',
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
+      value: loaded ?? true,
+      onChanged: loaded == null
+          ? null
+          : (v) async {
+              await RestTimerPrefs.setSoundEnabled(v);
+              if (mounted) setState(() => _soundEnabled = v);
+            },
     );
   }
 }

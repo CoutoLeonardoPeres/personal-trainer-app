@@ -3,9 +3,11 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/auth/app_session.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
+import 'supabase_catalog_cloud_reconcile.dart';
 import 'supabase_table_mappers.dart';
 
 /// Resultado do ping REST.
@@ -139,7 +141,38 @@ class SupabaseManualSyncService {
     }
   }
 
-  Future<SupabaseManualSyncReport> testConnectionAndPushAll() async {
+  static bool _pushFullCloud(AppSession? s) {
+    final x = s;
+    return x == null || x.isAdminPersonal;
+  }
+
+  static bool _pushAsStudent(AppSession? s) => s != null && s.isStudent;
+
+  /// Alunos permitidos no envio conforme o perfil da sessão (admin = todos no SQLite).
+  Future<Set<String>> _allowedStudentIdsForPush(AppSession? session) async {
+    if (_pushFullCloud(session)) {
+      return (await _db.select(_db.students).get()).map((e) => e.id).toSet();
+    }
+    final s = session!;
+    if (s.isPersonalTrainer) {
+      final pid = s.personalId;
+      if (pid == null) return {};
+      return (await _db.select(_db.students).get())
+          .where((e) => e.createdByPersonalId == pid)
+          .map((e) => e.id)
+          .toSet();
+    }
+    if (s.isStudent) {
+      final sid = s.studentId;
+      if (sid == null) return {};
+      return {sid};
+    }
+    return {};
+  }
+
+  Future<SupabaseManualSyncReport> testConnectionAndPushAll({
+    AppSession? session,
+  }) async {
     final startedAt = DateTime.now();
     final tables = <SupabaseTablePushResult>[];
 
@@ -156,80 +189,141 @@ class SupabaseManualSyncService {
     final client = Supabase.instance.client;
     _sync.beginUpload();
     try {
-      tables.add(await _pushMaps(
-        client,
-        'muscle_groups',
-        (await _db.select(_db.muscleGroups).get()).map(supabaseMuscleGroup).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'exercises',
-        (await _db.select(_db.exercises).get()).map(supabaseExercise).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'gyms',
-        (await _db.select(_db.gyms).get()).map(supabaseGym).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'personals',
-        (await _db.select(_db.personals).get()).map(supabasePersonal).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'students',
-        (await _db.select(_db.students).get()).map(supabaseStudent).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'student_gyms',
-        (await _db.select(_db.studentGyms).get()).map(supabaseStudentGym).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'training_methods',
-        (await _db.select(_db.trainingMethods).get()).map(supabaseTrainingMethod).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'workout_groups',
-        (await _db.select(_db.workoutGroups).get()).map(supabaseWorkoutGroup).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'workout_group_exercises',
-        (await _db.select(_db.workoutGroupExercises).get())
-            .map(supabaseWorkoutGroupExercise)
-            .toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'week_schedule_blocks',
-        (await _db.select(_db.weekScheduleBlocks).get()).map(supabaseWeekBlock).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'week_schedule_items',
-        (await _db.select(_db.weekScheduleItems).get()).map(supabaseWeekItem).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'day_workouts',
-        (await _db.select(_db.dayWorkouts).get()).map(supabaseDayWorkout).toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'day_workout_exercises',
-        (await _db.select(_db.dayWorkoutExercises).get())
-            .map(supabaseDayWorkoutExercise)
-            .toList(),
-      ));
-      tables.add(await _pushMaps(
-        client,
-        'audit_logs',
-        (await _db.select(_db.auditLogs).get()).map(supabaseAuditLog).toList(),
-      ));
+      await reconcileLocalCatalogWithCloud(_db, client);
+
+      final full = _pushFullCloud(session);
+      final asStudent = _pushAsStudent(session);
+      final allowedStudents = await _allowedStudentIdsForPush(session);
+
+      final muscleRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.muscleGroups).get())
+              .map(supabaseMuscleGroup)
+              .toList();
+      final exerciseRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.exercises).get()).map(supabaseExercise).toList();
+      final gymRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.gyms).get()).map(supabaseGym).toList();
+
+      var personalRows =
+          (await _db.select(_db.personals).get()).map(supabasePersonal).toList();
+      if (!full) {
+        final s = session!;
+        if (s.isPersonalTrainer) {
+          final pid = s.personalId;
+          personalRows =
+              pid == null ? [] : personalRows.where((m) => m['id'] == pid).toList();
+        } else if (s.isStudent) {
+          final sid = s.studentId;
+          if (sid == null) {
+            personalRows = [];
+          } else {
+            final st = await (_db.select(_db.students)
+                  ..where((x) => x.id.equals(sid)))
+                .getSingleOrNull();
+            final tid = st?.createdByPersonalId;
+            personalRows = tid == null
+                ? []
+                : personalRows.where((m) => m['id'] == tid).toList();
+          }
+        } else {
+          personalRows = [];
+        }
+      }
+
+      var studentRows =
+          (await _db.select(_db.students).get()).map(supabaseStudent).toList();
+      if (!full) {
+        studentRows = studentRows
+            .where((m) => allowedStudents.contains(m['id'] as String))
+            .toList();
+      }
+
+      var studentGymRows = (await _db.select(_db.studentGyms).get())
+          .map(supabaseStudentGym)
+          .toList();
+      if (!full) {
+        studentGymRows = studentGymRows
+            .where((m) => allowedStudents.contains(m['student_id'] as String))
+            .toList();
+      }
+
+      final methodRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.trainingMethods).get())
+              .map(supabaseTrainingMethod)
+              .toList();
+
+      var groupRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.workoutGroups).get())
+              .map(supabaseWorkoutGroup)
+              .toList();
+      var groupExRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.workoutGroupExercises).get())
+              .map(supabaseWorkoutGroupExercise)
+              .toList();
+
+      var weekBlockRows = (await _db.select(_db.weekScheduleBlocks).get())
+          .map(supabaseWeekBlock)
+          .toList();
+      if (!full) {
+        weekBlockRows = weekBlockRows
+            .where((m) => allowedStudents.contains(m['student_id'] as String))
+            .toList();
+      }
+      final blockIds =
+          weekBlockRows.map((m) => m['id'] as String).toSet();
+
+      var weekItemRows = (await _db.select(_db.weekScheduleItems).get())
+          .map(supabaseWeekItem)
+          .toList();
+      if (!full) {
+        weekItemRows = weekItemRows
+            .where((m) => blockIds.contains(m['block_id'] as String))
+            .toList();
+      }
+
+      var dayWorkoutRows =
+          (await _db.select(_db.dayWorkouts).get()).map(supabaseDayWorkout).toList();
+      if (!full) {
+        dayWorkoutRows = dayWorkoutRows
+            .where((m) => allowedStudents.contains(m['student_id'] as String))
+            .toList();
+      }
+      final dayWorkoutIds =
+          dayWorkoutRows.map((m) => m['id'] as String).toSet();
+
+      var dweRows = (await _db.select(_db.dayWorkoutExercises).get())
+          .map(supabaseDayWorkoutExercise)
+          .toList();
+      if (!full) {
+        dweRows = dweRows
+            .where((m) => dayWorkoutIds.contains(m['day_workout_id'] as String))
+            .toList();
+      }
+
+      final auditRows = asStudent
+          ? <Map<String, dynamic>>[]
+          : (await _db.select(_db.auditLogs).get()).map(supabaseAuditLog).toList();
+
+      tables.add(await _pushMaps(client, 'muscle_groups', muscleRows));
+      tables.add(await _pushMaps(client, 'exercises', exerciseRows));
+      tables.add(await _pushMaps(client, 'gyms', gymRows));
+      tables.add(await _pushMaps(client, 'personals', personalRows));
+      tables.add(await _pushMaps(client, 'students', studentRows));
+      tables.add(await _pushMaps(client, 'student_gyms', studentGymRows));
+      tables.add(await _pushMaps(client, 'training_methods', methodRows));
+      tables.add(await _pushMaps(client, 'workout_groups', groupRows));
+      tables.add(await _pushMaps(client, 'workout_group_exercises', groupExRows));
+      tables.add(await _pushMaps(client, 'week_schedule_blocks', weekBlockRows));
+      tables.add(await _pushMaps(client, 'week_schedule_items', weekItemRows));
+      tables.add(await _pushMaps(client, 'day_workouts', dayWorkoutRows));
+      tables.add(await _pushMaps(client, 'day_workout_exercises', dweRows));
+      tables.add(await _pushMaps(client, 'audit_logs', auditRows));
 
       final allOk = tables.every((t) => t.ok);
       if (allOk) {

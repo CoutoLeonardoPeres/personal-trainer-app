@@ -6,7 +6,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/utils/calendar_day_utils.dart';
 import '../../core/utils/muscle_group_utils.dart';
+import '../../domain/scoring.dart' as scoring;
+import '../models/day_workout_performed_set.dart';
 import 'exercise_seed_defaults.dart';
 
 part 'app_database.g.dart';
@@ -97,6 +100,8 @@ class Personals extends Table {
   TextColumn get stateUf => text()();
   TextColumn get cep => text().nullable()();
   TextColumn get email => text()();
+  TextColumn get phoneCommercial => text().nullable()();
+  TextColumn get phoneMobile => text().nullable()();
   BoolColumn get mustChangePassword =>
       boolean().withDefault(const Constant(true))();
   TextColumn get passwordHash => text().nullable()();
@@ -125,6 +130,8 @@ class Students extends Table {
   TextColumn get city => text().nullable()();
   TextColumn get stateUf => text().nullable()();
   TextColumn get cep => text().nullable()();
+  TextColumn get phoneCommercial => text().nullable()();
+  TextColumn get phoneMobile => text().nullable()();
 
   /// Quando true, o app exige troca de senha no próximo acesso.
   BoolColumn get mustChangePassword =>
@@ -186,6 +193,20 @@ class WorkoutGroupExercises extends Table {
   TextColumn get lastRepsText => text().nullable()();
   IntColumn get lastSets => integer().nullable()();
 
+  /// Descanso prescrito entre séries deste exercício no modelo (segundos).
+  IntColumn get restBetweenSetsSec =>
+      integer().withDefault(const Constant(60))();
+
+  /// Método de treino associado a esta linha (opcional).
+  TextColumn get trainingMethodId =>
+      text().nullable().references(TrainingMethods, #id)();
+
+  /// Para importação admin (LWW) alinhada ao Supabase.
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// Exercícios consecutivos com o mesmo id formam um bloco (superserie); descanso só após a última linha do bloco.
+  TextColumn get comboId => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -215,8 +236,22 @@ class WeekScheduleItems extends Table {
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   IntColumn get sets => integer().withDefault(const Constant(0))();
   IntColumn get reps => integer().withDefault(const Constant(0))();
+  /// Faixa livre (ex.: «12-15»); quando preenchido, tem precedência na UI sobre [reps].
+  TextColumn get repsText => text().nullable()();
   RealColumn get loadKg => real().nullable()();
   BoolColumn get needsDetail => boolean().withDefault(const Constant(false))();
+
+  /// Descanso entre séries (s); copiado do grupo ou ajustado no planejamento.
+  IntColumn get restBetweenSetsSec =>
+      integer().withDefault(const Constant(60))();
+
+  TextColumn get trainingMethodId =>
+      text().nullable().references(TrainingMethods, #id)();
+
+  /// Para importação admin (LWW) alinhada ao Supabase.
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  TextColumn get comboId => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -246,6 +281,12 @@ class DayWorkouts extends Table {
   /// Quando veio de um grupo ao programar no calendário — exibe o nome do grupo na folha.
   TextColumn get sourceWorkoutGroupId => text().nullable()();
 
+  /// Calorias (kcal) opcionais do relógio/smartphone após o treino.
+  RealColumn get watchCaloriesKcal => real().nullable()();
+
+  /// Frequência cardíaca média (bpm) opcional, ex.: Apple Watch / Garmin.
+  IntColumn get watchAvgHeartRateBpm => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -258,11 +299,24 @@ class DayWorkoutExercises extends Table {
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   IntColumn get sets => integer()();
   IntColumn get reps => integer()();
+  TextColumn get repsText => text().nullable()();
   RealColumn get loadKg => real().nullable()();
   RealColumn get exerciseScore => real().nullable()();
 
   /// JSON: lista `[{ "loadKg": 20.0, "reps": 15 }, ...]` — séries executadas (modal Adicionar série).
   TextColumn get performedSetsJson => text().nullable()();
+
+  /// Descanso prescrito entre séries neste dia (s); vindo do planejamento / grupo.
+  IntColumn get restBetweenSetsSec =>
+      integer().withDefault(const Constant(60))();
+
+  TextColumn get trainingMethodId =>
+      text().nullable().references(TrainingMethods, #id)();
+
+  /// Para importação admin (LWW) alinhada ao Supabase.
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  TextColumn get comboId => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -305,7 +359,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 21;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -390,11 +444,119 @@ class AppDatabase extends _$AppDatabase {
           'ON exercises (lower(trim(name)))',
         );
       }
+      if (from < 14) {
+        await m.addColumn(personals, personals.phoneCommercial);
+        await m.addColumn(personals, personals.phoneMobile);
+        await m.addColumn(students, students.phoneCommercial);
+        await m.addColumn(students, students.phoneMobile);
+      }
+      if (from < 15) {
+        await m.addColumn(
+          workoutGroupExercises,
+          workoutGroupExercises.restBetweenSetsSec,
+        );
+        await m.addColumn(
+          weekScheduleItems,
+          weekScheduleItems.restBetweenSetsSec,
+        );
+        await m.addColumn(
+          dayWorkoutExercises,
+          dayWorkoutExercises.restBetweenSetsSec,
+        );
+        await customStatement(
+          'UPDATE workout_group_exercises SET rest_between_sets_sec = 60 '
+          'WHERE rest_between_sets_sec IS NULL;',
+        );
+        await customStatement(
+          'UPDATE week_schedule_items SET rest_between_sets_sec = 60 '
+          'WHERE rest_between_sets_sec IS NULL;',
+        );
+        await customStatement(
+          'UPDATE day_workout_exercises SET rest_between_sets_sec = 60 '
+          'WHERE rest_between_sets_sec IS NULL;',
+        );
+      }
+      if (from < 16) {
+        await _backfillCompletedWorkoutScoresV16();
+      }
+      if (from < 17) {
+        // Drift's `addColumn` + `currentDateAndTime` emits
+        // `DEFAULT (CAST(strftime('%s', CURRENT_TIMESTAMP) AS INTEGER))`, which
+        // SQLite rejects for ALTER TABLE (non-constant default).
+        await _addUpdatedAtSecondsColumn('workout_group_exercises');
+        await _addUpdatedAtSecondsColumn('week_schedule_items');
+        await _addUpdatedAtSecondsColumn('day_workout_exercises');
+      }
+      if (from < 18) {
+        await m.addColumn(dayWorkouts, dayWorkouts.watchCaloriesKcal);
+        await m.addColumn(dayWorkouts, dayWorkouts.watchAvgHeartRateBpm);
+      }
+      if (from < 19) {
+        await _normalizeWeekBlocksAndDayWorkoutDatesV19();
+      }
+      if (from < 20) {
+        await m.addColumn(
+          workoutGroupExercises,
+          workoutGroupExercises.trainingMethodId,
+        );
+        await m.addColumn(weekScheduleItems, weekScheduleItems.repsText);
+        await m.addColumn(
+          weekScheduleItems,
+          weekScheduleItems.trainingMethodId,
+        );
+        await m.addColumn(dayWorkoutExercises, dayWorkoutExercises.repsText);
+        await m.addColumn(
+          dayWorkoutExercises,
+          dayWorkoutExercises.trainingMethodId,
+        );
+        await customStatement(
+          'UPDATE week_schedule_items SET reps_text = CAST(reps AS TEXT) '
+          'WHERE (reps_text IS NULL OR reps_text = \'\') AND reps > 0;',
+        );
+        await customStatement(
+          'UPDATE day_workout_exercises SET reps_text = CAST(reps AS TEXT) '
+          'WHERE (reps_text IS NULL OR reps_text = \'\') AND reps > 0;',
+        );
+      }
+      if (from < 21) {
+        await m.addColumn(workoutGroupExercises, workoutGroupExercises.comboId);
+        await m.addColumn(weekScheduleItems, weekScheduleItems.comboId);
+        await m.addColumn(dayWorkoutExercises, dayWorkoutExercises.comboId);
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON;');
     },
   );
+
+  /// Alinha datas legadas ao dia civil local (mesma regra do pull Supabase / planejamento).
+  Future<void> _normalizeWeekBlocksAndDayWorkoutDatesV19() async {
+    final blocks = await select(weekScheduleBlocks).get();
+    for (final b in blocks) {
+      final fixed = normalizeStoredWeekStartMonday(b.weekStartMonday);
+      await (update(weekScheduleBlocks)..where((t) => t.id.equals(b.id))).write(
+            WeekScheduleBlocksCompanion(weekStartMonday: Value(fixed)),
+          );
+    }
+    final dws = await select(dayWorkouts).get();
+    for (final w in dws) {
+      final fixedDay = weekScheduleLocalCalendarDate(w.dayDate);
+      await (update(dayWorkouts)..where((t) => t.id.equals(w.id))).write(
+            DayWorkoutsCompanion(dayDate: Value(fixedDay)),
+          );
+    }
+  }
+
+  /// Adiciona [updated_at] (epoch segundos, como o Drift grava [DateTime]) sem
+  /// DEFAULT dinâmico, incompatível com `ALTER TABLE` no SQLite.
+  Future<void> _addUpdatedAtSecondsColumn(String tableName) async {
+    await customStatement(
+      'ALTER TABLE $tableName ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0',
+    );
+    await customStatement(
+      "UPDATE $tableName SET updated_at = CAST(strftime('%s', 'now') AS INTEGER)",
+    );
+  }
 
   /// Insere grupos de [kDefaultMuscleGroupNames] se não existir nenhum com o mesmo nome normalizado.
   Future<void> _seedMuscleGroupsFromDefaults() async {
@@ -598,7 +760,12 @@ class AppDatabase extends _$AppDatabase {
         await (delete(weekScheduleItems)..where((w) => w.id.equals(row.id))).go();
       } else {
         await (update(weekScheduleItems)..where((w) => w.id.equals(row.id)))
-            .write(WeekScheduleItemsCompanion(exerciseId: Value(keeperId)));
+            .write(
+          WeekScheduleItemsCompanion(
+            exerciseId: Value(keeperId),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
     }
 
@@ -616,8 +783,48 @@ class AppDatabase extends _$AppDatabase {
         await (delete(dayWorkoutExercises)..where((w) => w.id.equals(row.id))).go();
       } else {
         await (update(dayWorkoutExercises)..where((w) => w.id.equals(row.id)))
-            .write(DayWorkoutExercisesCompanion(exerciseId: Value(keeperId)));
+            .write(
+          DayWorkoutExercisesCompanion(
+            exerciseId: Value(keeperId),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
+    }
+  }
+
+  /// Alinha `exercise_id` nas tabelas filhas de [dupId] para [keeperId], com a mesma
+  /// regra de choque que a deduplicação local (remove linha duplicada no mesmo bloco/treino).
+  Future<void> repointExerciseReferencesToKeeperId(String dupId, String keeperId) =>
+      _repointExerciseReferencesToKeeper(dupId, keeperId);
+
+  /// Recalcula [day_workouts.workout_score] para treinos **concluídos** com data do dia ≤ hoje:
+  /// (soma volume realizado ÷ min ativo) × 10.
+  Future<void> _backfillCompletedWorkoutScoresV16() async {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final completed = await (select(dayWorkouts)
+          ..where((w) => w.status.equals('completed'))
+          ..where((w) => w.dayDate.isSmallerThanValue(tomorrow)))
+        .get();
+    for (final w in completed) {
+      final lines = await (select(dayWorkoutExercises)
+            ..where((e) => e.dayWorkoutId.equals(w.id)))
+          .get();
+      var sum = 0.0;
+      for (final line in lines) {
+        sum += DayWorkoutPerformedSetCodec.totalVolumeScore(
+          DayWorkoutPerformedSetCodec.decode(line.performedSetsJson),
+        );
+      }
+      final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
+      final ws = scoring.workoutScoreStoredAtInstant(
+        performedVolumeSum: sum,
+        activeDurationSeconds: sec,
+      );
+      await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(
+        DayWorkoutsCompanion(workoutScore: Value(ws)),
+      );
     }
   }
 

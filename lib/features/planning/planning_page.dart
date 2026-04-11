@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/ui/app_modal_sheet.dart';
+import '../../core/utils/combo_line_grouping_utils.dart';
+import '../../core/utils/reps_text_utils.dart';
+import '../../core/widgets/app_form_fields.dart';
+import '../../core/widgets/exercise_prescription_edit_dialog.dart';
 import '../../core/widgets/swipeable_registry_card.dart';
+import '../../data/exercise_name_similarity.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/week_schedule_row.dart';
 import '../../data/repositories/app_data_repository.dart';
@@ -68,7 +74,15 @@ class _PlanningPageState extends State<PlanningPage> {
             builder: (context, snap) {
               final students = snap.data ?? [];
               final waitingFirstStudents =
-                  snap.connectionState == ConnectionState.waiting && !snap.hasData;
+                  snap.connectionState == ConnectionState.waiting &&
+                  !snap.hasData;
+
+              if (studentId == null && students.length == 1) {
+                final only = students.single.id;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _studentId = only);
+                });
+              }
 
               if (studentId != null &&
                   students.isNotEmpty &&
@@ -82,7 +96,9 @@ class _PlanningPageState extends State<PlanningPage> {
                   if (mounted) setState(() => _studentId = null);
                 });
               }
-              if (studentId != null && students.isEmpty && waitingFirstStudents) {
+              if (studentId != null &&
+                  students.isEmpty &&
+                  waitingFirstStudents) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Align(
@@ -97,8 +113,8 @@ class _PlanningPageState extends State<PlanningPage> {
               }
               final dropdownValue =
                   studentId != null && students.any((s) => s.id == studentId)
-                      ? studentId
-                      : null;
+                  ? studentId
+                  : null;
               return PlanningFuturisticStudentSelector(
                 key: ValueKey('aluno_${dropdownValue ?? 'none'}'),
                 students: students,
@@ -119,7 +135,9 @@ class _PlanningPageState extends State<PlanningPage> {
                       'Selecione um aluno para ver e editar o planejamento.\n'
                       'Depois, deslize para os lados para mudar a semana.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
                     ),
                   ),
                 )
@@ -176,21 +194,30 @@ class _PlanningPageState extends State<PlanningPage> {
                                   weekMonday: pageMonday,
                                 ),
                                 builder: (context, snap) {
+                                  if (snap.hasError) {
+                                    return _emptyHint(
+                                      'Não foi possível carregar o planejamento deste aluno.\n'
+                                      '${snap.error}',
+                                    );
+                                  }
                                   final rows = snap.data ?? [];
+                                  if (rows.isEmpty) {
+                                    return _emptyHint(
+                                      'Nenhum exercício agendado nesta semana.\n'
+                                      'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
+                                    );
+                                  }
                                   return StreamBuilder<List<WorkoutGroupEntity>>(
                                     stream: repo.watchWorkoutGroupsAlphabetical(),
                                     builder: (context, gSnap) {
-                                      final Map<String, WorkoutGroupEntity> groupById = {
-                                        for (final g in gSnap.data ?? <WorkoutGroupEntity>[])
+                                      final groupById = <String, WorkoutGroupEntity>{
+                                        for (final g
+                                            in gSnap.data ??
+                                                <WorkoutGroupEntity>[])
                                           g.id: g,
                                       };
-                                      if (rows.isEmpty) {
-                                        return _emptyHint(
-                                          'Nenhum exercício agendado nesta semana.\n'
-                                          'Use o botão Agendar treino para incluir grupos de treinos cadastrados.',
-                                        );
-                                      }
-                                      final grouped = _partitionWeekRowsByGroup(rows);
+                                      final grouped =
+                                          _partitionWeekRowsByGroup(rows);
                                       final keys = grouped.keys.toList()
                                         ..sort(
                                           (a, b) => _compareGroupKeys(
@@ -206,6 +233,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                               context,
                                               repo,
                                               pageMonday,
+                                              allWeekRows: rows,
                                               groupId: key,
                                               group: key == null
                                                   ? null
@@ -228,11 +256,19 @@ class _PlanningPageState extends State<PlanningPage> {
                                   weekMonday: pageMonday,
                                 ),
                                 builder: (context, snap) {
+                                  if (snap.hasError) {
+                                    return _emptyHint(
+                                      'Não foi possível carregar os treinos da semana.\n'
+                                      '${snap.error}',
+                                    );
+                                  }
                                   final all = snap.data ?? [];
                                   final programmed = all
-                                      .where((w) =>
-                                          w.status == 'programmed' ||
-                                          w.status == 'started')
+                                      .where(
+                                        (w) =>
+                                            w.status == 'programmed' ||
+                                            w.status == 'started',
+                                      )
                                       .toList();
                                   final completed = all
                                       .where((w) => w.status == 'completed')
@@ -256,7 +292,10 @@ class _PlanningPageState extends State<PlanningPage> {
                                           ],
                                         ),
                                       const SizedBox(height: 20),
-                                      _sectionTitle('Treinos concluídos'),
+                                      _sectionTitle(
+                                        'Treinos concluídos',
+                                        completedSection: true,
+                                      ),
                                       if (completed.isEmpty)
                                         _emptyHint(
                                           'Nenhum treino concluído nesta semana.',
@@ -268,6 +307,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                               _dayWorkoutTile(
                                                 w,
                                                 showScore: true,
+                                                completed: true,
                                               ),
                                           ],
                                         ),
@@ -380,138 +420,427 @@ class _PlanningPageState extends State<PlanningPage> {
     int oldIndex,
     int newIndex,
   ) async {
-    if (groupRows.length < 2) return;
+    final blocks = weekScheduleRowsAsComboBlocks(groupRows);
+    if (blocks.length < 2) return;
     var target = newIndex;
     if (target > oldIndex) target -= 1;
-    if (target < 0 || target >= groupRows.length) return;
+    if (target < 0 || target >= blocks.length) return;
 
-    final reordered = List<WeekScheduleRow>.from(groupRows);
+    final reordered = List<List<WeekScheduleRow>>.from(blocks);
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(target, moved);
+    final ids = <String>[];
+    for (final b in reordered) {
+      for (final r in b) {
+        ids.add(r.item.id);
+      }
+    }
 
     await repo.reorderWeekScheduleItemsInGroup(
       blockId: groupRows.first.item.blockId,
       sourceWorkoutGroupId: groupRows.first.item.sourceWorkoutGroupId,
-      orderedItemIds: reordered.map((r) => r.item.id).toList(),
+      orderedItemIds: ids,
     );
+  }
+
+  Future<void> _combineWeekScheduleItem(
+    BuildContext context,
+    AppDataRepository repo, {
+    required WeekScheduleRow anchor,
+    required List<WeekScheduleRow> allWeekRows,
+  }) async {
+    final inWeek = {for (final r in allWeekRows) r.item.exerciseId};
+    final exercises = await repo.watchExercisesAlphabetical().first;
+    final candidates =
+        exercises.where((e) => !inWeek.contains(e.id)).toList();
+    if (candidates.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Todos os exercícios já estão na semana. Não há outro para combinar.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    final groups = await repo.watchMuscleGroupsAlphabetical().first;
+    if (!context.mounted) return;
+    final searchC = TextEditingController();
+    ExerciseEntity? picked;
+    try {
+      picked = await showAppModalSheet<ExerciseEntity>(
+        context: context,
+        title: 'Combinar com exercício',
+        subtitle: 'Bloco sem intervalo entre os movimentos no treino.',
+        builder: (ctx, scroll) {
+          return StatefulBuilder(
+            builder: (ctx, setModal) {
+              final filtered =
+                  filterExercisesByNameQuery(searchC.text, candidates);
+              String sub(ExerciseEntity e) {
+                for (final g in groups) {
+                  if (g.id == e.muscleGroupId) return g.name;
+                }
+                return '';
+              }
+
+              return ListView(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                children: [
+                  AppCadastroSearchField(
+                    controller: searchC,
+                    label: 'Pesquisar por nome',
+                    hint: 'Digite para filtrar',
+                    onChanged: (_) => setModal(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  for (final e in filtered)
+                    ListTile(
+                      title: Text(
+                        e.name,
+                        style: const TextStyle(color: AppColors.textPrimary),
+                      ),
+                      subtitle: Text(
+                        sub(e),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap: () => Navigator.pop(ctx, e),
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      searchC.dispose();
+    }
+    if (!context.mounted || picked == null) return;
+    final repsInit = weekScheduleRepsDisplay(anchor.item);
+    final res = await showExercisePrescriptionEditDialog(
+      context,
+      repo: repo,
+      exerciseName: picked.name,
+      badgeLabel: 'PLANEJAMENTO · COMBINAR',
+      descriptionLine:
+          'Prescrição no bloco combinado. O descanso entre séries aplica-se após o último movimento do bloco.',
+      headerIcon: Icons.merge_type_rounded,
+      initialSets: anchor.item.sets > 0 ? anchor.item.sets : 3,
+      initialRepsText: repsInit.isEmpty ? '12-15' : repsInit,
+      initialRestBetweenSetsSec: anchor.item.restBetweenSetsSec,
+      initialLoadKg: anchor.item.loadKg,
+      initialTrainingMethodId: anchor.item.trainingMethodId,
+    );
+    if (!context.mounted || res == null) return;
+    final ok = await repo.combineWeekScheduleItemWithExercise(
+      anchorItemId: anchor.item.id,
+      secondExerciseId: picked.id,
+      sets: res.sets,
+      repsText: res.repsText,
+      repsHintInt: res.repsHintInt,
+      loadKg: res.loadKg,
+      restBetweenSetsSec: res.restBetweenSetsSec,
+      trainingMethodId: res.trainingMethodId,
+    );
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Não foi possível combinar (exercício já está na semana).',
+          ),
+        ),
+      );
+    }
   }
 
   Widget _weekGroupCard(
     BuildContext context,
     AppDataRepository repo,
     DateTime pageMonday, {
+    required List<WeekScheduleRow> allWeekRows,
     required String? groupId,
     required WorkoutGroupEntity? group,
     required List<WeekScheduleRow> rows,
   }) {
+    final rowBlocks = weekScheduleRowsAsComboBlocks(rows);
     final title = group?.name ?? 'Exercícios avulsos';
     final needs = rows.where((r) => r.needsAttention).length;
+    final borderBlue = AppColors.cadastroCardBorder;
+    final lightBlue = AppColors.registrySectionBlueLight;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: AppColors.accentGreen.withValues(alpha: 0.28),
-          ),
-        ),
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            initiallyExpanded: false,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-            childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-            leading: Icon(
-              groupId == null ? Icons.sports_gymnastics_rounded : Icons.layers_rounded,
-              color: AppColors.accentGreen,
-              size: 26,
-            ),
-            title: Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (group != null && group.description.isNotEmpty)
-                    Text(
-                      group.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 12,
-                      ),
-                    ),
-                  Text(
-                    '${rows.length} exercício${rows.length == 1 ? '' : 's'}'
-                    '${needs > 0 ? ' · $needs pendente${needs == 1 ? '' : 's'}' : ''}',
-                    style: TextStyle(
-                      color: needs > 0 ? AppColors.danger : AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            iconColor: AppColors.accentGreen,
-            collapsedIconColor: AppColors.accentGreen,
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => _deleteGroupWeekItems(context, repo, rows),
-                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
-                  label: const Text(
-                    'Remover da semana',
-                    style: TextStyle(color: AppColors.danger),
-                  ),
-                ),
-              ),
-              if (rows.length > 1)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                  child: Text(
-                    'Arraste pelo ícone para alterar a ordem de execução.',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 11.5,
-                    ),
-                  ),
-                ),
-              ReorderableListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                buildDefaultDragHandles: false,
-                itemCount: rows.length,
-                onReorder: (oldIndex, newIndex) =>
-                    _reorderGroupWeekItems(repo, rows, oldIndex, newIndex),
-                itemBuilder: (context, index) {
-                  final r = rows[index];
-                  return KeyedSubtree(
-                    key: ValueKey('week_item_${r.item.id}'),
-                    child: _scheduledExerciseCard(
-                      context,
-                      repo,
-                      pageMonday,
-                      r,
-                      dragIndex: index,
-                      allowReorder: rows.length > 1,
-                    ),
-                  );
-                },
-              ),
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.cadastroCardBorder.withValues(alpha: 0.12),
+              Colors.black.withValues(alpha: 0.45),
+              AppColors.accentGreen.withValues(alpha: 0.06),
             ],
           ),
+          border: Border.all(
+            color: AppColors.cadastroCardBorder.withValues(alpha: 0.65),
+            width: 1.25,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.accentGreen.withValues(alpha: 0.12),
+              blurRadius: 18,
+              spreadRadius: 0,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+              splashColor: AppColors.accentGreen.withValues(alpha: 0.12),
+              highlightColor: AppColors.accentGreen.withValues(alpha: 0.08),
+            ),
+            child: ExpansionTile(
+              initiallyExpanded: false,
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 2,
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+              leading: Icon(
+                groupId == null
+                    ? Icons.sports_gymnastics_rounded
+                    : Icons.layers_rounded,
+                color: lightBlue.withValues(alpha: 0.95),
+                size: 26,
+              ),
+              title: Text(
+                title,
+                style: TextStyle(
+                  color: lightBlue.withValues(alpha: 0.98),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (group != null && group.description.isNotEmpty)
+                      Text(
+                        group.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 12,
+                        ),
+                      ),
+                    Text(
+                      '${rows.length} exercício${rows.length == 1 ? '' : 's'}'
+                      '${needs > 0 ? ' · $needs pendente${needs == 1 ? '' : 's'}' : ''}',
+                      style: TextStyle(
+                        color: needs > 0
+                            ? AppColors.danger
+                            : AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              iconColor: borderBlue.withValues(alpha: 0.95),
+              collapsedIconColor: borderBlue.withValues(alpha: 0.95),
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _deleteGroupWeekItems(context, repo, rows),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: AppColors.danger,
+                    ),
+                    label: const Text(
+                      'Remover da semana',
+                      style: TextStyle(color: AppColors.danger),
+                    ),
+                  ),
+                ),
+                if (rowBlocks.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    child: Text(
+                      'Arraste pelo ícone para alterar a ordem de execução.',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ),
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  itemCount: rowBlocks.length,
+                  onReorder: (oldIndex, newIndex) =>
+                      _reorderGroupWeekItems(repo, rows, oldIndex, newIndex),
+                  itemBuilder: (context, index) {
+                    final br = rowBlocks[index];
+                    return KeyedSubtree(
+                      key: ValueKey(
+                        'week_block_${br.first.item.id}_${br.length}',
+                      ),
+                      child: _scheduledExerciseBlockCard(
+                        context,
+                        repo,
+                        pageMonday,
+                        br,
+                        allWeekRows: allWeekRows,
+                        dragIndex: index,
+                        allowReorder: rowBlocks.length > 1,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _scheduledExerciseBlockCard(
+    BuildContext context,
+    AppDataRepository repo,
+    DateTime weekMonday,
+    List<WeekScheduleRow> block, {
+    required List<WeekScheduleRow> allWeekRows,
+    int? dragIndex,
+    bool allowReorder = false,
+  }) {
+    if (block.length == 1) {
+      return _scheduledExerciseCard(
+        context,
+        repo,
+        weekMonday,
+        block.single,
+        allWeekRows: allWeekRows,
+        dragIndex: dragIndex,
+        allowReorder: allowReorder,
+      );
+    }
+    final names = block.map((r) => r.exerciseName).join(' · ');
+    final i0 = block.first.item;
+    final cid = i0.comboId ?? '';
+    final sub = StringBuffer();
+    for (var k = 0; k < block.length; k++) {
+      final r = block[k];
+      final i = r.item;
+      final rd = weekScheduleRepsDisplay(i);
+      if (k > 0) sub.write('  |  ');
+      sub.write('${r.exerciseName}: ${i.sets}×$rd');
+    }
+    final needs = block.any((r) => r.needsAttention);
+
+    return SwipeableRegistryCard(
+      slidableKey: 'combo_week_$cid',
+      translucentBlueExerciseStyle: true,
+      title: 'Combinação: $names',
+      subtitle: sub.toString(),
+      onEdit: () {},
+      showEditOnSwipe: false,
+      onCardTap: () async {
+        final choice = await showModalBottomSheet<WeekScheduleRow>(
+          context: context,
+          backgroundColor: AppColors.barBackground,
+          builder: (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'Editar exercício do bloco',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                for (final r in block)
+                  ListTile(
+                    title: Text(
+                      r.exerciseName,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                    onTap: () => Navigator.pop(ctx, r),
+                  ),
+              ],
+            ),
+          ),
+        );
+        if (!context.mounted || choice == null) return;
+        await _editScheduleItemDialog(context, repo, choice);
+      },
+      onDelete: () async {
+        final ok = await confirmDeleteDialog(
+          context,
+          itemName: names,
+        );
+        if (ok == true && context.mounted && cid.isNotEmpty) {
+          await repo.removeWeekScheduleComboBlock(
+            blockId: i0.blockId,
+            comboId: cid,
+          );
+        }
+      },
+      onSlidableCombine: () => _combineWeekScheduleItem(
+        context,
+        repo,
+        anchor: block.last,
+        allWeekRows: allWeekRows,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          needs
+              ? Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppColors.danger,
+                  size: 22,
+                )
+              : Icon(
+                  Icons.check_circle_outline,
+                  color: AppColors.accentGreen,
+                  size: 22,
+                ),
+          if (allowReorder && dragIndex != null) ...[
+            const SizedBox(width: 8),
+            ReorderableDragStartListener(
+              index: dragIndex,
+              child: Icon(
+                Icons.drag_indicator_rounded,
+                color: Colors.white.withValues(alpha: 0.58),
+                size: 22,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -521,26 +850,39 @@ class _PlanningPageState extends State<PlanningPage> {
     AppDataRepository repo,
     DateTime weekMonday,
     WeekScheduleRow row, {
+    required List<WeekScheduleRow> allWeekRows,
     int? dragIndex,
     bool allowReorder = false,
-  }
-  ) {
+  }) {
     final i = row.item;
+    final repsDisp = weekScheduleRepsDisplay(i);
     final subtitle = StringBuffer()
-      ..write('Séries: ${i.sets}  Reps: ${i.reps}  ')
+      ..write('Séries: ${i.sets}  Reps: $repsDisp  ')
       ..write('Carga: ${i.loadKg?.toString() ?? '—'} kg');
 
     return SwipeableRegistryCard(
       slidableKey: i.id,
+      translucentBlueExerciseStyle: true,
       title: row.exerciseName,
       subtitle: subtitle.toString(),
-      onEdit: () => _editScheduleItemDialog(context, repo, row),
+      onEdit: () {},
+      showEditOnSwipe: false,
+      onCardTap: () => _editScheduleItemDialog(context, repo, row),
       onDelete: () async {
-        final ok = await confirmDeleteDialog(context, itemName: row.exerciseName);
+        final ok = await confirmDeleteDialog(
+          context,
+          itemName: row.exerciseName,
+        );
         if (ok == true && context.mounted) {
           await repo.deleteWeekScheduleItem(i.id);
         }
       },
+      onSlidableCombine: () => _combineWeekScheduleItem(
+        context,
+        repo,
+        anchor: row,
+        allWeekRows: allWeekRows,
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -571,37 +913,69 @@ class _PlanningPageState extends State<PlanningPage> {
     );
   }
 
-  Widget _dayWorkoutTile(DayWorkoutEntity w, {bool showScore = false}) {
+  Widget _dayWorkoutTile(
+    DayWorkoutEntity w, {
+    bool showScore = false,
+    bool completed = false,
+  }) {
     final d = w.dayDate;
-    final dateStr = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
     var sub = 'Status: ${w.status}';
     if (showScore && w.workoutScore != null) {
       sub += '  ·  score: ${w.workoutScore!.toStringAsFixed(2)}';
     }
+    final border = completed
+        ? AppColors.accentGreen
+        : AppColors.cadastroCardBorder;
+    final light = completed
+        ? AppColors.splashMint
+        : AppColors.accentGreen;
+    final subColor = completed
+        ? AppColors.accentGreen.withValues(alpha: 0.82)
+        : AppColors.textMuted;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: Colors.white.withValues(alpha: 0.06),
-          border: Border.all(color: AppColors.accentGreen.withValues(alpha: 0.25)),
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.cadastroCardBorder.withValues(alpha: 0.12),
+              Colors.black.withValues(alpha: 0.45),
+              AppColors.accentGreen.withValues(alpha: completed ? 0.1 : 0.06),
+            ],
+          ),
+          border: Border.all(
+            color: border.withValues(alpha: 0.65),
+            width: 1.25,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.accentGreen.withValues(
+                alpha: completed ? 0.16 : 0.12,
+              ),
+              blurRadius: 18,
+              spreadRadius: 0,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Text(
               dateStr,
-              style: const TextStyle(
-                color: AppColors.accentGreen,
+              style: TextStyle(
+                color: light.withValues(alpha: 0.96),
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                sub,
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-              ),
+              child: Text(sub, style: TextStyle(color: subColor, fontSize: 13)),
             ),
           ],
         ),
@@ -609,25 +983,32 @@ class _PlanningPageState extends State<PlanningPage> {
     );
   }
 
-  Widget _sectionTitle(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, top: 4),
-        child: Text(
-          t,
-          style: const TextStyle(
-            color: AppColors.accentGreen,
-            fontWeight: FontWeight.w700,
-            fontSize: 15,
-          ),
-        ),
-      );
+  Widget _sectionTitle(String t, {bool completedSection = false}) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, top: 4),
+    child: Text(
+      t,
+      style: TextStyle(
+        color:
+            (completedSection
+                    ? AppColors.accentGreen
+                    : AppColors.registrySectionBlueLight)
+                .withValues(alpha: 0.92),
+        fontWeight: FontWeight.w700,
+        fontSize: 15,
+      ),
+    ),
+  );
 
   Widget _emptyHint(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Text(
-          text,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.45),
+        fontSize: 13,
+      ),
+    ),
+  );
 
   Future<void> _editScheduleItemDialog(
     BuildContext context,
@@ -635,64 +1016,30 @@ class _PlanningPageState extends State<PlanningPage> {
     WeekScheduleRow row,
   ) async {
     final i = row.item;
-    final setsC = TextEditingController(text: i.sets > 0 ? '${i.sets}' : '');
-    final repsC = TextEditingController(text: i.reps > 0 ? '${i.reps}' : '');
-    final loadC = TextEditingController(
-      text: i.loadKg != null ? i.loadKg!.toString() : '',
+    final repsInit = weekScheduleRepsDisplay(i);
+    final res = await showExercisePrescriptionEditDialog(
+      context,
+      repo: repo,
+      exerciseName: row.exerciseName,
+      badgeLabel: 'PLANEJAMENTO SEMANAL',
+      descriptionLine:
+          'Séries, repetições, intervalo entre séries, carga e método de treino para esta semana.',
+      headerIcon: Icons.view_week_rounded,
+      initialSets: i.sets > 0 ? i.sets : 3,
+      initialRepsText: repsInit.isEmpty ? '12-15' : repsInit,
+      initialRestBetweenSetsSec: i.restBetweenSetsSec,
+      initialLoadKg: i.loadKg,
+      initialTrainingMethodId: i.trainingMethodId,
     );
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: Text(
-          row.exerciseName,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: setsC,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(labelText: 'Séries *'),
-            ),
-            TextField(
-              controller: repsC,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(labelText: 'Repetições *'),
-            ),
-            TextField(
-              controller: loadC,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(labelText: 'Carga (kg) opcional'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          TextButton(
-            onPressed: () async {
-              final s = int.tryParse(setsC.text.trim());
-              final r = int.tryParse(repsC.text.trim());
-              final lRaw = loadC.text.trim().replaceAll(',', '.');
-              final l = lRaw.isEmpty ? null : double.tryParse(lRaw);
-              if (s == null || r == null) return;
-              await repo.updateWeekScheduleItem(
-                itemId: i.id,
-                sets: s,
-                reps: r,
-                loadKg: l,
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Salvar'),
-          ),
-        ],
-      ),
+    if (!context.mounted || res == null) return;
+    await repo.updateWeekScheduleItem(
+      itemId: i.id,
+      sets: res.sets,
+      repsText: res.repsText,
+      repsHintInt: res.repsHintInt,
+      loadKg: res.loadKg,
+      restBetweenSetsSec: res.restBetweenSetsSec,
+      trainingMethodId: res.trainingMethodId,
     );
   }
-
 }

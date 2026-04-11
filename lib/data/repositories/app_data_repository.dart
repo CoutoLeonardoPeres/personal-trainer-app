@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/auth/app_session.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../core/utils/muscle_group_utils.dart';
+import '../../core/utils/reps_text_utils.dart';
 import '../../domain/scoring.dart' as scoring;
 import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
@@ -16,7 +17,8 @@ import '../sync/remote_sync_service.dart';
 
 const _uuid = Uuid();
 
-/// Rendimento do treino: soma dos scores dos exercícios ÷ minutos ativos (igual a [completeDayWorkout]).
+/// Rendimento do treino: usa [DayWorkoutEntity.workoutScore] se existir (gravado ao registrar séries);
+/// senão recalcula com a mesma fórmula ×10 (volume realizado ÷ min ativo).
 double _rendimentoPorMinuto({
   required DayWorkoutEntity w,
   required List<DayWorkoutExerciseEntity> exercises,
@@ -25,11 +27,13 @@ double _rendimentoPorMinuto({
   if (stored != null) return stored;
   var sum = 0.0;
   for (final e in exercises) {
-    sum += e.exerciseScore ?? 0;
+    sum += DayWorkoutPerformedSetCodec.totalVolumeScore(
+      DayWorkoutPerformedSetCodec.decode(e.performedSetsJson),
+    );
   }
   final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
-  return scoring.workoutScorePerActiveMinute(
-    exercisesScoreSum: sum,
+  return scoring.workoutScoreStoredAtInstant(
+    performedVolumeSum: sum,
     activeDurationSeconds: sec,
   );
 }
@@ -48,8 +52,24 @@ int _repsIntFromWorkoutGroupLine(WorkoutGroupExerciseEntity line) {
   return 0;
 }
 
+String? _repsTextFromWorkoutGroupLine(WorkoutGroupExerciseEntity line) {
+  final t = line.lastRepsText?.trim();
+  if (t != null && t.isNotEmpty) return t;
+  if (line.lastReps != null && line.lastReps! > 0) return '${line.lastReps}';
+  return null;
+}
+
 Expression<bool> _dayWorkoutNotCancelled($DayWorkoutsTable t) =>
     t.status.equals('cancelled').not();
+
+/// Treinos já colocados no calendário (snapshot) ou em execução: não alinhar linhas ao
+/// modelo do grupo em [AppDataRepository.syncWorkoutGroupTemplateToScheduledFromDate].
+Expression<bool> _dayWorkoutSubjectToGroupTemplateSync($DayWorkoutsTable w) =>
+    w.status.equals('completed').not() &
+    w.status.equals('cancelled').not() &
+    w.status.equals('programmed').not() &
+    w.status.equals('started').not() &
+    w.status.equals('scheduled').not();
 
 /// Repositório central: CRUD local, auditoria e fila para Supabase (segundo plano).
 class AppDataRepository {
@@ -118,6 +138,20 @@ class AppDataRepository {
     final s = await getStudentById(studentId);
     if (s == null || !_session.canAccessStudent(s)) {
       throw ArgumentError('Sem permissão para acessar os dados deste aluno.');
+    }
+  }
+
+  void _requireProfessionalCadastro() {
+    if (_session.isStudent) {
+      throw ArgumentError(
+        'Perfil aluno não pode criar, editar ou excluir itens de cadastro.',
+      );
+    }
+  }
+
+  void _requireProfessionalPlanning() {
+    if (_session.isStudent) {
+      throw ArgumentError('Perfil aluno não pode alterar o planejamento.');
     }
   }
 
@@ -214,6 +248,7 @@ class AppDataRepository {
     String? id,
     required String name,
   }) async {
+    _requireProfessionalCadastro();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('Nome do grupo muscular não pode ser vazio.');
@@ -241,6 +276,7 @@ class AppDataRepository {
   }
 
   Future<void> deleteMuscleGroup(String id) async {
+    _requireProfessionalCadastro();
     await (_db.delete(_db.muscleGroups)..where((t) => t.id.equals(id))).go();
     await _audit('delete', 'muscle_group', entityId: id);
   }
@@ -258,6 +294,7 @@ class AppDataRepository {
     String? alternativeNote,
     String? alternativeVideoUrl,
   }) async {
+    _requireProfessionalCadastro();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('Nome do exercício não pode ser vazio.');
@@ -295,6 +332,7 @@ class AppDataRepository {
   /// • do calendário em treinos com dia **≥ hoje** e status diferente de concluído/cancelado;
   /// • demais referências (semanas passadas, histórico) só na etapa final para satisfazer FK.
   Future<void> deleteExercise(String id) async {
+    _requireProfessionalCadastro();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekCutoff = normalizeMonday(today);
@@ -404,6 +442,7 @@ class AppDataRepository {
     required String stateUf,
     required String cep,
   }) async {
+    _requireProfessionalCadastro();
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
     await _db.into(_db.gyms).insertOnConflictUpdate(
@@ -426,14 +465,40 @@ class AppDataRepository {
   }
 
   Future<void> deleteGym(String id) async {
+    _requireProfessionalCadastro();
     await (_db.delete(_db.studentGyms)..where((t) => t.gymId.equals(id))).go();
     await (_db.delete(_db.gyms)..where((t) => t.id.equals(id))).go();
     await _audit('delete', 'gym', entityId: id);
   }
 
   Stream<List<PersonalEntity>> watchPersonalsAlphabetical() {
-    return (_db.select(_db.personals)..orderBy([(t) => OrderingTerm.asc(t.name)]))
-        .watch();
+    switch (_session.role) {
+      case SessionRole.adminPersonal:
+        return (_db.select(_db.personals)
+              ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+            .watch();
+      case SessionRole.personalTrainer:
+        final pid = _session.personalId;
+        if (pid == null) return Stream.value([]);
+        return (_db.select(_db.personals)
+              ..where((p) => p.id.equals(pid))
+              ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+            .watch();
+      case SessionRole.student:
+        final sid = _session.studentId;
+        if (sid == null) return Stream.value([]);
+        return (_db.select(_db.students)..where((s) => s.id.equals(sid)))
+            .watch()
+            .asyncMap((rows) async {
+          if (rows.isEmpty) return <PersonalEntity>[];
+          final tid = rows.first.createdByPersonalId;
+          if (tid == null) return <PersonalEntity>[];
+          return (_db.select(_db.personals)
+                ..where((p) => p.id.equals(tid))
+                ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+              .get();
+        });
+    }
   }
 
   Future<void> upsertPersonal({
@@ -447,11 +512,25 @@ class AppDataRepository {
     required String city,
     required String stateUf,
     String? cep,
+    String? phoneCommercial,
+    String? phoneMobile,
     required String email,
     bool mustChangePassword = true,
     String? passwordHash,
     bool? isAdmin,
   }) async {
+    if (_session.isStudent) {
+      throw ArgumentError('Sem permissão para alterar cadastro de personais.');
+    }
+    if (_session.isPersonalTrainer) {
+      final pid = _session.personalId;
+      if (id != null && id != pid) {
+        throw ArgumentError('Só pode editar o seu próprio cadastro de personal.');
+      }
+      if (id == null) {
+        throw ArgumentError('Personal não pode cadastrar novos personais.');
+      }
+    }
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
     final PersonalEntity? prevPersonal = id != null
@@ -472,6 +551,8 @@ class AppDataRepository {
             city: city,
             stateUf: stateUf,
             cep: Value(cep),
+            phoneCommercial: Value(phoneCommercial),
+            phoneMobile: Value(phoneMobile),
             email: email,
             mustChangePassword: Value(mustChangePassword),
             passwordHash: Value(passwordHash),
@@ -485,6 +566,14 @@ class AppDataRepository {
   }
 
   Future<void> deletePersonal(String id) async {
+    if (_session.isStudent) {
+      throw ArgumentError('Sem permissão para excluir personais.');
+    }
+    if (_session.isPersonalTrainer) {
+      if (id != _session.personalId) {
+        throw ArgumentError('Só pode excluir o seu próprio cadastro de personal.');
+      }
+    }
     await (_db.delete(_db.personals)..where((t) => t.id.equals(id))).go();
     await _audit('delete', 'personal', entityId: id);
   }
@@ -542,6 +631,8 @@ class AppDataRepository {
     String? city,
     String? stateUf,
     String? cep,
+    String? phoneCommercial,
+    String? phoneMobile,
     List<String> gymIds = const [],
     bool mustChangePassword = true,
     String? passwordHash,
@@ -587,6 +678,8 @@ class AppDataRepository {
               city: Value(city),
               stateUf: Value(stateUf),
               cep: Value(cep),
+              phoneCommercial: Value(phoneCommercial),
+              phoneMobile: Value(phoneMobile),
               mustChangePassword: Value(mustChangePassword),
               passwordHash: Value(passwordHash),
               createdByPersonalId: Value(ownerId),
@@ -628,6 +721,7 @@ class AppDataRepository {
     required String method,
     required String description,
   }) async {
+    _requireProfessionalCadastro();
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
     await _db.into(_db.trainingMethods).insertOnConflictUpdate(
@@ -644,6 +738,7 @@ class AppDataRepository {
   }
 
   Future<void> deleteTrainingMethod(String id) async {
+    _requireProfessionalCadastro();
     await (_db.delete(_db.trainingMethods)..where((t) => t.id.equals(id))).go();
     await _audit('delete', 'training_method', entityId: id);
   }
@@ -672,6 +767,7 @@ class AppDataRepository {
     required String name,
     required String description,
   }) async {
+    _requireProfessionalCadastro();
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
     await _db.into(_db.workoutGroups).insertOnConflictUpdate(
@@ -688,16 +784,21 @@ class AppDataRepository {
     return sid;
   }
 
-  /// Alinha planejamento semanal e treinos do calendário ao modelo do grupo, só para o mesmo
-  /// [workoutGroupId], a partir de [effectiveFrom] (data do dia e semanas com segunda ≥
-  /// [normalizeMonday] dessa data). Inclui treinos já iniciados; exclui concluídos e cancelados.
-  /// Remove/adiciona linhas quando o template ganha ou perde exercícios; se o grupo ficar vazio,
-  /// remove itens da semana ligados ao grupo e cancela treinos futuros elegíveis desse grupo.
+  /// Alinha o **planejamento semanal** ao modelo do grupo ([week_schedule_items]).
+  ///
+  /// Treinos **já programados no calendário** (`programmed`), **em andamento** (`started`) ou
+  /// `scheduled` **não** têm `day_workout_exercises` alterados nem são cancelados por esta
+  /// função — o snapshot do dia só muda se o utilizador editar/apagar esse treino no calendário.
+  /// Remover o grupo nas semanas futuras no planeamento não apaga exercícios de dias já programados.
+  ///
+  /// [effectiveFrom]: dia e semanas (segunda ≥) a considerar. Se o modelo do grupo ficar vazio,
+  /// remove itens da semana ligados ao grupo; treinos do calendário em snapshot não são tocados.
   Future<({int weekItemsUpdated, int dayExercisesUpdated})>
       syncWorkoutGroupTemplateToScheduledFromDate(
     String workoutGroupId,
     DateTime effectiveFrom,
   ) async {
+    _requireProfessionalCadastro();
     final effectiveDay =
         DateTime(effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
     final weekCutoff = normalizeMonday(effectiveDay);
@@ -744,8 +845,7 @@ class AppDataRepository {
               (w) =>
                   w.sourceWorkoutGroupId.equals(workoutGroupId) &
                   w.dayDate.isBiggerOrEqualValue(effectiveDay) &
-                  w.status.equals('completed').not() &
-                  w.status.equals('cancelled').not(),
+                  _dayWorkoutSubjectToGroupTemplateSync(w),
             ))
           .get();
       final now = DateTime.now();
@@ -822,14 +922,20 @@ class AppDataRepository {
       final sets = template.lastSets ?? 0;
       final reps = _repsIntFromWorkoutGroupLine(template);
       final needsDetail = sets <= 0 || reps <= 0;
+      final rtw = _repsTextFromWorkoutGroupLine(template);
       await (_db.update(_db.weekScheduleItems)..where((i) => i.id.equals(item.id)))
           .write(
         WeekScheduleItemsCompanion(
           sortOrder: Value(template.sortOrder),
           sets: Value(sets),
           reps: Value(reps),
+          repsText: Value(rtw),
           loadKg: Value(template.lastLoadKg),
           needsDetail: Value(needsDetail),
+          restBetweenSetsSec: Value(template.restBetweenSetsSec),
+          trainingMethodId: Value(template.trainingMethodId),
+          comboId: Value(template.comboId),
+          updatedAt: Value(DateTime.now()),
         ),
       );
       await _audit('update', 'week_schedule_item', entityId: item.id);
@@ -863,6 +969,7 @@ class AppDataRepository {
         final sets = line.lastSets ?? 0;
         final reps = _repsIntFromWorkoutGroupLine(line);
         final needsDetail = sets <= 0 || reps <= 0;
+        final rtw = _repsTextFromWorkoutGroupLine(line);
         final newId = _uuid.v4();
         await _db.into(_db.weekScheduleItems).insert(
               WeekScheduleItemsCompanion.insert(
@@ -873,8 +980,12 @@ class AppDataRepository {
                 sortOrder: Value(line.sortOrder),
                 sets: Value(sets),
                 reps: Value(reps),
+                repsText: Value(rtw),
                 loadKg: Value(line.lastLoadKg),
                 needsDetail: Value(needsDetail),
+                restBetweenSetsSec: Value(line.restBetweenSetsSec),
+                trainingMethodId: Value(line.trainingMethodId),
+                comboId: Value(line.comboId),
               ),
             );
         await _audit('update', 'week_schedule_item', entityId: newId);
@@ -887,8 +998,7 @@ class AppDataRepository {
             (w) =>
                 w.sourceWorkoutGroupId.equals(workoutGroupId) &
                 w.dayDate.isBiggerOrEqualValue(effectiveDay) &
-                w.status.equals('completed').not() &
-                w.status.equals('cancelled').not(),
+                _dayWorkoutSubjectToGroupTemplateSync(w),
           ))
         .get();
 
@@ -929,7 +1039,12 @@ class AppDataRepository {
             sortOrder: Value(template.sortOrder),
             sets: Value(sets),
             reps: Value(reps),
+            repsText: Value(_repsTextFromWorkoutGroupLine(template)),
             loadKg: Value(template.lastLoadKg),
+            restBetweenSetsSec: Value(template.restBetweenSetsSec),
+            trainingMethodId: Value(template.trainingMethodId),
+            comboId: Value(template.comboId),
+            updatedAt: Value(DateTime.now()),
           ),
         );
         await _audit('update', 'day_workout_exercise', entityId: dwe.id);
@@ -958,7 +1073,11 @@ class AppDataRepository {
                 sortOrder: Value(line.sortOrder),
                 sets: sets,
                 reps: reps,
+                repsText: Value(_repsTextFromWorkoutGroupLine(line)),
                 loadKg: Value(line.lastLoadKg),
+                restBetweenSetsSec: Value(line.restBetweenSetsSec),
+                trainingMethodId: Value(line.trainingMethodId),
+                comboId: Value(line.comboId),
               ),
             );
         await _audit('update', 'day_workout_exercise', entityId: newId);
@@ -1001,6 +1120,7 @@ class AppDataRepository {
   }
 
   Future<void> deleteWorkoutGroup(String id) async {
+    _requireProfessionalCadastro();
     await (_db.delete(_db.workoutGroupExercises)
           ..where((t) => t.workoutGroupId.equals(id)))
         .go();
@@ -1024,6 +1144,7 @@ class AppDataRepository {
     double? lastLoadKg,
     String? lastRepsText,
   }) async {
+    _requireProfessionalCadastro();
     final dup = await (_db.select(_db.workoutGroupExercises)
           ..where(
             (t) =>
@@ -1062,7 +1183,10 @@ class AppDataRepository {
     required int lastSets,
     required String lastRepsText,
     double? lastLoadKg,
+    required int restBetweenSetsSec,
+    String? trainingMethodId,
   }) async {
+    _requireProfessionalCadastro();
     await (_db.update(_db.workoutGroupExercises)..where((t) => t.id.equals(lineId)))
         .write(
       WorkoutGroupExercisesCompanion(
@@ -1070,22 +1194,217 @@ class AppDataRepository {
         lastRepsText: Value(lastRepsText.trim()),
         lastLoadKg: Value(lastLoadKg),
         lastReps: const Value(null),
+        restBetweenSetsSec: Value(restBetweenSetsSec),
+        trainingMethodId: Value(trainingMethodId),
+        updatedAt: Value(DateTime.now()),
       ),
     );
     await _audit('update', 'workout_group_exercise', entityId: lineId);
+    final row = await (_db.select(_db.workoutGroupExercises)
+          ..where((t) => t.id.equals(lineId)))
+        .getSingleOrNull();
+    final cid = row?.comboId?.trim();
+    if (row != null && cid != null && cid.isNotEmpty) {
+      await _normalizeWorkoutGroupComboRest(row.workoutGroupId, cid);
+    }
+  }
+
+  Future<void> _normalizeWorkoutGroupComboRest(
+    String workoutGroupId,
+    String comboId,
+  ) async {
+    final lines = await (_db.select(_db.workoutGroupExercises)
+          ..where(
+            (t) =>
+                t.workoutGroupId.equals(workoutGroupId) & t.comboId.equals(comboId),
+          )
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+    if (lines.length < 2) return;
+    var maxRest = 0;
+    for (final l in lines) {
+      if (l.restBetweenSetsSec > maxRest) maxRest = l.restBetweenSetsSec;
+    }
+    final now = DateTime.now();
+    for (var i = 0; i < lines.length; i++) {
+      final r = i == lines.length - 1 ? maxRest : 0;
+      await (_db.update(_db.workoutGroupExercises)
+            ..where((t) => t.id.equals(lines[i].id)))
+          .write(
+        WorkoutGroupExercisesCompanion(
+          restBetweenSetsSec: Value(r),
+          updatedAt: Value(now),
+        ),
+      );
+    }
+  }
+
+  Future<void> _normalizeWeekScheduleComboRest(String blockId, String comboId) async {
+    final lines = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.blockId.equals(blockId) & i.comboId.equals(comboId))
+          ..orderBy([(i) => OrderingTerm.asc(i.sortOrder)]))
+        .get();
+    if (lines.length < 2) return;
+    var maxRest = 0;
+    for (final l in lines) {
+      if (l.restBetweenSetsSec > maxRest) maxRest = l.restBetweenSetsSec;
+    }
+    final now = DateTime.now();
+    for (var i = 0; i < lines.length; i++) {
+      final r = i == lines.length - 1 ? maxRest : 0;
+      await (_db.update(_db.weekScheduleItems)..where((x) => x.id.equals(lines[i].id)))
+          .write(
+        WeekScheduleItemsCompanion(
+          restBetweenSetsSec: Value(r),
+          updatedAt: Value(now),
+        ),
+      );
+    }
   }
 
   Future<void> removeWorkoutGroupExerciseLine(String lineId) async {
+    _requireProfessionalCadastro();
+    final row = await (_db.select(_db.workoutGroupExercises)
+          ..where((t) => t.id.equals(lineId)))
+        .getSingleOrNull();
+    if (row == null) return;
+    final gid = row.workoutGroupId;
+    final cid = row.comboId?.trim();
     await (_db.delete(_db.workoutGroupExercises)
           ..where((t) => t.id.equals(lineId)))
         .go();
     await _audit('delete', 'workout_group_exercise', entityId: lineId);
+    if (cid != null && cid.isNotEmpty) {
+      final sibs = await (_db.select(_db.workoutGroupExercises)
+            ..where(
+              (t) => t.workoutGroupId.equals(gid) & t.comboId.equals(cid),
+            ))
+          .get();
+      if (sibs.length == 1) {
+        await (_db.update(_db.workoutGroupExercises)
+              ..where((t) => t.id.equals(sibs.single.id)))
+            .write(
+          WorkoutGroupExercisesCompanion(
+            comboId: const Value(null),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> removeWorkoutGroupComboBlock({
+    required String workoutGroupId,
+    required String comboId,
+  }) async {
+    _requireProfessionalCadastro();
+    final cid = comboId.trim();
+    if (cid.isEmpty) return;
+    final lines = await (_db.select(_db.workoutGroupExercises)
+          ..where(
+            (t) =>
+                t.workoutGroupId.equals(workoutGroupId) & t.comboId.equals(cid),
+          ))
+        .get();
+    for (final l in lines) {
+      await (_db.delete(_db.workoutGroupExercises)
+            ..where((t) => t.id.equals(l.id)))
+          .go();
+      await _audit('delete', 'workout_group_exercise', entityId: l.id);
+    }
+  }
+
+  /// Combina [secondExerciseId] logo após a linha âncora (mesmo [comboId]).
+  /// Retorna `false` se o exercício já existir no grupo ou for o mesmo da âncora.
+  Future<bool> combineWorkoutGroupExerciseLine({
+    required String anchorLineId,
+    required String secondExerciseId,
+    required int lastSets,
+    required String lastRepsText,
+    double? lastLoadKg,
+    required int restBetweenSetsSec,
+    String? trainingMethodId,
+  }) async {
+    _requireProfessionalCadastro();
+    final anchor = await (_db.select(_db.workoutGroupExercises)
+          ..where((t) => t.id.equals(anchorLineId)))
+        .getSingleOrNull();
+    if (anchor == null) return false;
+    final gid = anchor.workoutGroupId;
+    if (anchor.exerciseId == secondExerciseId) return false;
+    final dup = await (_db.select(_db.workoutGroupExercises)
+          ..where(
+            (t) =>
+                t.workoutGroupId.equals(gid) & t.exerciseId.equals(secondExerciseId),
+          ))
+        .get();
+    if (dup.isNotEmpty) return false;
+
+    final comboId = (anchor.comboId != null && anchor.comboId!.trim().isNotEmpty)
+        ? anchor.comboId!.trim()
+        : _uuid.v4();
+    final now = DateTime.now();
+
+    await _db.transaction(() async {
+      if (anchor.comboId == null || anchor.comboId!.trim().isEmpty) {
+        await (_db.update(_db.workoutGroupExercises)
+              ..where((t) => t.id.equals(anchor.id)))
+            .write(
+          WorkoutGroupExercisesCompanion(
+            comboId: Value(comboId),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+
+      final after = await (_db.select(_db.workoutGroupExercises)
+            ..where(
+              (t) =>
+                  t.workoutGroupId.equals(gid) &
+                  t.sortOrder.isBiggerThanValue(anchor.sortOrder),
+            )
+            ..orderBy([(t) => OrderingTerm.desc(t.sortOrder)]))
+          .get();
+
+      for (final row in after) {
+        await (_db.update(_db.workoutGroupExercises)
+              ..where((t) => t.id.equals(row.id)))
+            .write(
+          WorkoutGroupExercisesCompanion(
+            sortOrder: Value(row.sortOrder + 1),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+
+      await _db.into(_db.workoutGroupExercises).insert(
+            WorkoutGroupExercisesCompanion.insert(
+              id: _uuid.v4(),
+              workoutGroupId: gid,
+              exerciseId: secondExerciseId,
+              sortOrder: Value(anchor.sortOrder + 1),
+              lastReps: const Value(null),
+              lastSets: Value(lastSets),
+              lastLoadKg: Value(lastLoadKg),
+              lastRepsText: Value(lastRepsText.trim()),
+              restBetweenSetsSec: Value(restBetweenSetsSec),
+              trainingMethodId: Value(trainingMethodId),
+              comboId: Value(comboId),
+              updatedAt: Value(now),
+            ),
+          );
+    });
+
+    await _normalizeWorkoutGroupComboRest(gid, comboId);
+    await _audit('combine', 'workout_group', entityId: gid);
+    return true;
   }
 
   Future<void> reorderWorkoutGroupExerciseLines({
     required String workoutGroupId,
     required List<String> orderedLineIds,
   }) async {
+    _requireProfessionalCadastro();
     if (orderedLineIds.isEmpty) return;
     final current = await (_db.select(_db.workoutGroupExercises)
           ..where((t) => t.workoutGroupId.equals(workoutGroupId)))
@@ -1101,12 +1420,19 @@ class AppDataRepository {
         final lineId = orderedLineIds[i];
         await (_db.update(_db.workoutGroupExercises)
               ..where((t) => t.id.equals(lineId)))
-            .write(WorkoutGroupExercisesCompanion(sortOrder: Value(i)));
+            .write(
+          WorkoutGroupExercisesCompanion(
+            sortOrder: Value(i),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
     });
+    // entityType = workout_group: o sync incremental reenvia todas as linhas do grupo
+    // (entityId de linha seria o id da linha, não o do grupo).
     await _audit(
       'reorder',
-      'workout_group_exercise',
+      'workout_group',
       entityId: workoutGroupId,
       payload: {'count': orderedLineIds.length},
     );
@@ -1186,28 +1512,53 @@ class AppDataRepository {
   }
 
   /// Treinos no dia (calendário): incompletos programados em vermelho na UI.
+  ///
+  /// Margem no SQL + filtro por [weekScheduleLocalCalendarDate], igual ao recorte da semana
+  /// no planejamento — evita perder linhas com `day_date` em UTC vindo do sync.
   Stream<List<DayWorkoutEntity>> watchDayWorkouts(DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
+    final startPad = start.subtract(const Duration(days: 2));
+    final endPad = end.add(const Duration(days: 2));
     return (_db.select(_db.dayWorkouts)
           ..where((t) =>
-              t.dayDate.isBiggerOrEqualValue(start) &
-              t.dayDate.isSmallerThanValue(end) &
+              t.dayDate.isBiggerOrEqualValue(startPad) &
+              t.dayDate.isSmallerThanValue(endPad) &
               _dayWorkoutNotCancelled(t)))
         .watch()
+        .map(
+          (list) => list
+              .where((w) {
+                final d = weekScheduleLocalCalendarDate(w.dayDate);
+                return !d.isBefore(start) && d.isBefore(end);
+              })
+              .toList(),
+        )
         .asyncMap(_visibleDayWorkouts);
   }
 
+  /// Treinos visíveis no intervalo **[fromInclusive, toExclusive)** por **dia civil local**
+  /// (mesma regra da grade do calendário e da semana no planejamento).
   Stream<List<DayWorkoutEntity>> watchWorkoutsBetween(
     DateTime fromInclusive,
     DateTime toExclusive,
   ) {
+    final startPad = fromInclusive.subtract(const Duration(days: 2));
+    final endPad = toExclusive.add(const Duration(days: 2));
     return (_db.select(_db.dayWorkouts)
           ..where((t) =>
-              t.dayDate.isBiggerOrEqualValue(fromInclusive) &
-              t.dayDate.isSmallerThanValue(toExclusive) &
+              t.dayDate.isBiggerOrEqualValue(startPad) &
+              t.dayDate.isSmallerThanValue(endPad) &
               _dayWorkoutNotCancelled(t)))
         .watch()
+        .map(
+          (list) => list
+              .where((w) {
+                final d = weekScheduleLocalCalendarDate(w.dayDate);
+                return !d.isBefore(fromInclusive) && d.isBefore(toExclusive);
+              })
+              .toList(),
+        )
         .asyncMap(_visibleDayWorkouts);
   }
 
@@ -1218,14 +1569,34 @@ class AppDataRepository {
     return day.subtract(Duration(days: day.weekday - DateTime.monday));
   }
 
+  /// Mesma semana que [weekMondayView] (segunda civil), após normalizar UTC/local do SQLite.
+  bool _weekBlockMondayEquals(
+    DateTime storedWeekStartMonday,
+    DateTime weekMondayView,
+  ) {
+    final a = normalizeMonday(
+      weekScheduleLocalCalendarDate(storedWeekStartMonday),
+    );
+    final b = normalizeMonday(
+      DateTime(
+        weekMondayView.year,
+        weekMondayView.month,
+        weekMondayView.day,
+      ),
+    );
+    return a == b;
+  }
+
   Future<String> _getOrCreateWeekBlock(String studentId, DateTime weekMonday) async {
     final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
-    final existing = await (_db.select(_db.weekScheduleBlocks)
-          ..where(
-            (b) => b.studentId.equals(studentId) & b.weekStartMonday.equals(mon),
-          ))
-        .getSingleOrNull();
-    if (existing != null) return existing.id;
+    final existingAll = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.studentId.equals(studentId)))
+        .get();
+    for (final b in existingAll) {
+      if (_weekBlockMondayEquals(b.weekStartMonday, mon)) {
+        return b.id;
+      }
+    }
     final id = _uuid.v4();
     final now = DateTime.now();
     await _db.into(_db.weekScheduleBlocks).insert(
@@ -1249,20 +1620,20 @@ class AppDataRepository {
     final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
     final key = '$studentId|wsr|${mon.toIso8601String()}';
     _weekScheduleInnerByKey.putIfAbsent(key, () {
+      // Só filtra aluno no SQL; o recorte da semana é em Dart ([_weekBlockMondayEquals]).
+      // Assim blocos com `week_start_monday` gravado de forma inconsistente (UTC/local legado)
+      // não somem para alguns alunos enquanto aparecem para outros.
       final q = _db.select(_db.weekScheduleItems).join([
         innerJoin(
           _db.weekScheduleBlocks,
           _db.weekScheduleBlocks.id.equalsExp(_db.weekScheduleItems.blockId),
         ),
-        innerJoin(
+        leftOuterJoin(
           _db.exercises,
           _db.exercises.id.equalsExp(_db.weekScheduleItems.exerciseId),
         ),
       ])
-        ..where(
-          _db.weekScheduleBlocks.studentId.equals(studentId) &
-              _db.weekScheduleBlocks.weekStartMonday.equals(mon),
-        )
+        ..where(_db.weekScheduleBlocks.studentId.equals(studentId))
         ..orderBy([OrderingTerm.asc(_db.weekScheduleItems.sortOrder)]);
 
       return Stream.fromFuture(requireStudentAccess(studentId).then((_) => true))
@@ -1270,11 +1641,23 @@ class AppDataRepository {
             (_) => q.watch().map(
                   (rows) {
                     final list = rows
-                        .map(
-                          (row) => WeekScheduleRow(
-                            item: row.readTable(_db.weekScheduleItems),
-                            exerciseName: row.readTable(_db.exercises).name,
+                        .where(
+                          (row) => _weekBlockMondayEquals(
+                            row
+                                .readTable(_db.weekScheduleBlocks)
+                                .weekStartMonday,
+                            mon,
                           ),
+                        )
+                        .map(
+                          (row) {
+                            final ex = row.readTableOrNull(_db.exercises);
+                            return WeekScheduleRow(
+                              item: row.readTable(_db.weekScheduleItems),
+                              exerciseName:
+                                  ex?.name ?? 'Exercício ausente no catálogo',
+                            );
+                          },
                         )
                         .toList();
                     _weekScheduleLastByKey[key] = list;
@@ -1303,12 +1686,15 @@ class AppDataRepository {
     final key = '$studentId|wdw|${start.toIso8601String()}';
     _studentWeekWorkoutsInnerByKey.putIfAbsent(key, () {
       final end = start.add(const Duration(days: 7));
+      // Margem no SQL + filtro pelo dia civil local (igual calendário), para linhas legadas com `day_date` deslocado.
+      final startPad = start.subtract(const Duration(days: 2));
+      final endPad = end.add(const Duration(days: 2));
       final sel = _db.select(_db.dayWorkouts)
         ..where(
           (w) =>
               w.studentId.equals(studentId) &
-              w.dayDate.isBiggerOrEqualValue(start) &
-              w.dayDate.isSmallerThanValue(end) &
+              w.dayDate.isBiggerOrEqualValue(startPad) &
+              w.dayDate.isSmallerThanValue(endPad) &
               _dayWorkoutNotCancelled(w),
         )
         ..orderBy([(w) => OrderingTerm.asc(w.dayDate)]);
@@ -1316,8 +1702,14 @@ class AppDataRepository {
       return Stream.fromFuture(requireStudentAccess(studentId).then((_) => true))
           .asyncExpand(
             (_) => sel.watch().map((list) {
-                  _studentWeekWorkoutsLastByKey[key] = list;
-                  return list;
+                  final filtered = list
+                      .where((w) {
+                        final d = weekScheduleLocalCalendarDate(w.dayDate);
+                        return !d.isBefore(start) && d.isBefore(end);
+                      })
+                      .toList();
+                  _studentWeekWorkoutsLastByKey[key] = filtered;
+                  return filtered;
                 }),
           )
           .asBroadcastStream();
@@ -1338,6 +1730,7 @@ class AppDataRepository {
     required DateTime weekMonday,
     required List<String> exerciseIds,
   }) async {
+    _requireProfessionalPlanning();
     await requireStudentAccess(studentId);
     if (exerciseIds.isEmpty) return (added: 0, skipped: 0);
     final blockId = await _getOrCreateWeekBlock(studentId, weekMonday);
@@ -1371,6 +1764,7 @@ class AppDataRepository {
                 reps: const Value(0),
                 loadKg: const Value.absent(),
                 needsDetail: const Value(true),
+                restBetweenSetsSec: const Value(60),
               ),
             );
       }
@@ -1381,7 +1775,8 @@ class AppDataRepository {
     return (added: added, skipped: skipped);
   }
 
-  /// Grupos com pelo menos um exercício no modelo (para agendamento em massa).
+  /// Todos os grupos de treino (mesma base do cadastro), com contagem de exercícios no modelo.
+  /// Na UI de agendar treino, grupos com 0 exercícios não podem ser escolhidos.
   Stream<List<({WorkoutGroupEntity group, int exerciseCount})>>
       watchWorkoutGroupsSchedulable() {
     _workoutGroupsSchedulableInnerBroadcast ??= (_db.select(_db.workoutGroups)
@@ -1393,7 +1788,6 @@ class AppDataRepository {
             final lines = await (_db.select(_db.workoutGroupExercises)
                   ..where((t) => t.workoutGroupId.equals(g.id)))
                 .get();
-            if (lines.isEmpty) continue;
             out.add((group: g, exerciseCount: lines.length));
           }
           return out;
@@ -1417,12 +1811,16 @@ class AppDataRepository {
   /// a partir de [startWeekMonday] (inclusive). Cada linha de [workoutGroupExercises]
   /// vira um item (o mesmo [exerciseId] pode repetir, como no cadastro do grupo).
   /// Itens recebem [sourceWorkoutGroupId].
+  ///
+  /// Não insere de novo o mesmo [workoutGroupId] numa semana em que já exista
+  /// qualquer item com esse [sourceWorkoutGroupId].
   Future<({int weeksWithAdds, int itemsAdded})> scheduleWorkoutGroupForWeeks({
     required String studentId,
     required DateTime startWeekMonday,
     required String workoutGroupId,
     required int weekCount,
   }) async {
+    _requireProfessionalPlanning();
     await requireStudentAccess(studentId);
     if (weekCount < 1 || weekCount > 52) {
       throw ArgumentError('weekCount deve estar entre 1 e 52.');
@@ -1431,7 +1829,11 @@ class AppDataRepository {
           ..where((t) => t.workoutGroupId.equals(workoutGroupId))
           ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
         .get();
-    if (lines.isEmpty) return (weeksWithAdds: 0, itemsAdded: 0);
+    if (lines.isEmpty) {
+      throw ArgumentError(
+        'Este grupo de treino não tem exercícios no modelo; não pode ser agendado.',
+      );
+    }
 
     final start = DateTime(
       startWeekMonday.year,
@@ -1448,6 +1850,13 @@ class AppDataRepository {
       final existing = await (_db.select(_db.weekScheduleItems)
             ..where((i) => i.blockId.equals(blockId)))
           .get();
+      final alreadyHasThisGroup = existing.any(
+        (i) => i.sourceWorkoutGroupId == workoutGroupId,
+      );
+      if (alreadyHasThisGroup) {
+        continue;
+      }
+
       var maxO = -1;
       for (final i in existing) {
         if (i.sortOrder > maxO) maxO = i.sortOrder;
@@ -1460,6 +1869,7 @@ class AppDataRepository {
           final sets = line.lastSets ?? 0;
           final reps = _repsIntFromWorkoutGroupLine(line);
           final needsDetail = sets <= 0 || reps <= 0;
+          final rtw = _repsTextFromWorkoutGroupLine(line);
           await _db.into(_db.weekScheduleItems).insert(
                 WeekScheduleItemsCompanion.insert(
                   id: _uuid.v4(),
@@ -1469,8 +1879,12 @@ class AppDataRepository {
                   sortOrder: Value(maxO),
                   sets: Value(sets),
                   reps: Value(reps),
+                  repsText: Value(rtw),
                   loadKg: Value(line.lastLoadKg),
                   needsDetail: Value(needsDetail),
+                  restBetweenSetsSec: Value(line.restBetweenSetsSec),
+                  trainingMethodId: Value(line.trainingMethodId),
+                  comboId: Value(line.comboId),
                 ),
               );
           addedThisWeek++;
@@ -1489,8 +1903,12 @@ class AppDataRepository {
   /// Copia o planejamento da semana [startWeekMonday] de [sourceStudentId] para [targetStudentId]
   /// e repete por [weekCount] semanas consecutivas.
   ///
-  /// Mantém a ordem e os detalhes dos itens (sets/reps/carga/needsDetail/sourceWorkoutGroupId).
+  /// Mantém a ordem e sets/reps/carga/sourceWorkoutGroupId; [needsDetail] no destino é derivado
+  /// de sets/reps para não herdar flag inconsistente que impedia programar no calendário.
   /// Não remove itens já existentes no aluno de destino; apenas adiciona.
+  /// Grupos ([sourceWorkoutGroupId] não nulo) que o destino já tiver na semana não são
+  /// copiados de novo. Exercícios avulsos (sem grupo) só entram se o [exerciseId]
+  /// ainda não existir no bloco.
   Future<({int sourceItems, int weeksWithAdds, int itemsAdded})>
       copyStudentWeekScheduleForWeeks({
     required String sourceStudentId,
@@ -1498,6 +1916,7 @@ class AppDataRepository {
     required DateTime startWeekMonday,
     required int weekCount,
   }) async {
+    _requireProfessionalPlanning();
     await requireStudentAccess(sourceStudentId);
     await requireStudentAccess(targetStudentId);
     if (sourceStudentId == targetStudentId) {
@@ -1512,19 +1931,23 @@ class AppDataRepository {
       startWeekMonday.month,
       startWeekMonday.day,
     );
-    final sourceBlock = await (_db.select(_db.weekScheduleBlocks)
-          ..where(
-            (b) =>
-                b.studentId.equals(sourceStudentId) &
-                b.weekStartMonday.equals(start),
-          ))
-        .getSingleOrNull();
+    final sourceCandidates = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.studentId.equals(sourceStudentId)))
+        .get();
+    WeekScheduleBlockEntity? sourceBlock;
+    for (final b in sourceCandidates) {
+      if (_weekBlockMondayEquals(b.weekStartMonday, start)) {
+        sourceBlock = b;
+        break;
+      }
+    }
     if (sourceBlock == null) {
       return (sourceItems: 0, weeksWithAdds: 0, itemsAdded: 0);
     }
+    final srcBlock = sourceBlock;
 
     final sourceItems = await (_db.select(_db.weekScheduleItems)
-          ..where((i) => i.blockId.equals(sourceBlock.id))
+          ..where((i) => i.blockId.equals(srcBlock.id))
           ..orderBy([(i) => OrderingTerm.asc(i.sortOrder)]))
         .get();
     if (sourceItems.isEmpty) {
@@ -1545,10 +1968,28 @@ class AppDataRepository {
         if (i.sortOrder > maxO) maxO = i.sortOrder;
       }
 
+      final initialGroupIds = {
+        for (final i in existing)
+          if (i.sourceWorkoutGroupId != null) i.sourceWorkoutGroupId!,
+      };
+      final avulsoExerciseIds = {
+        for (final i in existing)
+          if (i.sourceWorkoutGroupId == null) i.exerciseId,
+      };
+
       var addedThisWeek = 0;
       await _db.transaction(() async {
         for (final source in sourceItems) {
+          final gid = source.sourceWorkoutGroupId;
+          if (gid != null && initialGroupIds.contains(gid)) {
+            continue;
+          }
+          if (gid == null && avulsoExerciseIds.contains(source.exerciseId)) {
+            continue;
+          }
           maxO++;
+          final copiedNeedsDetail =
+              !weekScheduleItemHasValidPrescription(source);
           await _db.into(_db.weekScheduleItems).insert(
                 WeekScheduleItemsCompanion.insert(
                   id: _uuid.v4(),
@@ -1558,11 +1999,18 @@ class AppDataRepository {
                   sortOrder: Value(maxO),
                   sets: Value(source.sets),
                   reps: Value(source.reps),
+                  repsText: Value(source.repsText),
                   loadKg: Value(source.loadKg),
-                  needsDetail: Value(source.needsDetail),
+                  needsDetail: Value(copiedNeedsDetail),
+                  restBetweenSetsSec: Value(source.restBetweenSetsSec),
+                  trainingMethodId: Value(source.trainingMethodId),
+                  comboId: Value(source.comboId),
                 ),
               );
           addedThisWeek++;
+          if (gid == null) {
+            avulsoExerciseIds.add(source.exerciseId);
+          }
         }
       });
 
@@ -1600,9 +2048,13 @@ class AppDataRepository {
   Future<void> updateWeekScheduleItem({
     required String itemId,
     required int sets,
-    required int reps,
+    required String repsText,
+    required int repsHintInt,
     double? loadKg,
+    required int restBetweenSetsSec,
+    String? trainingMethodId,
   }) async {
+    _requireProfessionalPlanning();
     final item = await (_db.select(_db.weekScheduleItems)
           ..where((i) => i.id.equals(itemId)))
         .getSingleOrNull();
@@ -1613,19 +2065,32 @@ class AppDataRepository {
     if (block == null) return;
     await requireStudentAccess(block.studentId);
 
-    final needsDetail = sets <= 0 || reps <= 0;
+    final trimmed = repsText.trim();
+    final needsDetail = sets <= 0 || repsHintInt <= 0;
     await (_db.update(_db.weekScheduleItems)..where((i) => i.id.equals(itemId))).write(
           WeekScheduleItemsCompanion(
             sets: Value(sets),
-            reps: Value(reps),
+            reps: Value(repsHintInt),
+            repsText: Value(trimmed.isEmpty ? null : trimmed),
             loadKg: Value(loadKg),
             needsDetail: Value(needsDetail),
+            restBetweenSetsSec: Value(restBetweenSetsSec),
+            trainingMethodId: Value(trainingMethodId),
+            updatedAt: Value(DateTime.now()),
           ),
         );
     await _audit('update', 'week_schedule_item', entityId: itemId);
+    final row = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.id.equals(itemId)))
+        .getSingleOrNull();
+    final cid = row?.comboId?.trim();
+    if (row != null && cid != null && cid.isNotEmpty) {
+      await _normalizeWeekScheduleComboRest(row.blockId, cid);
+    }
   }
 
   Future<void> deleteWeekScheduleItem(String itemId) async {
+    _requireProfessionalPlanning();
     final item = await (_db.select(_db.weekScheduleItems)
           ..where((i) => i.id.equals(itemId)))
         .getSingleOrNull();
@@ -1637,6 +2102,8 @@ class AppDataRepository {
     await requireStudentAccess(block.studentId);
 
     final now = DateTime.now();
+    final blockId = item.blockId;
+    final cid = item.comboId?.trim();
     await (_db.update(_db.dayWorkouts)..where((d) => d.weekItemId.equals(itemId))).write(
           DayWorkoutsCompanion(
             status: const Value('cancelled'),
@@ -1647,6 +2114,147 @@ class AppDataRepository {
         );
     await (_db.delete(_db.weekScheduleItems)..where((i) => i.id.equals(itemId))).go();
     await _audit('delete', 'week_schedule_item', entityId: itemId);
+    if (cid != null && cid.isNotEmpty) {
+      final sibs = await (_db.select(_db.weekScheduleItems)
+            ..where((i) => i.blockId.equals(blockId) & i.comboId.equals(cid)))
+          .get();
+      if (sibs.length == 1) {
+        await (_db.update(_db.weekScheduleItems)
+              ..where((i) => i.id.equals(sibs.single.id)))
+            .write(
+          WeekScheduleItemsCompanion(
+            comboId: const Value(null),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> removeWeekScheduleComboBlock({
+    required String blockId,
+    required String comboId,
+  }) async {
+    _requireProfessionalPlanning();
+    final cid = comboId.trim();
+    if (cid.isEmpty) return;
+    final block = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.id.equals(blockId)))
+        .getSingleOrNull();
+    if (block == null) return;
+    await requireStudentAccess(block.studentId);
+    final lines = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.blockId.equals(blockId) & i.comboId.equals(cid)))
+        .get();
+    final now = DateTime.now();
+    for (final item in lines) {
+      await (_db.update(_db.dayWorkouts)
+            ..where((d) => d.weekItemId.equals(item.id)))
+          .write(
+        DayWorkoutsCompanion(
+          status: const Value('cancelled'),
+          weekItemId: const Value(null),
+          timerResumeAt: const Value(null),
+          updatedAt: Value(now),
+        ),
+      );
+      await (_db.delete(_db.weekScheduleItems)..where((i) => i.id.equals(item.id))).go();
+      await _audit('delete', 'week_schedule_item', entityId: item.id);
+    }
+  }
+
+  Future<bool> combineWeekScheduleItemWithExercise({
+    required String anchorItemId,
+    required String secondExerciseId,
+    required int sets,
+    required String repsText,
+    required int repsHintInt,
+    double? loadKg,
+    required int restBetweenSetsSec,
+    String? trainingMethodId,
+  }) async {
+    _requireProfessionalPlanning();
+    final anchor = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.id.equals(anchorItemId)))
+        .getSingleOrNull();
+    if (anchor == null) return false;
+    final block = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.id.equals(anchor.blockId)))
+        .getSingleOrNull();
+    if (block == null) return false;
+    await requireStudentAccess(block.studentId);
+
+    final blockId = anchor.blockId;
+    if (anchor.exerciseId == secondExerciseId) return false;
+
+    final inBlock = await (_db.select(_db.weekScheduleItems)
+          ..where((i) => i.blockId.equals(blockId)))
+        .get();
+    final exIds = {for (final i in inBlock) i.exerciseId};
+    if (exIds.contains(secondExerciseId)) return false;
+
+    final comboId = (anchor.comboId != null && anchor.comboId!.trim().isNotEmpty)
+        ? anchor.comboId!.trim()
+        : _uuid.v4();
+    final now = DateTime.now();
+    final trimmed = repsText.trim();
+    final needsDetail = sets <= 0 || repsHintInt <= 0;
+
+    await _db.transaction(() async {
+      if (anchor.comboId == null || anchor.comboId!.trim().isEmpty) {
+        await (_db.update(_db.weekScheduleItems)
+              ..where((i) => i.id.equals(anchor.id)))
+            .write(
+          WeekScheduleItemsCompanion(
+            comboId: Value(comboId),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+
+      final after = await (_db.select(_db.weekScheduleItems)
+            ..where(
+              (i) =>
+                  i.blockId.equals(blockId) &
+                  i.sortOrder.isBiggerThanValue(anchor.sortOrder),
+            )
+            ..orderBy([(i) => OrderingTerm.desc(i.sortOrder)]))
+          .get();
+
+      for (final row in after) {
+        await (_db.update(_db.weekScheduleItems)
+              ..where((i) => i.id.equals(row.id)))
+            .write(
+          WeekScheduleItemsCompanion(
+            sortOrder: Value(row.sortOrder + 1),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+
+      await _db.into(_db.weekScheduleItems).insert(
+            WeekScheduleItemsCompanion.insert(
+              id: _uuid.v4(),
+              blockId: blockId,
+              exerciseId: secondExerciseId,
+              sourceWorkoutGroupId: Value(anchor.sourceWorkoutGroupId),
+              sortOrder: Value(anchor.sortOrder + 1),
+              sets: Value(sets),
+              reps: Value(repsHintInt),
+              repsText: Value(trimmed.isEmpty ? null : trimmed),
+              loadKg: Value(loadKg),
+              needsDetail: Value(needsDetail),
+              restBetweenSetsSec: Value(restBetweenSetsSec),
+              trainingMethodId: Value(trainingMethodId),
+              comboId: Value(comboId),
+              updatedAt: Value(now),
+            ),
+          );
+    });
+
+    await _normalizeWeekScheduleComboRest(blockId, comboId);
+    await _audit('combine', 'week_schedule_item', entityId: anchorItemId);
+    return true;
   }
 
   Future<void> reorderWeekScheduleItemsInGroup({
@@ -1654,6 +2262,7 @@ class AppDataRepository {
     required String? sourceWorkoutGroupId,
     required List<String> orderedItemIds,
   }) async {
+    _requireProfessionalPlanning();
     if (orderedItemIds.isEmpty) return;
     final block = await (_db.select(_db.weekScheduleBlocks)
           ..where((b) => b.id.equals(blockId)))
@@ -1687,7 +2296,12 @@ class AppDataRepository {
         final itemId = orderedItemIds[i];
         await (_db.update(_db.weekScheduleItems)
               ..where((x) => x.id.equals(itemId)))
-            .write(WeekScheduleItemsCompanion(sortOrder: Value(baseOrder + i)));
+            .write(
+          WeekScheduleItemsCompanion(
+            sortOrder: Value(baseOrder + i),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
     });
     await _audit(
@@ -1714,39 +2328,54 @@ class AppDataRepository {
         _db.weekScheduleBlocks,
         _db.weekScheduleBlocks.id.equalsExp(_db.weekScheduleItems.blockId),
       ),
-      innerJoin(
+      leftOuterJoin(
         _db.exercises,
         _db.exercises.id.equalsExp(_db.weekScheduleItems.exerciseId),
       ),
     ])
-      ..where(
-        _db.weekScheduleBlocks.studentId.equals(studentId) &
-            _db.weekScheduleBlocks.weekStartMonday.equals(mon),
-      )
+      ..where(_db.weekScheduleBlocks.studentId.equals(studentId))
       ..orderBy([OrderingTerm.asc(_db.weekScheduleItems.sortOrder)]);
     final rows = await q.get();
     return rows
-        .map(
-          (row) => WeekScheduleRow(
-            item: row.readTable(_db.weekScheduleItems),
-            exerciseName: row.readTable(_db.exercises).name,
+        .where(
+          (row) => _weekBlockMondayEquals(
+            row.readTable(_db.weekScheduleBlocks).weekStartMonday,
+            mon,
           ),
+        )
+        .map(
+          (row) {
+            final ex = row.readTableOrNull(_db.exercises);
+            return WeekScheduleRow(
+              item: row.readTable(_db.weekScheduleItems),
+              exerciseName: ex?.name ?? 'Exercício ausente no catálogo',
+            );
+          },
         )
         .toList();
   }
 
-  /// Alunos com pelo menos um item de semana válido (séries/reps preenchidos) na semana do dia.
+  /// Alunos com pelo menos um item de semana com séries e reps preenchidos na semana do dia.
+  /// Não exige `!needsDetail`: o flag pode ficar inconsistente após sync/cópia.
   Future<List<StudentEntity>> getStudentsWithProgrammableWeek(DateTime day) async {
     final monday = normalizeMonday(day);
-    final blocks = await (_db.select(_db.weekScheduleBlocks)
-          ..where((b) => b.weekStartMonday.equals(monday)))
+    final allStudents = await (_db.select(_db.students)).get();
+    final visible = _visibleStudents(allStudents);
+    if (visible.isEmpty) return [];
+    final visibleIds = visible.map((s) => s.id).toList();
+    // Só alunos visíveis na sessão; sem janela SQL em week_start_monday (evita falsos negativos por data/UTC).
+    final blockCandidates = await (_db.select(_db.weekScheduleBlocks)
+          ..where((b) => b.studentId.isIn(visibleIds)))
         .get();
+    final blocks = blockCandidates
+        .where((b) => _weekBlockMondayEquals(b.weekStartMonday, monday))
+        .toList();
     final okStudents = <String>{};
     for (final b in blocks) {
       final items = await (_db.select(_db.weekScheduleItems)
             ..where((i) => i.blockId.equals(b.id)))
           .get();
-      final ok = items.any((i) => i.sets > 0 && i.reps > 0 && !i.needsDetail);
+      final ok = items.any(weekScheduleItemHasValidPrescription);
       if (ok) okStudents.add(b.studentId);
     }
     if (okStudents.isEmpty) return [];
@@ -1765,7 +2394,7 @@ class AppDataRepository {
     final monday = normalizeMonday(day);
     final rows = await loadWeekScheduleRows(studentId: studentId, weekMonday: monday);
     final valid = rows
-        .where((r) => r.item.sets > 0 && r.item.reps > 0 && !r.item.needsDetail)
+        .where((r) => weekScheduleItemHasValidPrescription(r.item))
         .toList();
     final byGroup = <String?, List<WeekScheduleRow>>{};
     for (final r in valid) {
@@ -1812,7 +2441,9 @@ class AppDataRepository {
   }) async {
     await requireStudentAccess(studentId);
     if (rows.isEmpty) throw ArgumentError('rows vazio');
-    final dayOnly = DateTime(day.year, day.month, day.day);
+    final dayOnly = weekScheduleLocalCalendarDate(
+      DateTime(day.year, day.month, day.day),
+    );
     if (isCalendarDateBeforeToday(dayOnly)) {
       throw ArgumentError('Não é possível programar treino em data passada.');
     }
@@ -1833,19 +2464,23 @@ class AppDataRepository {
                   : const Value.absent(),
             ),
           );
-      var order = 0;
       for (final r in rows) {
         final i = r.item;
-        order++;
+        final disp = weekScheduleRepsDisplay(i);
+        final hint = repsHintIntFromText(disp) ?? i.reps;
         await _db.into(_db.dayWorkoutExercises).insert(
               DayWorkoutExercisesCompanion.insert(
                 id: _uuid.v4(),
                 dayWorkoutId: wid,
                 exerciseId: i.exerciseId,
-                sortOrder: Value(order),
+                sortOrder: Value(i.sortOrder),
                 sets: i.sets,
-                reps: i.reps,
+                reps: hint > 0 ? hint : i.reps,
+                repsText: Value(disp.isEmpty ? null : disp),
                 loadKg: Value(i.loadKg),
+                restBetweenSetsSec: Value(i.restBetweenSetsSec),
+                trainingMethodId: Value(i.trainingMethodId),
+                comboId: Value(i.comboId),
               ),
             );
       }
@@ -1874,6 +2509,19 @@ class AppDataRepository {
     });
   }
 
+  /// Treinos `started` do aluno (gadget “ao vivo” / overlay).
+  Stream<List<DayWorkoutEntity>> watchStudentStartedDayWorkouts(
+    String studentId,
+  ) async* {
+    await requireStudentAccess(studentId);
+    yield* (_db.select(_db.dayWorkouts)
+          ..where(
+            (w) =>
+                w.studentId.equals(studentId) & w.status.equals('started'),
+          ))
+        .watch();
+  }
+
   Stream<List<DayWorkoutExerciseEntity>> watchDayWorkoutExercises(
     String dayWorkoutId,
   ) async* {
@@ -1890,6 +2538,25 @@ class AppDataRepository {
           ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
         .get();
+  }
+
+  /// Para descanso entre séries: no último exercício do bloco [comboId] oferece intervalo; entre movimentos do combo, não.
+  Future<bool> isLastLineInExerciseCombo(String lineId) async {
+    final line = await (_db.select(_db.dayWorkoutExercises)
+          ..where((e) => e.id.equals(lineId)))
+        .getSingleOrNull();
+    if (line == null) return true;
+    final cid = line.comboId?.trim();
+    if (cid == null || cid.isEmpty) return true;
+    await _requireAccessForDayWorkoutId(line.dayWorkoutId);
+    final same = await (_db.select(_db.dayWorkoutExercises)
+          ..where(
+            (e) => e.dayWorkoutId.equals(line.dayWorkoutId) & e.comboId.equals(cid),
+          )
+          ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
+        .get();
+    if (same.isEmpty) return true;
+    return same.last.id == line.id;
   }
 
   Future<List<({DayWorkoutEntity workout, List<DayWorkoutExerciseEntity> exercises})>>
@@ -2169,17 +2836,57 @@ class AppDataRepository {
     }
     final next = [
       ...existing,
-      DayWorkoutPerformedSet(loadKg: loadKg, reps: reps),
+      DayWorkoutPerformedSet(
+        loadKg: loadKg,
+        reps: reps,
+        loggedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
     ];
     await _persistDayWorkoutPerformedSets(lineId, row, next);
     await _audit('append_set', 'day_workout_exercise', entityId: lineId);
   }
 
+  /// Grava tempos de descanso na **última** série da linha (após modal entre séries).
+  Future<void> patchLastPerformedSetRestTelemetry({
+    required String lineId,
+    required int prescribedSec,
+    required int countdownElapsedMs,
+    required int postPhaseMs,
+  }) async {
+    await _requireAccessForDayWorkoutLineId(lineId);
+    final row = await (_db.select(_db.dayWorkoutExercises)
+          ..where((x) => x.id.equals(lineId)))
+        .getSingleOrNull();
+    if (row == null) {
+      throw ArgumentError('Linha de exercício não encontrada.');
+    }
+    final existing = DayWorkoutPerformedSetCodec.decode(row.performedSetsJson);
+    if (existing.isEmpty) return;
+    final last = existing.last;
+    final next = [...existing];
+    next[next.length - 1] = DayWorkoutPerformedSet(
+      loadKg: last.loadKg,
+      reps: last.reps,
+      loggedAtMs: last.loggedAtMs,
+      restPrescribedSec: prescribedSec,
+      restCountdownElapsedMs: countdownElapsedMs,
+      postRestModalMs: postPhaseMs,
+    );
+    await _persistDayWorkoutPerformedSets(
+      lineId,
+      row,
+      next,
+      syncParentWorkoutScore: false,
+    );
+    await _audit('patch_set_rest', 'day_workout_exercise', entityId: lineId);
+  }
+
   Future<void> _persistDayWorkoutPerformedSets(
     String lineId,
     DayWorkoutExerciseEntity row,
-    List<DayWorkoutPerformedSet> next,
-  ) async {
+    List<DayWorkoutPerformedSet> next, {
+    bool syncParentWorkoutScore = true,
+  }) async {
     final volumeScore = DayWorkoutPerformedSetCodec.totalVolumeScore(next);
     final newLoadKg = next.isEmpty
         ? row.loadKg
@@ -2190,8 +2897,12 @@ class AppDataRepository {
         performedSetsJson: Value(DayWorkoutPerformedSetCodec.encode(next)),
         exerciseScore: Value(volumeScore),
         loadKg: Value(newLoadKg),
+        updatedAt: Value(DateTime.now()),
       ),
     );
+    if (syncParentWorkoutScore) {
+      await _refreshWorkoutScoreForDayWorkoutAtNow(row.dayWorkoutId);
+    }
   }
 
   /// Remove a série executada no índice [performedIndex] (0-based na lista JSON).
@@ -2237,9 +2948,73 @@ class AppDataRepository {
       throw ArgumentError('Índice de série inválido.');
     }
     final next = [...existing];
-    next[performedIndex] = DayWorkoutPerformedSet(loadKg: loadKg, reps: reps);
+    final prev = existing[performedIndex];
+    next[performedIndex] = DayWorkoutPerformedSet(
+      loadKg: loadKg,
+      reps: reps,
+      loggedAtMs: prev.loggedAtMs,
+      restPrescribedSec: prev.restPrescribedSec,
+      restCountdownElapsedMs: prev.restCountdownElapsedMs,
+      postRestModalMs: prev.postRestModalMs,
+    );
     await _persistDayWorkoutPerformedSets(lineId, row, next);
     await _audit('update_set', 'day_workout_exercise', entityId: lineId);
+  }
+
+  /// Só **administrador**. Remove do SQLite **todos** os treinos do aluno na data
+  /// (programado, em andamento ou concluído) e as linhas de exercício; gera auditorias
+  /// `delete` para o Supabase (filhas antes do pai).
+  ///
+  /// Retorna quantos treinos (`day_workouts`) foram apagados.
+  Future<int> adminHardDeleteAllDayWorkoutsForStudent({
+    required String studentId,
+    required DateTime day,
+  }) async {
+    if (!_session.isAdminPersonal) {
+      throw ArgumentError(
+        'Apenas administradores podem excluir treinos do dia desta forma.',
+      );
+    }
+    await requireStudentAccess(studentId);
+    final dayOnly = DateTime(day.year, day.month, day.day);
+    final workouts = await (_db.select(_db.dayWorkouts)
+          ..where(
+            (w) => w.studentId.equals(studentId) & w.dayDate.equals(dayOnly),
+          ))
+        .get();
+    if (workouts.isEmpty) return 0;
+
+    final lineIds = <String>[];
+    final workoutIds = <String>[];
+    for (final w in workouts) {
+      workoutIds.add(w.id);
+      final lines = await (_db.select(_db.dayWorkoutExercises)
+            ..where((e) => e.dayWorkoutId.equals(w.id)))
+          .get();
+      for (final line in lines) {
+        lineIds.add(line.id);
+      }
+    }
+
+    await _db.transaction(() async {
+      for (final lid in lineIds) {
+        await (_db.delete(_db.dayWorkoutExercises)
+              ..where((e) => e.id.equals(lid)))
+            .go();
+      }
+      for (final wid in workoutIds) {
+        await (_db.delete(_db.dayWorkouts)..where((d) => d.id.equals(wid))).go();
+      }
+    });
+
+    for (final lid in lineIds) {
+      await _audit('delete', 'day_workout_exercise', entityId: lid);
+    }
+    for (final wid in workoutIds) {
+      await _audit('delete', 'day_workout', entityId: wid);
+    }
+
+    return workoutIds.length;
   }
 
   /// Cancela treino programado (troca no calendário): linha e exercícios permanecem no BD.
@@ -2317,6 +3092,58 @@ class AppDataRepository {
     return t;
   }
 
+  /// Soma dos volumes já registrados (carga × reps) em todas as linhas do treino.
+  double sumPerformedVolumeDayWorkoutLines(
+    List<DayWorkoutExerciseEntity> exercises,
+  ) {
+    var sum = 0.0;
+    for (final e in exercises) {
+      sum += DayWorkoutPerformedSetCodec.totalVolumeScore(
+        DayWorkoutPerformedSetCodec.decode(e.performedSetsJson),
+      );
+    }
+    return sum;
+  }
+
+  /// Rendimento no instante [now]: (volume registrado ÷ min ativo) × 10 — igual ao valor gravado ao registrar série.
+  double liveWorkoutScorePerActiveMinute({
+    required DayWorkoutEntity workout,
+    required List<DayWorkoutExerciseEntity> exercises,
+    DateTime? now,
+  }) {
+    final sum = sumPerformedVolumeDayWorkoutLines(exercises);
+    final sec = effectiveActiveSeconds(workout, now ?? DateTime.now());
+    final activeClamped = sec > 0 ? sec : 1;
+    return scoring.workoutScoreStoredAtInstant(
+      performedVolumeSum: sum,
+      activeDurationSeconds: activeClamped,
+    );
+  }
+
+  /// Atualiza [DayWorkoutEntity.workoutScore] com o tempo ativo e o volume **neste instante**
+  /// (só para treino iniciado ou já concluído, ex.: edição de séries).
+  Future<void> _refreshWorkoutScoreForDayWorkoutAtNow(String dayWorkoutId) async {
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
+    final w = await _dayWorkoutRow(dayWorkoutId);
+    if (w == null) return;
+    if (w.status != 'started' && w.status != 'completed') return;
+    final exercises = await getDayWorkoutExercises(dayWorkoutId);
+    final sum = sumPerformedVolumeDayWorkoutLines(exercises);
+    final now = DateTime.now();
+    final sec = effectiveActiveSeconds(w, now);
+    final activeClamped = sec > 0 ? sec : 1;
+    final ws = scoring.workoutScoreStoredAtInstant(
+      performedVolumeSum: sum,
+      activeDurationSeconds: activeClamped,
+    );
+    await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(dayWorkoutId))).write(
+          DayWorkoutsCompanion(
+            workoutScore: Value(ws),
+            updatedAt: Value(now),
+          ),
+        );
+  }
+
   Future<void> completeDayWorkout(String id) async {
     await _requireAccessForDayWorkoutId(id);
     final before = await _dayWorkoutRow(id);
@@ -2327,7 +3154,6 @@ class AppDataRepository {
     final w = await _dayWorkoutRow(id);
     if (w == null) return;
     final exercises = await getDayWorkoutExercises(id);
-    var sum = 0.0;
     for (final e in exercises) {
       final performedVol = DayWorkoutPerformedSetCodec.totalVolumeScore(
         DayWorkoutPerformedSetCodec.decode(e.performedSetsJson),
@@ -2335,28 +3161,57 @@ class AppDataRepository {
       final load = e.loadKg ?? 0;
       final prescribed = e.sets * scoring.setScore(loadKg: load, reps: e.reps);
       final exScore = performedVol > 0 ? performedVol : prescribed;
-      sum += exScore;
       await (_db.update(_db.dayWorkoutExercises)..where((x) => x.id.equals(e.id)))
-          .write(DayWorkoutExercisesCompanion(exerciseScore: Value(exScore)));
+          .write(
+        DayWorkoutExercisesCompanion(
+          exerciseScore: Value(exScore),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
     }
     final active = w.activeDurationSeconds;
-    final activeClamped = active > 0 ? active : 1;
-    final ws = scoring.workoutScorePerActiveMinute(
-      exercisesScoreSum: sum,
-      activeDurationSeconds: activeClamped,
-    );
     final now = DateTime.now();
+    final wScore = w.workoutScore;
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
           DayWorkoutsCompanion(
             status: const Value('completed'),
             completedAt: Value(now),
-            workoutScore: Value(ws),
             updatedAt: Value(now),
           ),
         );
     await _audit('complete', 'day_workout', entityId: id, payload: {
-      'workoutScore': ws,
+      'workoutScore': wScore,
       'activeSeconds': active,
+    });
+  }
+
+  /// Opcional: calorias (kcal) e FC média (bpm) do relógio após concluir o treino.
+  Future<void> setDayWorkoutWatchMetrics(
+    String id, {
+    double? caloriesKcal,
+    int? avgHeartRateBpm,
+  }) async {
+    await _requireAccessForDayWorkoutId(id);
+    final w = await _dayWorkoutRow(id);
+    if (w == null || w.status != 'completed') {
+      throw ArgumentError('Treino não encontrado ou ainda não concluído.');
+    }
+    if (caloriesKcal == null && avgHeartRateBpm == null) return;
+    final now = DateTime.now();
+    await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
+          DayWorkoutsCompanion(
+            watchCaloriesKcal: caloriesKcal != null
+                ? Value(caloriesKcal)
+                : const Value.absent(),
+            watchAvgHeartRateBpm: avgHeartRateBpm != null
+                ? Value(avgHeartRateBpm)
+                : const Value.absent(),
+            updatedAt: Value(now),
+          ),
+        );
+    await _audit('update_watch_metrics', 'day_workout', entityId: id, payload: {
+      'watchCaloriesKcal': ?caloriesKcal,
+      'watchAvgHeartRateBpm': ?avgHeartRateBpm,
     });
   }
 }

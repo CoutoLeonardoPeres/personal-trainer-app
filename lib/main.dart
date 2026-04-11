@@ -1,10 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app/personal_app.dart';
 import 'core/diagnostic/launch_diagnostic.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // iOS: não fixar orientação — alinha com UISupportedInterfaceOrientations (revisão App Store).
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+  }
   installGlobalErrorLogging();
   installBootDiagnostics();
   bootTrace('main()', 'ensureInitialized + logs globais + [BOOT]');

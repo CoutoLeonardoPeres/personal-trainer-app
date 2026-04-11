@@ -7,6 +7,10 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/ai/free_ai_training_report_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/day_workout_line_order_utils.dart';
+import 'performance_report_document.dart';
+import 'performance_report_goal_analysis.dart';
+import '../../core/ui/keyboard_bottom_inset.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
@@ -45,7 +49,7 @@ class _PerformancePageState extends State<PerformancePage> {
               final students = snap.data ?? [];
               final waitingFirstStudents =
                   snap.connectionState == ConnectionState.waiting &&
-                      !snap.hasData;
+                  !snap.hasData;
 
               if (_studentId != null &&
                   students.isNotEmpty &&
@@ -77,8 +81,8 @@ class _PerformancePageState extends State<PerformancePage> {
 
               final dropdownValue =
                   _studentId != null && students.any((s) => s.id == _studentId)
-                      ? _studentId
-                      : null;
+                  ? _studentId
+                  : null;
 
               return PlanningFuturisticStudentSelector(
                 key: ValueKey('aluno_${dropdownValue ?? 'none'}'),
@@ -114,7 +118,10 @@ class _PerformancePageState extends State<PerformancePage> {
                 _subtitleGroups4Weeks,
                 _studentId == null
                     ? _selectStudentPlaceholder(hint: 'o ranking por grupo')
-                    : _WorkoutGroupsBest4WeeksChart(studentId: _studentId!, repo: repo),
+                    : _WorkoutGroupsBest4WeeksChart(
+                        studentId: _studentId!,
+                        repo: repo,
+                      ),
               ),
             ],
           ),
@@ -123,7 +130,10 @@ class _PerformancePageState extends State<PerformancePage> {
         Center(
           child: Text(
             'Deslize para os lados para mais gráficos',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 12,
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -137,10 +147,10 @@ class _PerformancePageState extends State<PerformancePage> {
                   onPressed: _studentId == null
                       ? null
                       : () => _openReportSheet(
-                            context: context,
-                            repo: repo,
-                            studentId: _studentId!,
-                          ),
+                          context: context,
+                          repo: repo,
+                          studentId: _studentId!,
+                        ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -150,10 +160,10 @@ class _PerformancePageState extends State<PerformancePage> {
                   onPressed: _studentId == null
                       ? null
                       : () => _openAnamneseSheet(
-                            context: context,
-                            repo: repo,
-                            studentId: _studentId!,
-                          ),
+                          context: context,
+                          repo: repo,
+                          studentId: _studentId!,
+                        ),
                 ),
               ),
             ],
@@ -177,7 +187,10 @@ class _PerformancePageState extends State<PerformancePage> {
       child: Text(
         'Selecione um aluno para ver $hint.',
         textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 14),
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.55),
+          fontSize: 14,
+        ),
       ),
     );
   }
@@ -189,7 +202,9 @@ class _PerformancePageState extends State<PerformancePage> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.accentPink.withValues(alpha: 0.45)),
+          border: Border.all(
+            color: AppColors.accentPink.withValues(alpha: 0.45),
+          ),
           color: Colors.white.withValues(alpha: 0.04),
         ),
         child: Column(
@@ -234,10 +249,12 @@ class _PerformancePageState extends State<PerformancePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _PerformanceReportSheet(
-        repo: repo,
-        studentId: studentId,
-        studentName: studentName,
+      builder: (ctx) => KeyboardBottomInsetPadding(
+        child: _PerformanceReportSheet(
+          repo: repo,
+          studentId: studentId,
+          studentName: studentName,
+        ),
       ),
     );
   }
@@ -258,11 +275,13 @@ class _PerformancePageState extends State<PerformancePage> {
     final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _AnamneseQuizDialog(
-        repo: repo,
-        studentId: studentId,
-        studentName: studentName,
-        initialAnswers: history.isNotEmpty ? history.first.answers : const {},
+      builder: (ctx) => KeyboardAvoidingDialog(
+        child: _AnamneseQuizDialog(
+          repo: repo,
+          studentId: studentId,
+          studentName: studentName,
+          initialAnswers: history.isNotEmpty ? history.first.answers : const {},
+        ),
       ),
     );
     if (saved == true && context.mounted) {
@@ -271,14 +290,10 @@ class _PerformancePageState extends State<PerformancePage> {
       );
     }
   }
-
 }
 
 class _RendimentoChart extends StatelessWidget {
-  const _RendimentoChart({
-    required this.studentId,
-    required this.repo,
-  });
+  const _RendimentoChart({required this.studentId, required this.repo});
 
   final String studentId;
   final AppDataRepository repo;
@@ -300,7 +315,10 @@ class _RendimentoChart extends StatelessWidget {
             child: SizedBox(
               width: 28,
               height: 28,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.accentGreen),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: AppColors.accentGreen,
+              ),
             ),
           );
         }
@@ -322,7 +340,10 @@ class _RendimentoChart extends StatelessWidget {
             child: Text(
               'Ainda não há treinos concluídos para este aluno.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 14,
+              ),
             ),
           );
         }
@@ -354,10 +375,12 @@ class _RendimentoChart extends StatelessWidget {
             ),
             borderData: FlBorderData(show: false),
             titlesData: FlTitlesData(
-              topTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
@@ -452,10 +475,7 @@ class _RendimentoChart extends StatelessWidget {
 }
 
 class _StreakIncreasesChart extends StatelessWidget {
-  const _StreakIncreasesChart({
-    required this.studentId,
-    required this.repo,
-  });
+  const _StreakIncreasesChart({required this.studentId, required this.repo});
 
   final String studentId;
   final AppDataRepository repo;
@@ -470,14 +490,19 @@ class _StreakIncreasesChart extends StatelessWidget {
   Widget build(BuildContext context) {
     return FutureBuilder<List<({DateTime completedAt, double scorePerMinute})>>(
       key: ValueKey('streak_$studentId'),
-      future: repo.lastWorkoutsWithThreeConsecutiveScoreIncreases(studentId: studentId),
+      future: repo.lastWorkoutsWithThreeConsecutiveScoreIncreases(
+        studentId: studentId,
+      ),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
             child: SizedBox(
               width: 28,
               height: 28,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.accentPink),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: AppColors.accentPink,
+              ),
             ),
           );
         }
@@ -499,7 +524,10 @@ class _StreakIncreasesChart extends StatelessWidget {
             child: Text(
               'Ainda não há treinos que encerrem uma sequência de 3 subidas seguidas do score por minuto.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 14,
+              ),
             ),
           );
         }
@@ -528,10 +556,12 @@ class _StreakIncreasesChart extends StatelessWidget {
             ),
             borderData: FlBorderData(show: false),
             titlesData: FlTitlesData(
-              topTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
@@ -584,7 +614,9 @@ class _StreakIncreasesChart extends StatelessWidget {
                       toY: points[i].scorePerMinute,
                       color: AppColors.accentPink.withValues(alpha: 0.85),
                       width: barWidth,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(4),
+                      ),
                     ),
                   ],
                 ),
@@ -639,7 +671,8 @@ class _WorkoutGroupsBest4WeeksChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<
-        List<({String groupId, String groupName, double bestScorePerMinute})>>(
+      List<({String groupId, String groupName, double bestScorePerMinute})>
+    >(
       key: ValueKey('groups4w_$studentId'),
       future: repo.workoutGroupsBestRendimentoLast4Weeks(studentId: studentId),
       builder: (context, snap) {
@@ -673,7 +706,10 @@ class _WorkoutGroupsBest4WeeksChart extends StatelessWidget {
             child: Text(
               'Não há treinos concluídos vinculados a um grupo de treino nos últimos 28 dias.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 14,
+              ),
             ),
           );
         }
@@ -703,10 +739,12 @@ class _WorkoutGroupsBest4WeeksChart extends StatelessWidget {
             ),
             borderData: FlBorderData(show: false),
             titlesData: FlTitlesData(
-              topTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles:
-                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
@@ -762,7 +800,9 @@ class _WorkoutGroupsBest4WeeksChart extends StatelessWidget {
                       toY: rows[i].bestScorePerMinute,
                       color: AppColors.splashMint.withValues(alpha: 0.88),
                       width: barWidth,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(4),
+                      ),
                     ),
                   ],
                 ),
@@ -935,13 +975,7 @@ class _FuturisticAnamneseButton extends StatelessWidget {
   }
 }
 
-enum _AnamneseAnswerKind {
-  single,
-  multi,
-  text,
-  number,
-  date,
-}
+enum _AnamneseAnswerKind { single, multi, orderedMulti, text, number, date }
 
 class _AnamneseQuestion {
   const _AnamneseQuestion({
@@ -964,14 +998,45 @@ class _AnamneseQuestion {
 }
 
 const List<_AnamneseQuestion> _kAnamneseQuestions = [
-  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Data de nascimento', kind: _AnamneseAnswerKind.date),
-  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Gênero', kind: _AnamneseAnswerKind.single, options: ['Masculino', 'Feminino', 'Prefiro não informar', 'Outro']),
-  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Altura (m)', kind: _AnamneseAnswerKind.number),
-  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Peso atual (kg)', kind: _AnamneseAnswerKind.number),
-  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Profissão', kind: _AnamneseAnswerKind.text),
-  _AnamneseQuestion(section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA', prompt: 'Como é sua rotina diária?', kind: _AnamneseAnswerKind.single, options: ['Sedentária', 'Moderadamente ativa', 'Ativa', 'Muito ativa']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA',
+    prompt: 'Data de nascimento',
+    kind: _AnamneseAnswerKind.date,
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA',
+    prompt: 'Gênero',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Masculino', 'Feminino', 'Prefiro não informar', 'Outro'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA',
+    prompt: 'Altura (m)',
+    kind: _AnamneseAnswerKind.number,
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA',
+    prompt: 'Peso atual (kg)',
+    kind: _AnamneseAnswerKind.number,
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA',
+    prompt: 'Profissão',
+    kind: _AnamneseAnswerKind.text,
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 1 — DADOS BÁSICOS E ROTINA',
+    prompt: 'Como é sua rotina diária?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sedentária', 'Moderadamente ativa', 'Ativa', 'Muito ativa'],
+  ),
 
-  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Possui ou já teve alguma lesão muscular, articular ou óssea?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Possui ou já teve alguma lesão muscular, articular ou óssea?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Não'],
+  ),
   _AnamneseQuestion(
     section: 'SEÇÃO 2 — SAÚDE E LESÕES',
     prompt: 'Se sim, qual lesão?',
@@ -981,8 +1046,26 @@ const List<_AnamneseQuestion> _kAnamneseQuestions = [
         'Possui ou já teve alguma lesão muscular, articular ou óssea?',
     showWhenValueEquals: 'Sim',
   ),
-  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Possui limitação física ou condição médica diagnosticada?', kind: _AnamneseAnswerKind.multi, options: ['Nenhuma', 'Coluna', 'Joelhos', 'Coração', 'Hipertensão', 'Diabetes', 'Outras']),
-  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Usa medicação contínua?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Possui limitação física ou condição médica diagnosticada?',
+    kind: _AnamneseAnswerKind.multi,
+    options: [
+      'Nenhuma',
+      'Coluna',
+      'Joelhos',
+      'Coração',
+      'Hipertensão',
+      'Diabetes',
+      'Outras',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Usa medicação contínua?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Não'],
+  ),
   _AnamneseQuestion(
     section: 'SEÇÃO 2 — SAÚDE E LESÕES',
     prompt: 'Se sim, qual medicação?',
@@ -991,9 +1074,24 @@ const List<_AnamneseQuestion> _kAnamneseQuestions = [
     showWhenPromptEquals: 'Usa medicação contínua?',
     showWhenValueEquals: 'Sim',
   ),
-  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Como avalia o nível atual de saúde geral?', kind: _AnamneseAnswerKind.single, options: ['Muito bom', 'Bom', 'Regular', 'Ruim']),
-  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Dorme bem?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Às vezes', 'Raramente', 'Tenho insônia']),
-  _AnamneseQuestion(section: 'SEÇÃO 2 — SAÚDE E LESÕES', prompt: 'Pratica outra atividade física além da musculação?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Como avalia o nível atual de saúde geral?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Muito bom', 'Bom', 'Regular', 'Ruim'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Dorme bem?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Às vezes', 'Raramente', 'Tenho insônia'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 2 — SAÚDE E LESÕES',
+    prompt: 'Pratica outra atividade física além da musculação?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Não'],
+  ),
   _AnamneseQuestion(
     section: 'SEÇÃO 2 — SAÚDE E LESÕES',
     prompt: 'Se sim, qual outra atividade?',
@@ -1003,33 +1101,201 @@ const List<_AnamneseQuestion> _kAnamneseQuestions = [
     showWhenValueEquals: 'Sim',
   ),
 
-  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Já praticou musculação ou treinos físicos antes?', kind: _AnamneseAnswerKind.single, options: ['Nunca', 'Já treinei, mas faz tempo', '< 6 meses', '> 6 meses', '> 2 anos']),
-  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Como avalia o condicionamento físico atual?', kind: _AnamneseAnswerKind.single, options: ['Iniciante', 'Intermediário', 'Avançado']),
-  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Quantos dias por semana consegue treinar?', kind: _AnamneseAnswerKind.single, options: ['1', '2', '3', '4', '5', '6+']),
-  _AnamneseQuestion(section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL', prompt: 'Qual horário prefere treinar?', kind: _AnamneseAnswerKind.single, options: ['Manhã', 'Tarde', 'Noite', 'Varia conforme o dia']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL',
+    prompt: 'Já praticou musculação ou treinos físicos antes?',
+    kind: _AnamneseAnswerKind.single,
+    options: [
+      'Nunca',
+      'Já treinei, mas faz tempo',
+      '< 6 meses',
+      '> 6 meses',
+      '> 2 anos',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL',
+    prompt: 'Como avalia o condicionamento físico atual?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Iniciante', 'Intermediário', 'Avançado'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL',
+    prompt: 'Quantos dias por semana consegue treinar?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['1', '2', '3', '4', '5', '6+'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 3 — EXPERIÊNCIA E NÍVEL ATUAL',
+    prompt: 'Qual horário prefere treinar?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Manhã', 'Tarde', 'Noite', 'Varia conforme o dia'],
+  ),
 
-  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'Principal objetivo', kind: _AnamneseAnswerKind.single, options: ['Emagrecimento', 'Ganho de massa', 'Definição', 'Condicionamento', 'Reabilitação', 'Postura', 'Redução de estresse', 'Outro']),
-  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'Parte do corpo que mais gostaria de desenvolver', kind: _AnamneseAnswerKind.multi, options: ['Braços', 'Peito', 'Costas', 'Abdômen', 'Pernas', 'Glúteos', 'Ombros', 'Corpo inteiro']),
-  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'O que mais motiva a treinar?', kind: _AnamneseAnswerKind.multi, options: ['Estética', 'Saúde', 'Desempenho', 'Superação', 'Acompanhamento', 'Estilo de vida']),
-  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'O que desmotiva?', kind: _AnamneseAnswerKind.multi, options: ['Falta de resultados', 'Falta de tempo', 'Treinos repetitivos', 'Dores', 'Falta de acompanhamento', 'Treinar sozinho']),
-  _AnamneseQuestion(section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO', prompt: 'Deseja acompanhamento nutricional?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Não', 'Talvez futuramente']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO',
+    prompt: 'Principal objetivo',
+    kind: _AnamneseAnswerKind.orderedMulti,
+    options: [
+      'Emagrecimento',
+      'Ganho de massa',
+      'Definição',
+      'Condicionamento',
+      'Reabilitação',
+      'Postura',
+      'Redução de estresse',
+      'Outro',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO',
+    prompt: 'Parte do corpo que mais gostaria de desenvolver',
+    kind: _AnamneseAnswerKind.multi,
+    options: [
+      'Braços',
+      'Peito',
+      'Costas',
+      'Abdômen',
+      'Pernas',
+      'Glúteos',
+      'Ombros',
+      'Corpo inteiro',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO',
+    prompt: 'O que mais motiva a treinar?',
+    kind: _AnamneseAnswerKind.orderedMulti,
+    options: [
+      'Estética',
+      'Saúde',
+      'Desempenho',
+      'Superação',
+      'Acompanhamento',
+      'Estilo de vida',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO',
+    prompt: 'O que desmotiva?',
+    kind: _AnamneseAnswerKind.multi,
+    options: [
+      'Falta de resultados',
+      'Falta de tempo',
+      'Treinos repetitivos',
+      'Dores',
+      'Falta de acompanhamento',
+      'Treinar sozinho',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 4 — OBJETIVOS E MOTIVAÇÃO',
+    prompt: 'Deseja acompanhamento nutricional?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Não', 'Talvez futuramente'],
+  ),
 
-  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Como é sua alimentação?', kind: _AnamneseAnswerKind.single, options: ['Equilibrada', 'Mediana', 'Irregular', 'Tentando melhorar']),
-  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Consome bebidas alcoólicas?', kind: _AnamneseAnswerKind.single, options: ['Não', 'Raramente', 'Socialmente', 'Frequentemente']),
-  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Fuma ou já fumou?', kind: _AnamneseAnswerKind.single, options: ['Nunca', 'Já fumei, parei', 'Fumo atualmente']),
-  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Nível de estresse atual', kind: _AnamneseAnswerKind.single, options: ['Baixo', 'Moderado', 'Alto']),
-  _AnamneseQuestion(section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA', prompt: 'Como descreve o sono?', kind: _AnamneseAnswerKind.single, options: ['Durmo bem', 'Acordo cansado', 'Dificuldade para dormir', 'Acordo várias vezes']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA',
+    prompt: 'Como é sua alimentação?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Equilibrada', 'Mediana', 'Irregular', 'Tentando melhorar'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA',
+    prompt: 'Consome bebidas alcoólicas?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Não', 'Raramente', 'Socialmente', 'Frequentemente'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA',
+    prompt: 'Fuma ou já fumou?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Nunca', 'Já fumei, parei', 'Fumo atualmente'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA',
+    prompt: 'Nível de estresse atual',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Baixo', 'Moderado', 'Alto'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 5 — HÁBITOS E ESTILO DE VIDA',
+    prompt: 'Como descreve o sono?',
+    kind: _AnamneseAnswerKind.single,
+    options: [
+      'Durmo bem',
+      'Acordo cansado',
+      'Dificuldade para dormir',
+      'Acordo várias vezes',
+    ],
+  ),
 
-  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Onde pretende treinar?', kind: _AnamneseAnswerKind.single, options: ['Academia', 'Casa', 'Ao ar livre', 'Outro']),
-  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Tem acesso a equipamentos?', kind: _AnamneseAnswerKind.single, options: ['Sim, academia completa', 'Alguns em casa', 'Não, só peso corporal']),
-  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Que tipo de treino prefere?', kind: _AnamneseAnswerKind.single, options: ['Musculação', 'Funcional', 'HIIT', 'Alongamento', 'Misto', 'Outro']),
-  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Gosta de acompanhar métricas e resultados?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Às vezes', 'Não']),
-  _AnamneseQuestion(section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS', prompt: 'Gostaria de plano alimentar ou desafios motivacionais?', kind: _AnamneseAnswerKind.single, options: ['Sim', 'Dicas básicas', 'Só o treino']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS',
+    prompt: 'Onde pretende treinar?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Academia', 'Casa', 'Ao ar livre', 'Outro'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS',
+    prompt: 'Tem acesso a equipamentos?',
+    kind: _AnamneseAnswerKind.single,
+    options: [
+      'Sim, academia completa',
+      'Alguns em casa',
+      'Não, só peso corporal',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS',
+    prompt: 'Que tipo de treino prefere?',
+    kind: _AnamneseAnswerKind.single,
+    options: [
+      'Musculação',
+      'Funcional',
+      'HIIT',
+      'Alongamento',
+      'Misto',
+      'Outro',
+    ],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS',
+    prompt: 'Gosta de acompanhar métricas e resultados?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Às vezes', 'Não'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 6 — PERFIL DE TREINO E PREFERÊNCIAS',
+    prompt: 'Gostaria de plano alimentar ou desafios motivacionais?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Sim', 'Dicas básicas', 'Só o treino'],
+  ),
 
-  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Descreva o corpo/resultado que gostaria de atingir', kind: _AnamneseAnswerKind.text),
-  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Existe algo que gostaria que o treinador soubesse?', kind: _AnamneseAnswerKind.text, required: false),
-  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Deseja treinos mais', kind: _AnamneseAnswerKind.single, options: ['Intensos', 'Moderados', 'Leves / progressivos']),
-  _AnamneseQuestion(section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL', prompt: 'Quanto tempo pretende manter o acompanhamento?', kind: _AnamneseAnswerKind.single, options: ['1 mês', '3 meses', '6 meses', 'Indefinido / longo prazo']),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL',
+    prompt: 'Descreva o corpo/resultado que gostaria de atingir',
+    kind: _AnamneseAnswerKind.text,
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL',
+    prompt: 'Existe algo que gostaria que o treinador soubesse?',
+    kind: _AnamneseAnswerKind.text,
+    required: false,
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL',
+    prompt: 'Deseja treinos mais',
+    kind: _AnamneseAnswerKind.single,
+    options: ['Intensos', 'Moderados', 'Leves / progressivos'],
+  ),
+  _AnamneseQuestion(
+    section: 'SEÇÃO 7 — PERSONALIZAÇÃO FINAL',
+    prompt: 'Quanto tempo pretende manter o acompanhamento?',
+    kind: _AnamneseAnswerKind.single,
+    options: ['1 mês', '3 meses', '6 meses', 'Indefinido / longo prazo'],
+  ),
 ];
 
 class _AnamneseQuizDialog extends StatefulWidget {
@@ -1087,6 +1353,17 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toSet();
+  }
+
+  /// Ordem importa: primeira opção = maior prioridade (persistido como «a; b; c»).
+  List<String> _orderedMultiList(String prompt) {
+    final raw = (_answers[prompt] ?? '').trim();
+    if (raw.isEmpty) return [];
+    return raw
+        .split(';')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
   }
 
   bool _shouldShow(_AnamneseQuestion q) {
@@ -1183,6 +1460,7 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
     final total = visible.length;
     final progress = (_index + 1) / total;
     final selected = _multiSelected(q.prompt);
+    final orderedSelected = _orderedMultiList(q.prompt);
 
     Widget answerWidget() {
       if (q.kind == _AnamneseAnswerKind.single) {
@@ -1232,6 +1510,109 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                   });
                 },
               ),
+          ],
+        );
+      }
+      if (q.kind == _AnamneseAnswerKind.orderedMulti) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Marque uma ou mais opções. Depois arraste a lista abaixo: 1º = maior prioridade.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.62),
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in q.options)
+                  FilterChip(
+                    label: Text(option),
+                    selected: selected.contains(option),
+                    onSelected: (v) {
+                      setState(() {
+                        var list = _orderedMultiList(q.prompt);
+                        if (v) {
+                          if (!list.contains(option)) list = [...list, option];
+                        } else {
+                          list = list.where((e) => e != option).toList();
+                        }
+                        _answers[q.prompt] = list.join('; ');
+                      });
+                    },
+                  ),
+              ],
+            ),
+            if (orderedSelected.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(
+                'Ordem de prioridade',
+                style: TextStyle(
+                  color: AppColors.splashMint.withValues(alpha: 0.88),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: orderedSelected.length,
+                onReorder: (oldIndex, newIndex) {
+                  setState(() {
+                    final list = _orderedMultiList(q.prompt);
+                    if (newIndex > oldIndex) newIndex--;
+                    final item = list.removeAt(oldIndex);
+                    list.insert(newIndex, item);
+                    _answers[q.prompt] = list.join('; ');
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final label = orderedSelected[index];
+                  return Material(
+                    key: ValueKey('${q.prompt}::$label'),
+                    color: Colors.transparent,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      leading: CircleAvatar(
+                        radius: 16,
+                        backgroundColor:
+                            AppColors.accentPink.withValues(alpha: 0.35),
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        label,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      trailing: ReorderableDragStartListener(
+                        index: index,
+                        child: Icon(
+                          Icons.drag_handle_rounded,
+                          color: Colors.white.withValues(alpha: 0.45),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ],
         );
       }
@@ -1289,6 +1670,7 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
             : TextInputType.text,
         minLines: q.kind == _AnamneseAnswerKind.text ? 2 : 1,
         maxLines: q.kind == _AnamneseAnswerKind.text ? 4 : 1,
+        scrollPadding: const EdgeInsets.only(bottom: 120),
         style: const TextStyle(color: AppColors.textPrimary),
         decoration: InputDecoration(
           hintText: q.kind == _AnamneseAnswerKind.number
@@ -1298,11 +1680,20 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
       );
     }
 
+    final mq = MediaQuery.of(context);
+    final maxDialogHeight = (mq.size.height -
+            mq.viewInsets.bottom -
+            mq.padding.top -
+            mq.padding.bottom -
+            24)
+        .clamp(280.0, 2000.0);
+
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      alignment: Alignment.topCenter,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
+        constraints: BoxConstraints(maxWidth: 520, maxHeight: maxDialogHeight),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: DecoratedBox(
@@ -1310,13 +1701,18 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF0D1328), Color(0xFF1A1030), Color(0xFF0B1C2E)],
+                colors: [
+                  Color(0xFF0D1328),
+                  Color(0xFF1A1030),
+                  Color(0xFF0B1C2E),
+                ],
               ),
               border: Border.all(
                 color: AppColors.accentPink.withValues(alpha: 0.42),
               ),
             ),
-            child: Padding(
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1324,7 +1720,10 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.fact_check_rounded, color: AppColors.splashMint),
+                      const Icon(
+                        Icons.fact_check_rounded,
+                        color: AppColors.splashMint,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -1371,10 +1770,16 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240),
-                    child: SingleChildScrollView(child: answerWidget()),
-                  ),
+                  if (q.kind == _AnamneseAnswerKind.orderedMulti)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 400),
+                      child: SingleChildScrollView(
+                        primary: false,
+                        child: answerWidget(),
+                      ),
+                    )
+                  else
+                    answerWidget(),
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -1387,7 +1792,9 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                       const Spacer(),
                       if (_index > 0)
                         OutlinedButton(
-                          onPressed: _saving ? null : () => setState(() => _index--),
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => _index--),
                           child: const Text('Voltar'),
                         ),
                       const SizedBox(width: 8),
@@ -1397,7 +1804,9 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                             ? const SizedBox(
                                 width: 14,
                                 height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : Icon(
                                 _index == total - 1
@@ -1420,27 +1829,22 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
   }
 }
 
-enum _ReportPeriod {
-  last4Weeks,
-  last8Weeks,
-  last12Weeks,
-  allTime,
-}
+enum _ReportPeriod { last4Weeks, last8Weeks, last12Weeks, allTime }
 
 extension on _ReportPeriod {
   String get label => switch (this) {
-        _ReportPeriod.last4Weeks => '4 semanas',
-        _ReportPeriod.last8Weeks => '8 semanas',
-        _ReportPeriod.last12Weeks => '12 semanas',
-        _ReportPeriod.allTime => 'Todo período',
-      };
+    _ReportPeriod.last4Weeks => '4 semanas',
+    _ReportPeriod.last8Weeks => '8 semanas',
+    _ReportPeriod.last12Weeks => '12 semanas',
+    _ReportPeriod.allTime => 'Todo período',
+  };
 
   Duration? get duration => switch (this) {
-        _ReportPeriod.last4Weeks => const Duration(days: 28),
-        _ReportPeriod.last8Weeks => const Duration(days: 56),
-        _ReportPeriod.last12Weeks => const Duration(days: 84),
-        _ReportPeriod.allTime => null,
-      };
+    _ReportPeriod.last4Weeks => const Duration(days: 28),
+    _ReportPeriod.last8Weeks => const Duration(days: 56),
+    _ReportPeriod.last12Weeks => const Duration(days: 84),
+    _ReportPeriod.allTime => null,
+  };
 }
 
 class _PerformanceReportSheet extends StatefulWidget {
@@ -1455,13 +1859,14 @@ class _PerformanceReportSheet extends StatefulWidget {
   final String studentName;
 
   @override
-  State<_PerformanceReportSheet> createState() => _PerformanceReportSheetState();
+  State<_PerformanceReportSheet> createState() =>
+      _PerformanceReportSheetState();
 }
 
 class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
   _ReportPeriod _period = _ReportPeriod.last8Weeks;
   var _loading = false;
-  String? _report;
+  PerformanceReportDocument? _reportDoc;
   String? _error;
 
   @override
@@ -1478,7 +1883,7 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
     try {
       final generated = await _buildStudentReport();
       if (!mounted) return;
-      setState(() => _report = generated);
+      setState(() => _reportDoc = generated);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Falha ao gerar relatório: $e');
@@ -1487,7 +1892,7 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
     }
   }
 
-  Future<String> _buildStudentReport() async {
+  Future<PerformanceReportDocument> _buildStudentReport() async {
     final now = DateTime.now();
     final window = _period.duration;
     final from = window == null ? null : now.subtract(window);
@@ -1503,7 +1908,12 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       limit: 20,
     );
     if (snapshots.isEmpty) {
-      return 'Sem treinos concluídos no período selecionado.';
+      final empty = PerformanceReportDocument();
+      empty.writeln(
+        PerformanceReportSpanStyle.body,
+        'Sem treinos concluídos no período selecionado.',
+      );
+      return empty;
     }
 
     final exercises = await widget.repo.watchExercisesAlphabetical().first;
@@ -1526,15 +1936,23 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       final w = snapshot.workout;
       final lines = snapshot.exercises;
       totalActiveSec += w.activeDurationSeconds;
-      final activeMin = (w.activeDurationSeconds <= 0 ? 1 : w.activeDurationSeconds) / 60.0;
+      final activeMin =
+          (w.activeDurationSeconds <= 0 ? 1 : w.activeDurationSeconds) / 60.0;
 
       var workoutScore = 0.0;
       final lineScores = <String, double>{};
       for (final line in lines) {
-        final performed = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
-        final performedScore = DayWorkoutPerformedSetCodec.totalVolumeScore(performed);
-        final score = line.exerciseScore ??
-            (performedScore > 0 ? performedScore : (line.sets * line.reps * (line.loadKg ?? 0)));
+        final performed = DayWorkoutPerformedSetCodec.decode(
+          line.performedSetsJson,
+        );
+        final performedScore = DayWorkoutPerformedSetCodec.totalVolumeScore(
+          performed,
+        );
+        final score =
+            line.exerciseScore ??
+            (performedScore > 0
+                ? performedScore
+                : (line.sets * line.reps * (line.loadKg ?? 0)));
         workoutScore += score;
         lineScores[line.id] = score;
       }
@@ -1542,7 +1960,9 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       totalWorkoutScore += workoutScore;
 
       final totalVolume = lines.fold<double>(0, (sum, line) {
-        final performed = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+        final performed = DayWorkoutPerformedSetCodec.decode(
+          line.performedSetsJson,
+        );
         final v = DayWorkoutPerformedSetCodec.totalVolumeScore(performed);
         return sum + (v > 0 ? v : (line.sets * line.reps * (line.loadKg ?? 0)));
       });
@@ -1554,7 +1974,9 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
         final s = lineScores[line.id] ?? 0;
         exerciseScores.putIfAbsent(exId, () => []).add(s);
         exerciseSessions[exId] = (exerciseSessions[exId] ?? 0) + 1;
-        final kcal = workoutScore > 0 ? workoutCalories * (s / workoutScore) : 0.0;
+        final kcal = workoutScore > 0
+            ? workoutCalories * (s / workoutScore)
+            : 0.0;
         exerciseCalories[exId] = (exerciseCalories[exId] ?? 0) + kcal;
 
         final mgId = exerciseById[exId]?.muscleGroupId;
@@ -1575,8 +1997,7 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       if (values.length < 2) continue;
       final first = values.first;
       final last = values.last;
-      final trend =
-          first.abs() < 0.0001 ? 0.0 : (last - first) / first.abs();
+      final trend = first.abs() < 0.0001 ? 0.0 : (last - first) / first.abs();
       trends.add((exId: entry.key, trend: trend, sessions: values.length));
     }
     trends.sort((a, b) => b.trend.compareTo(a.trend));
@@ -1597,81 +2018,194 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
     final topCaloriesExercises = caloriesByExercise.take(5).toList();
 
     final anamneseChrono = anamneseHistory.reversed.toList();
-    final latestAnamnese =
-        anamneseChrono.isNotEmpty ? anamneseChrono.last : null;
-    final firstAnamnese =
-        anamneseChrono.isNotEmpty ? anamneseChrono.first : null;
+    final latestAnamnese = anamneseChrono.isNotEmpty
+        ? anamneseChrono.last
+        : null;
+    final firstAnamnese = anamneseChrono.isNotEmpty
+        ? anamneseChrono.first
+        : null;
     final periodLabel = _period.label;
     final startDate = snapshots.first.workout.dayDate;
     final endDate = snapshots.last.workout.dayDate;
     final fmt = DateFormat('dd/MM/yyyy');
 
+    final outOfOrderDetailLines = <String>[];
+    var totalOoExercises = 0;
+    var workoutsWithOo = 0;
+    for (final snapshot in snapshots) {
+      final planned = snapshot.exercises;
+      final names = <String>[];
+      for (final line in planned) {
+        if (dayWorkoutLineExecutedOutOfPlannedOrder(planned, line)) {
+          totalOoExercises++;
+          names.add(exerciseById[line.exerciseId]?.name ?? 'Exercício');
+        }
+      }
+      if (names.isNotEmpty) {
+        workoutsWithOo++;
+        final gid = snapshot.workout.sourceWorkoutGroupId?.trim();
+        final gLabel = gid != null && gid.isNotEmpty
+            ? (groupById[gid] ?? 'Grupo de treino')
+            : 'Treino';
+        outOfOrderDetailLines.add(
+          '- ${fmt.format(snapshot.workout.dayDate)} ($gLabel): ${names.join(', ')}',
+        );
+      }
+    }
+
     String pct(double v) => '${(v * 100).toStringAsFixed(1)}%';
     String kgScore(double s) => s.toStringAsFixed(1);
     String kcal(double c) => c.toStringAsFixed(0);
 
-    final buffer = StringBuffer()
-      ..writeln('Relatório de Performance — ${widget.studentName}')
-      ..writeln('Período: $periodLabel (${fmt.format(startDate)} a ${fmt.format(endDate)})')
-      ..writeln('')
-      ..writeln('1. Resumo geral')
-      ..writeln('- Treinos concluídos: ${snapshots.length}')
-      ..writeln('- Score médio por treino: ${avgScore.toStringAsFixed(2)}')
-      ..writeln('- Tempo ativo médio por treino: ${avgMinutes.toStringAsFixed(1)} min')
-      ..writeln('- Gasto calórico estimado médio: ${kcal(avgCalories)} kcal/treino')
-      ..writeln('')
-      ..writeln('2. Exercícios com melhor evolução')
-      ..writeln(
-        evolved.isEmpty
-            ? '- Sem evolução robusta detectada (mín. 2 sessões por exercício).'
-            : evolved
+    final periodDays = _period.duration?.inDays ??
+        (endDate.difference(startDate).inDays + 1).clamp(1, 100000);
+    final periodWeeks = (periodDays / 7).clamp(0.5, 5200.0);
+    final avgWorkoutsPerWeek = snapshots.length / periodWeeks;
+
+    final doc = PerformanceReportDocument();
+    doc.writeln(
+      PerformanceReportSpanStyle.title,
+      'Relatório de Performance — ${widget.studentName}',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      'Período: $periodLabel (${fmt.format(startDate)} a ${fmt.format(endDate)})',
+    );
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(PerformanceReportSpanStyle.sectionHeading, '1. Resumo geral');
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Treinos concluídos: ${snapshots.length}',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Score médio por treino: ${avgScore.toStringAsFixed(2)}',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Tempo ativo médio por treino: ${avgMinutes.toStringAsFixed(1)} min',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Gasto calórico estimado médio: ${kcal(avgCalories)} kcal/treino',
+    );
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
+      '2. Exercícios com melhor evolução',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      evolved.isEmpty
+          ? '- Sem evolução robusta detectada (mín. 2 sessões por exercício).'
+          : evolved
                 .map((e) {
                   final name = exerciseById[e.exId]?.name ?? 'Exercício';
                   return '- $name: ${pct(e.trend)} em ${e.sessions} sessões';
                 })
                 .join('\n'),
-      )
-      ..writeln('')
-      ..writeln('3. Exercícios que precisam de atenção')
-      ..writeln(
-        attention.isEmpty
-            ? '- Sem quedas relevantes no período.'
-            : attention
+    );
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
+      '3. Exercícios que precisam de atenção',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      attention.isEmpty
+          ? '- Sem quedas relevantes no período.'
+          : attention
                 .map((e) {
                   final name = exerciseById[e.exId]?.name ?? 'Exercício';
                   return '- $name: ${pct(e.trend)} em ${e.sessions} sessões';
                 })
                 .join('\n'),
-      )
-      ..writeln('')
-      ..writeln('4. Calorias estimadas')
-      ..writeln('- Total estimado no período: ${kcal(totalWorkoutCalories)} kcal')
-      ..writeln('- Top exercícios (estimativa de contribuição):')
-      ..writeln(
-        topCaloriesExercises.isEmpty
-            ? '- Sem dados.'
-            : topCaloriesExercises
-                .map((e) => '- ${exerciseById[e.key]?.name ?? 'Exercício'}: ${kcal(e.value)} kcal')
+    );
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
+      '4. Calorias estimadas',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Total estimado no período: ${kcal(totalWorkoutCalories)} kcal',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Top exercícios (estimativa de contribuição):',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      topCaloriesExercises.isEmpty
+          ? '- Sem dados.'
+          : topCaloriesExercises
+                .map(
+                  (e) =>
+                      '- ${exerciseById[e.key]?.name ?? 'Exercício'}: ${kcal(e.value)} kcal',
+                )
                 .join('\n'),
-      )
-      ..writeln('')
-      ..writeln('5. Grupos musculares')
-      ..writeln('- Melhores resultados:')
-      ..writeln(
-        bestGroups.isEmpty
-            ? '- Sem dados suficientes.'
-            : bestGroups
-                .map((g) => '- ${muscleById[g.mgId]?.name ?? 'Grupo'}: score médio ${kgScore(g.avgScore)}')
+    );
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
+      '5. Grupos musculares',
+    );
+    doc.writeln(PerformanceReportSpanStyle.body, '- Melhores resultados:');
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      bestGroups.isEmpty
+          ? '- Sem dados suficientes.'
+          : bestGroups
+                .map(
+                  (g) =>
+                      '- ${muscleById[g.mgId]?.name ?? 'Grupo'}: score médio ${kgScore(g.avgScore)}',
+                )
                 .join('\n'),
-      )
-      ..writeln('- Pontos de atenção:')
-      ..writeln(
-        weakGroups.isEmpty
-            ? '- Sem dados suficientes.'
-            : weakGroups
-                .map((g) => '- ${muscleById[g.mgId]?.name ?? 'Grupo'}: score médio ${kgScore(g.avgScore)}')
+    );
+    doc.writeln(PerformanceReportSpanStyle.body, '- Pontos de atenção:');
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      weakGroups.isEmpty
+          ? '- Sem dados suficientes.'
+          : weakGroups
+                .map(
+                  (g) =>
+                      '- ${muscleById[g.mgId]?.name ?? 'Grupo'}: score médio ${kgScore(g.avgScore)}',
+                )
                 .join('\n'),
+    );
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
+      '6. Ordem de execução vs planejamento',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Treinos com pelo menos um exercício fora da ordem planejada: $workoutsWithOo',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Total de registros (exercícios) nessa condição: $totalOoExercises',
+    );
+
+    if (totalOoExercises == 0) {
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Nenhum caso no período (treinos na ordem ou séries sem horário de registro).',
       );
+    } else {
+      doc.writeln(PerformanceReportSpanStyle.body, '- Detalhes por treino:');
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        outOfOrderDetailLines.take(40).join('\n'),
+      );
+      if (outOfOrderDetailLines.length > 40) {
+        doc.writeln(
+          PerformanceReportSpanStyle.body,
+          '- … (+${outOfOrderDetailLines.length - 40} treino(s) omitidos neste texto)',
+        );
+      }
+    }
 
     if (latestAnamnese != null) {
       final fmtAnam = DateFormat('dd/MM/yyyy HH:mm');
@@ -1685,7 +2219,10 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
           final value = entry.value.trim();
           if (key.isEmpty || value.isEmpty) continue;
           keys.add(key);
-          final freq = answerFrequencyByKey.putIfAbsent(key, () => <String, int>{});
+          final freq = answerFrequencyByKey.putIfAbsent(
+            key,
+            () => <String, int>{},
+          );
           freq[value] = (freq[value] ?? 0) + 1;
         }
       }
@@ -1705,31 +2242,58 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       final changedKeys = changeCountByKey.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-      buffer
-        ..writeln('')
-        ..writeln('6. Anamnese e comparação')
-        ..writeln('- Registros de anamnese: ${anamneseChrono.length}')
-        ..writeln('- Primeira resposta: ${fmtAnam.format(firstAnamnese!.at)}')
-        ..writeln('- Última resposta: ${fmtAnam.format(latestAnamnese.at)}');
+      doc.write(PerformanceReportSpanStyle.body, '\n');
+      doc.writeln(
+        PerformanceReportSpanStyle.sectionHeading,
+        '7. Anamnese e comparação',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.anamneseMeta,
+        '- Registros de anamnese: ${anamneseChrono.length}',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.anamneseMeta,
+        '- Primeira resposta: ${fmtAnam.format(firstAnamnese!.at)}',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.anamneseMeta,
+        '- Última resposta: ${fmtAnam.format(latestAnamnese.at)}',
+      );
 
       if (changedKeys.isEmpty) {
-        buffer.writeln('- Sem mudanças relevantes entre respostas de anamnese.');
+        doc.writeln(
+          PerformanceReportSpanStyle.body,
+          '- Sem mudanças relevantes entre respostas de anamnese.',
+        );
       } else {
-        buffer.writeln('- Principais mudanças observadas no histórico:');
+        doc.writeln(
+          PerformanceReportSpanStyle.body,
+          '- Principais mudanças observadas no histórico:',
+        );
         for (final e in changedKeys.take(8)) {
           final key = e.key;
           final first = (firstAnamnese.answers[key] ?? '').trim();
           final last = (latestAnamnese.answers[key] ?? '').trim();
           if (first.isEmpty && last.isEmpty) continue;
-          buffer.writeln(
-            '- $key: $first -> $last (${e.value} mudança(s) entre quizzes)',
+          doc.write(PerformanceReportSpanStyle.anamneseQuestion, 'Pergunta: ');
+          doc.writeln(PerformanceReportSpanStyle.anamneseQuestion, key);
+          doc.write(PerformanceReportSpanStyle.anamneseMeta, 'Antes: ');
+          doc.writeln(PerformanceReportSpanStyle.body, first);
+          doc.write(PerformanceReportSpanStyle.anamneseMeta, 'Depois: ');
+          doc.writeln(
+            PerformanceReportSpanStyle.anamneseAnswer,
+            '$last (${e.value} mudança(s) entre quizzes)',
           );
+          doc.write(PerformanceReportSpanStyle.body, '\n');
         }
       }
 
-      final stable = keys.where((k) => (changeCountByKey[k] ?? 0) == 0).toList();
+      final stable = keys
+          .where((k) => (changeCountByKey[k] ?? 0) == 0)
+          .toList();
       if (stable.isNotEmpty) {
-        buffer.writeln(
+        doc.writeln(
+          PerformanceReportSpanStyle.body,
           '- Itens estáveis: ${stable.take(5).join(', ')}'
           '${stable.length > 5 ? '...' : ''}',
         );
@@ -1740,19 +2304,63 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
         final freq = entry.value.entries.toList()
           ..sort((a, b) => b.value.compareTo(a.value));
         if (freq.isNotEmpty && freq.first.value >= 2) {
-          topBehavior.add('${entry.key}: ${freq.first.key} (${freq.first.value}x)');
+          topBehavior.add(
+            '${entry.key}: ${freq.first.key} (${freq.first.value}x)',
+          );
         }
       }
       if (topBehavior.isNotEmpty) {
-        buffer
-          ..writeln('- Padrões mais frequentes de resposta:')
-          ..writeln(topBehavior.take(5).map((e) => '- $e').join('\n'));
+        doc.writeln(
+          PerformanceReportSpanStyle.body,
+          '- Padrões mais frequentes de resposta:',
+        );
+        doc.writeln(
+          PerformanceReportSpanStyle.body,
+          topBehavior.take(5).map((e) => '- $e').join('\n'),
+        );
       }
+
+      doc.write(PerformanceReportSpanStyle.body, '\n');
+      doc.writeln(
+        PerformanceReportSpanStyle.sectionHeading,
+        'Respostas na última anamnese',
+      );
+      for (final q in _kAnamneseQuestions) {
+        final v = (latestAnamnese.answers[q.prompt] ?? '').trim();
+        if (v.isEmpty) continue;
+        doc.write(PerformanceReportSpanStyle.anamneseQuestion, 'Pergunta: ');
+        doc.writeln(PerformanceReportSpanStyle.anamneseQuestion, q.prompt);
+        doc.write(PerformanceReportSpanStyle.anamneseAnswer, 'Resposta: ');
+        doc.writeln(PerformanceReportSpanStyle.anamneseAnswer, v);
+        doc.write(PerformanceReportSpanStyle.body, '\n');
+      }
+
+      final muscleNamesById = {
+        for (final m in muscles) m.id: m.name,
+      };
+      appendTrainingVsAnamneseAnalysis(
+        doc,
+        latestAnswers: latestAnamnese.answers,
+        snapshotCount: snapshots.length,
+        periodWeeks: periodWeeks,
+        avgWorkoutsPerWeek: avgWorkoutsPerWeek,
+        avgActiveMinPerWorkout: avgMinutes,
+        avgScorePerWorkout: avgScore,
+        weakGroups: weakGroups,
+        bestGroups: bestGroups,
+        muscleNamesById: muscleNamesById,
+        attention: attention,
+      );
     } else {
-      buffer
-        ..writeln('')
-        ..writeln('6. Anamnese e comparação')
-        ..writeln('- Sem anamnese preenchida para este aluno.');
+      doc.write(PerformanceReportSpanStyle.body, '\n');
+      doc.writeln(
+        PerformanceReportSpanStyle.sectionHeading,
+        '7. Anamnese e comparação',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Sem anamnese preenchida para este aluno.',
+      );
     }
 
     final byWorkoutGroup = <String, int>{};
@@ -1764,24 +2372,31 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
     if (byWorkoutGroup.isNotEmpty) {
       final sorted = byWorkoutGroup.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
-      buffer
-        ..writeln('')
-        ..writeln('7. Grupos de treino mais usados')
-        ..writeln(
-          sorted
-              .take(5)
-              .map((e) => '- ${groupById[e.key] ?? 'Grupo'}: ${e.value} treino(s)')
-              .join('\n'),
-        );
+      doc.write(PerformanceReportSpanStyle.body, '\n');
+      doc.writeln(
+        PerformanceReportSpanStyle.sectionHeading,
+        '8. Grupos de treino mais usados',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        sorted
+            .take(5)
+            .map(
+              (e) => '- ${groupById[e.key] ?? 'Grupo'}: ${e.value} treino(s)',
+            )
+            .join('\n'),
+      );
     }
 
-    final baseReport = buffer.toString().trim();
-    final aiPrompt = '''
+    final baseReport = doc.plainText.trim();
+    final aiPrompt =
+        '''
 Com base no relatório abaixo, escreva uma seção "Plano de ação recomendado (próximas 2-4 semanas)" com:
 - 5 recomendações objetivas para o personal.
 - ajustes de progressão de carga/repetição.
 - foco nos exercícios e grupos de atenção.
 - linguagem profissional e direta.
+- leve em conta objetivos, prazo e respostas da anamnese quando fizer sentido.
 
 Relatório:
 $baseReport
@@ -1790,14 +2405,40 @@ $baseReport
       prompt: aiPrompt,
     );
     if (aiSection == null || aiSection.trim().isEmpty) {
-      return '$baseReport\n\nPlano de ação recomendado (fallback local):\n'
-          '- Priorizar os exercícios com tendência negativa em 2 sessões da semana.\n'
-          '- Aplicar progressão de 2% a 5% de carga quando houver execução técnica estável.\n'
-          '- Inserir 1 bloco extra para grupos musculares com menor score médio.\n'
-          '- Reavaliar amplitude, cadência e intervalos para os exercícios com queda de score.\n'
-          '- Revisar semanalmente o score/min e o gasto calórico estimado para ajuste fino.';
+      doc.write(PerformanceReportSpanStyle.body, '\n');
+      doc.writeln(
+        PerformanceReportSpanStyle.sectionHeading,
+        'Plano de ação recomendado (fallback local)',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Priorizar os exercícios com tendência negativa em 2 sessões da semana.',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Aplicar progressão de 2% a 5% de carga quando houver execução técnica estável.',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Inserir 1 bloco extra para grupos musculares com menor score médio.',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Reavaliar amplitude, cadência e intervalos para os exercícios com queda de score.',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Revisar semanalmente o score/min e o gasto calórico estimado para ajuste fino.',
+      );
+      return doc;
     }
-    return '$baseReport\n\n$aiSection';
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
+      'Plano de ação recomendado (IA)',
+    );
+    doc.writeln(PerformanceReportSpanStyle.body, aiSection.trim());
+    return doc;
   }
 
   @override
@@ -1855,7 +2496,10 @@ $baseReport
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textPrimary),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ],
               ),
@@ -1892,37 +2536,33 @@ $baseReport
                         ),
                       )
                     : _error != null
-                        ? Center(
-                            child: Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.red.shade200,
-                                fontSize: 13,
-                              ),
-                            ),
-                          )
-                        : Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.28),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color:
-                                    AppColors.splashMint.withValues(alpha: 0.25),
-                              ),
-                            ),
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.all(14),
-                              child: SelectableText(
-                                _report ?? '',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontSize: 13,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ),
+                    ? Center(
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.red.shade200,
+                            fontSize: 13,
                           ),
+                        ),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.28),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppColors.splashMint.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(14),
+                          child: _reportDoc == null
+                              ? const SizedBox.shrink()
+                              : PerformanceReportRichView(
+                                  document: _reportDoc!,
+                                ),
+                        ),
+                      ),
               ),
             ),
             Padding(
@@ -1931,11 +2571,12 @@ $baseReport
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: (_report == null || _report!.isEmpty)
+                      onPressed: (_reportDoc == null ||
+                              _reportDoc!.plainText.isEmpty)
                           ? null
                           : () async {
                               await Clipboard.setData(
-                                ClipboardData(text: _report!),
+                                ClipboardData(text: _reportDoc!.plainText),
                               );
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -1951,11 +2592,12 @@ $baseReport
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: (_report == null || _report!.isEmpty)
+                      onPressed: (_reportDoc == null ||
+                              _reportDoc!.plainText.isEmpty)
                           ? null
                           : () => SharePlus.instance.share(
-                                ShareParams(text: _report!),
-                              ),
+                              ShareParams(text: _reportDoc!.plainText),
+                            ),
                       icon: const Icon(Icons.ios_share_rounded),
                       label: const Text('Compartilhar'),
                     ),

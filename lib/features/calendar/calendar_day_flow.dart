@@ -2,12 +2,17 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/calendar_day_utils.dart';
+import '../../core/utils/combo_line_grouping_utils.dart';
+import '../../core/utils/reps_text_utils.dart';
 import '../../core/ui/app_modal_sheet.dart';
+import '../../core/widgets/exercise_prescription_edit_dialog.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../core/widgets/app_form_fields.dart';
+import '../../data/exercise_name_similarity.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/programmable_bundle.dart';
 import '../../data/models/week_schedule_row.dart';
@@ -207,6 +212,7 @@ class CalendarDayFlow {
       maxChildSize: 0.85,
       builder: (ctx, scroll) => _ProgramSnapshotEditor(
         scrollController: scroll,
+        repo: repo,
         bundle: bundle,
         onConfirm: (rows) async {
           try {
@@ -255,11 +261,23 @@ class CalendarDayFlow {
 
     if (!context.mounted) return;
 
+    final canProgramAnother =
+        !repo.session.isStudent && !isCalendarDateBeforeToday(day);
+    final othersProgrammable = canProgramAnother
+        ? (await repo.getStudentsWithProgrammableWeek(day))
+              .where((s) => !byStudent.containsKey(s.id))
+              .toList()
+        : <StudentEntity>[];
+
+    if (!context.mounted) return;
+
     Future<void> openStudentWorkout(String studentKey) async {
       final list = byStudent[studentKey]!;
       final w = _pickPrimaryWorkoutForDay(list);
       await _onWorkoutSelected(context, repo, day, w);
     }
+
+    final isAdmin = repo.session.isAdminPersonal;
 
     await showAppModalSheet<void>(
       context: context,
@@ -270,46 +288,248 @@ class CalendarDayFlow {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 6, 20, 12),
-              child: Text(
-                'Alunos com treino neste dia',
-                style: TextStyle(
-                  color: AppColors.accentGreen,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  letterSpacing: 0.2,
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Alunos com treino neste dia',
+                    style: TextStyle(
+                      color: AppColors.accentGreen,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  if (isAdmin) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Admin: deslize o card para a esquerda para excluir todos os treinos deste aluno neste dia.',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.48),
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                controller: scroll,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                itemCount: sids.length,
-                itemBuilder: (_, i) {
-                  final sid = sids[i];
-                  final name = nameMap[sid] ?? sid;
-                  final n = byStudent[sid]!.length;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _DayModalStudentCard(
-                      name: name,
-                      subtitle: n == 1
-                          ? 'Toque para abrir o treino'
-                          : '$n treinos no dia — abre o prioritário (em andamento → programado → concluído)',
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        if (!context.mounted) return;
-                        await openStudentWorkout(sid);
-                      },
-                    ),
-                  );
-                },
+              child: SlidableAutoCloseBehavior(
+                child: ListView(
+                  controller: scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                  children: [
+                    for (var i = 0; i < sids.length; i++) ...[
+                      Builder(
+                        builder: (_) {
+                          final sid = sids[i];
+                          final name = nameMap[sid] ?? sid;
+                          final n = byStudent[sid]!.length;
+                          final card = _DayModalStudentCard(
+                            name: name,
+                            subtitle: n == 1
+                                ? 'Toque para abrir o treino'
+                                : '$n treinos no dia — abre o prioritário (em andamento → programado → concluído)',
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              if (!context.mounted) return;
+                              await openStudentWorkout(sid);
+                            },
+                          );
+                          if (!isAdmin) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: card,
+                            );
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Slidable(
+                              key: ValueKey('day_modal_student_$sid'),
+                              endActionPane: ActionPane(
+                                motion: const DrawerMotion(),
+                                extentRatio: 0.36,
+                                children: [
+                                  SlidableAction(
+                                    onPressed: (_) async {
+                                      final ok =
+                                          await _confirmAdminDeleteDayWorkouts(
+                                        ctx,
+                                        studentName: name,
+                                        workoutCount: n,
+                                      );
+                                      if (ok != true || !ctx.mounted) return;
+                                      try {
+                                        final removed = await repo
+                                            .adminHardDeleteAllDayWorkoutsForStudent(
+                                          studentId: sid,
+                                          day: day,
+                                        );
+                                        if (!ctx.mounted) return;
+                                        Navigator.of(ctx).pop();
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                removed == 0
+                                                    ? 'Nenhum treino removido.'
+                                                    : '$removed treino(s) de $name removido(s). '
+                                                          'A exclusão será enviada à nuvem em seguida.',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } on ArgumentError catch (e) {
+                                        if (ctx.mounted) {
+                                          ScaffoldMessenger.of(ctx)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                e.message ??
+                                                    'Não foi possível excluir.',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (ctx.mounted) {
+                                          ScaffoldMessenger.of(ctx)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content:
+                                                  Text('Erro ao excluir: $e'),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    backgroundColor: AppColors.danger
+                                        .withValues(alpha: 0.92),
+                                    foregroundColor: Colors.white,
+                                    icon: Icons.delete_forever_rounded,
+                                    label: 'Excluir\ndia',
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(14),
+                                      bottomLeft: Radius.circular(14),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              child: card,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    if (othersProgrammable.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
+                        child: Text(
+                          'Programar outro aluno neste dia',
+                          style: TextStyle(
+                            color: AppColors.accentGreen.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                        child: Text(
+                          'Com planejamento na semana, mas sem treino neste dia:',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.48),
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                      for (final s in othersProgrammable)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _DayModalStudentCard(
+                            name: s.name,
+                            subtitle: 'Toque para escolher o que programar',
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              final bundles = await repo.getProgrammableBundles(
+                                s.id,
+                                day,
+                              );
+                              if (!context.mounted) return;
+                              await _pickBundleAndProgram(
+                                context,
+                                repo,
+                                s.id,
+                                day,
+                                bundles,
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  static Future<bool?> _confirmAdminDeleteDayWorkouts(
+    BuildContext context, {
+    required String studentName,
+    required int workoutCount,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.65),
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1D2E),
+        title: Text(
+          'Excluir treino(s) do dia?',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
+          ),
+        ),
+        content: Text(
+          'Esta ação é só para administradores.\n\n'
+          'Serão apagados permanentemente $workoutCount treino(s) de '
+          '$studentName nesta data — incluindo concluídos — com todas as séries, '
+          'tempos e scores. Os dados serão removidos do aparelho e da nuvem '
+          '(Supabase) após sincronizar.\n\n'
+          'Não é possível desfazer.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.82),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.danger.withValues(alpha: 0.9),
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Excluir definitivamente'),
+          ),
+        ],
       ),
     );
   }
@@ -422,8 +642,17 @@ class _DayModalStudentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final blue = AppColors.cadastroCardBorder;
+    final blueSoft = AppColors.calendarFutureProgrammed;
     return FuturisticCard(
       onTap: onTap,
+      borderColor: blue.withValues(alpha: 0.88),
+      borderWidth: 1.15,
+      backgroundGradient: [
+        blueSoft.withValues(alpha: 0.22),
+        blue.withValues(alpha: 0.12),
+        Colors.black.withValues(alpha: 0.26),
+      ],
       child: Row(
         children: [
           DecoratedBox(
@@ -431,25 +660,25 @@ class _DayModalStudentCard extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  AppColors.splashMint.withValues(alpha: 0.22),
-                  const Color(0xFF26C6DA).withValues(alpha: 0.12),
+                  blueSoft.withValues(alpha: 0.28),
+                  blue.withValues(alpha: 0.16),
                 ],
               ),
               border: Border.all(
-                color: AppColors.splashMint.withValues(alpha: 0.5),
+                color: blue.withValues(alpha: 0.55),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.splashMint.withValues(alpha: 0.15),
+                  color: blueSoft.withValues(alpha: 0.2),
                   blurRadius: 10,
                 ),
               ],
             ),
-            child: const Padding(
-              padding: EdgeInsets.all(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
               child: Icon(
                 Icons.person_rounded,
-                color: AppColors.splashMint,
+                color: blueSoft.withValues(alpha: 0.95),
                 size: 26,
               ),
             ),
@@ -505,8 +734,17 @@ class _DayModalBundleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final blue = AppColors.cadastroCardBorder;
+    final blueSoft = AppColors.calendarFutureProgrammed;
     return FuturisticCard(
       onTap: onTap,
+      borderColor: blue.withValues(alpha: 0.88),
+      borderWidth: 1.15,
+      backgroundGradient: [
+        blueSoft.withValues(alpha: 0.22),
+        blue.withValues(alpha: 0.12),
+        Colors.black.withValues(alpha: 0.26),
+      ],
       child: Row(
         children: [
           DecoratedBox(
@@ -514,19 +752,19 @@ class _DayModalBundleCard extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  AppColors.accentPink.withValues(alpha: 0.2),
-                  AppColors.accentGreen.withValues(alpha: 0.12),
+                  blueSoft.withValues(alpha: 0.28),
+                  blue.withValues(alpha: 0.16),
                 ],
               ),
               border: Border.all(
-                color: AppColors.accentPink.withValues(alpha: 0.45),
+                color: blue.withValues(alpha: 0.55),
               ),
             ),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Icon(
                 Icons.layers_rounded,
-                color: AppColors.accentPink.withValues(alpha: 0.95),
+                color: blueSoft.withValues(alpha: 0.95),
                 size: 26,
               ),
             ),
@@ -569,11 +807,13 @@ class _DayModalBundleCard extends StatelessWidget {
 class _ProgramSnapshotEditor extends StatefulWidget {
   const _ProgramSnapshotEditor({
     required this.scrollController,
+    required this.repo,
     required this.bundle,
     required this.onConfirm,
   });
 
   final ScrollController scrollController;
+  final AppDataRepository repo;
   final ProgrammableBundle bundle;
   final Future<void> Function(List<WeekScheduleRow> rows) onConfirm;
 
@@ -582,44 +822,32 @@ class _ProgramSnapshotEditor extends StatefulWidget {
 }
 
 class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
+  static const _uuid = Uuid();
   late List<WeekScheduleRow> _rows;
-  late List<TextEditingController> _sets;
-  late List<TextEditingController> _reps;
-  late List<TextEditingController> _loads;
 
   @override
   void initState() {
     super.initState();
     _rows = List<WeekScheduleRow>.from(widget.bundle.rows);
-    _sets = _rows
-        .map((r) => TextEditingController(text: '${r.item.sets}'))
-        .toList();
-    _reps = _rows
-        .map((r) => TextEditingController(text: '${r.item.reps}'))
-        .toList();
-    _loads = _rows
-        .map(
-          (r) => TextEditingController(text: r.item.loadKg?.toString() ?? ''),
-        )
-        .toList();
+    _renumberSortOrders();
   }
 
-  @override
-  void dispose() {
-    for (final c in _sets) {
-      c.dispose();
+  void _renumberSortOrders() {
+    _rows.sort((a, b) => a.item.sortOrder.compareTo(b.item.sortOrder));
+    for (var i = 0; i < _rows.length; i++) {
+      final it = _rows[i].item;
+      _rows[i] = WeekScheduleRow(
+        item: it.copyWith(sortOrder: i),
+        exerciseName: _rows[i].exerciseName,
+      );
     }
-    for (final c in _reps) {
-      c.dispose();
-    }
-    for (final c in _loads) {
-      c.dispose();
-    }
-    super.dispose();
   }
 
-  void _removeRowAt(int index) {
-    if (_rows.length <= 1) {
+  void _removeBlockAt(int blockIndex) {
+    final blocks = weekScheduleRowsAsComboBlocks(_rows);
+    if (blockIndex < 0 || blockIndex >= blocks.length) return;
+    final toRemove = blocks[blockIndex];
+    if (_rows.length - toRemove.length < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -629,50 +857,169 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
       );
       return;
     }
-    _sets[index].dispose();
-    _reps[index].dispose();
-    _loads[index].dispose();
-    _sets.removeAt(index);
-    _reps.removeAt(index);
-    _loads.removeAt(index);
-    _rows.removeAt(index);
+    final ids = {for (final r in toRemove) r.item.id};
+    _rows.removeWhere((r) => ids.contains(r.item.id));
+    _renumberSortOrders();
     setState(() {});
   }
 
-  InputDecoration _metricDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: TextStyle(
-        color: AppColors.accentGreen.withValues(alpha: 0.82),
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
-      floatingLabelStyle: TextStyle(
-        color: AppColors.cadastroCardBorder.withValues(alpha: 0.95),
-        fontSize: 11,
-      ),
-      filled: true,
-      fillColor: Colors.black.withValues(alpha: 0.38),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: AppColors.cadastroCardBorder.withValues(alpha: 0.38),
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: AppColors.accentGreen.withValues(alpha: 0.65),
-          width: 1.4,
-        ),
+  Future<void> _editRowAt(int index) async {
+    final r = _rows[index];
+    final i = r.item;
+    final repsDisp = weekScheduleRepsDisplay(i);
+    final res = await showExercisePrescriptionEditDialog(
+      context,
+      repo: widget.repo,
+      exerciseName: r.exerciseName,
+      badgeLabel: 'AJUSTES (SÓ NESTE DIA)',
+      descriptionLine:
+          'Métricas só para programar este dia; o planejamento semanal não é alterado.',
+      headerIcon: Icons.today_rounded,
+      initialSets: i.sets > 0 ? i.sets : 3,
+      initialRepsText: repsDisp.isEmpty ? '10' : repsDisp,
+      initialRestBetweenSetsSec: i.restBetweenSetsSec > 0 ? i.restBetweenSetsSec : 60,
+      initialLoadKg: i.loadKg,
+      initialTrainingMethodId: i.trainingMethodId,
+    );
+    if (!mounted || res == null) return;
+    final newItem = i.copyWith(
+      sets: res.sets,
+      reps: res.repsHintInt,
+      repsText: Value(res.repsText),
+      loadKg: Value(res.loadKg),
+      restBetweenSetsSec: res.restBetweenSetsSec,
+      needsDetail: false,
+      trainingMethodId: Value(res.trainingMethodId),
+      updatedAt: DateTime.now(),
+    );
+    setState(() {
+      _rows[index] = WeekScheduleRow(item: newItem, exerciseName: r.exerciseName);
+    });
+  }
+
+  Future<void> _openAddExercisePicker() async {
+    final picked = await showAppModalSheet<ExerciseEntity>(
+      context: context,
+      title: 'Adicionar exercício',
+      subtitle:
+          'Entra só neste treino deste dia. O planejamento semanal não é alterado.',
+      futuristicChrome: true,
+      initialChildSize: 0.78,
+      maxChildSize: 0.92,
+      builder: (ctx, scroll) => _DaySnapshotAddExercisePicker(
+        scrollController: scroll,
+        repo: widget.repo,
       ),
     );
+    if (!mounted || picked == null) return;
+
+    final template = _rows.first.item;
+    final now = DateTime.now();
+    final rest = template.restBetweenSetsSec > 0 ? template.restBetweenSetsSec : 60;
+    final item = WeekScheduleItemEntity(
+      id: _uuid.v4(),
+      blockId: template.blockId,
+      exerciseId: picked.id,
+      sourceWorkoutGroupId: widget.bundle.workoutGroupId,
+      sortOrder: _rows.length,
+      sets: 3,
+      reps: 10,
+      repsText: '10',
+      loadKg: null,
+      needsDetail: false,
+      restBetweenSetsSec: rest,
+      trainingMethodId: null,
+      updatedAt: now,
+      comboId: null,
+    );
+    setState(() {
+      _rows.add(WeekScheduleRow(item: item, exerciseName: picked.name));
+    });
+    _renumberSortOrders();
+  }
+
+  Future<void> _combineFromBlock(List<WeekScheduleRow> block) async {
+    final anchor = block.last;
+    final exclude = {for (final r in _rows) r.item.exerciseId};
+    final picked = await showAppModalSheet<ExerciseEntity>(
+      context: context,
+      title: 'Combinar com exercício',
+      subtitle: 'Bloco sem intervalo entre os movimentos neste dia.',
+      futuristicChrome: true,
+      initialChildSize: 0.78,
+      maxChildSize: 0.92,
+      builder: (ctx, scroll) => _DaySnapshotAddExercisePicker(
+        scrollController: scroll,
+        repo: widget.repo,
+        excludeExerciseIds: exclude,
+      ),
+    );
+    if (!mounted || picked == null) return;
+    final res = await showExercisePrescriptionEditDialog(
+      context,
+      repo: widget.repo,
+      exerciseName: picked.name,
+      badgeLabel: 'AJUSTES · COMBINAR',
+      descriptionLine:
+          'Prescrição no bloco; descanso vale após o último exercício do bloco.',
+      headerIcon: Icons.merge_type_rounded,
+      initialSets: 3,
+      initialRepsText: '12-15',
+      initialRestBetweenSetsSec:
+          anchor.item.restBetweenSetsSec > 0 ? anchor.item.restBetweenSetsSec : 60,
+      initialLoadKg: null,
+      initialTrainingMethodId: null,
+    );
+    if (!mounted || res == null) return;
+    final comboId = (anchor.item.comboId != null &&
+            anchor.item.comboId!.trim().isNotEmpty)
+        ? anchor.item.comboId!.trim()
+        : _uuid.v4();
+    final now = DateTime.now();
+    final idx = _rows.indexWhere((r) => r.item.id == anchor.item.id);
+    if (idx < 0) return;
+    if (anchor.item.comboId == null || anchor.item.comboId!.trim().isEmpty) {
+      final it = _rows[idx].item;
+      _rows[idx] = WeekScheduleRow(
+        item: it.copyWith(
+          comboId: Value(comboId),
+          updatedAt: now,
+        ),
+        exerciseName: _rows[idx].exerciseName,
+      );
+    }
+    final newItem = WeekScheduleItemEntity(
+      id: _uuid.v4(),
+      blockId: anchor.item.blockId,
+      exerciseId: picked.id,
+      sourceWorkoutGroupId: anchor.item.sourceWorkoutGroupId,
+      sortOrder: anchor.item.sortOrder + 1,
+      sets: res.sets,
+      reps: res.repsHintInt,
+      repsText: res.repsText,
+      loadKg: res.loadKg,
+      needsDetail: false,
+      restBetweenSetsSec: res.restBetweenSetsSec,
+      trainingMethodId: res.trainingMethodId,
+      updatedAt: now,
+      comboId: comboId,
+    );
+    _rows.insert(
+      idx + 1,
+      WeekScheduleRow(item: newItem, exerciseName: picked.name),
+    );
+    _renumberSortOrders();
+    setState(() {});
+  }
+
+  Future<void> _editRowWithId(String itemId) async {
+    final index = _rows.indexWhere((r) => r.item.id == itemId);
+    if (index >= 0) await _editRowAt(index);
   }
 
   @override
   Widget build(BuildContext context) {
+    final blocks = weekScheduleRowsAsComboBlocks(_rows);
     return Column(
       children: [
         Expanded(
@@ -680,116 +1027,381 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
             child: SlidableAutoCloseBehavior(
               child: ListView.builder(
                 controller: widget.scrollController,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                itemCount: _rows.length,
+                itemCount: blocks.length + 1,
                 itemBuilder: (_, i) {
-                  final r = _rows[i];
+                  if (i == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _openAddExercisePicker,
+                          borderRadius: BorderRadius.circular(16),
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.splashMint.withValues(alpha: 0.22),
+                                  AppColors.cadastroCardBorder.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                  Colors.black.withValues(alpha: 0.35),
+                                ],
+                              ),
+                              border: Border.all(
+                                color: AppColors.accentGreen.withValues(
+                                  alpha: 0.55,
+                                ),
+                                width: 1.15,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.splashMint.withValues(
+                                    alpha: 0.14,
+                                  ),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                              horizontal: 14,
+                            ),
+                            child: Row(
+                              children: [
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        AppColors.splashMint.withValues(
+                                          alpha: 0.45,
+                                        ),
+                                        AppColors.cadastroCardBorder.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                      ],
+                                    ),
+                                    border: Border.all(
+                                      color: AppColors.accentGreen.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(10),
+                                    child: Icon(
+                                      Icons.add_rounded,
+                                      color: AppColors.textPrimary,
+                                      size: 22,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Adicionar exercício',
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 15,
+                                          letterSpacing: -0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Só neste dia · abre lista para escolher',
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.52,
+                                          ),
+                                          fontSize: 12,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  size: 16,
+                                  color: AppColors.accentGreen.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final blockIndex = i - 1;
+                  final block = blocks[blockIndex];
+                  if (block.length == 1) {
+                    final r = block.single;
+                    final wi = r.item;
+                    final repsD = weekScheduleRepsDisplay(wi);
+                    final detail = StringBuffer()
+                      ..write('Séries: ${wi.sets}  Reps: $repsD  ')
+                      ..write('Carga: ${wi.loadKg?.toString() ?? '—'} kg  ·  ')
+                      ..write('Descanso: ${wi.restBetweenSetsSec}s')
+                      ..write('\nToque para editar métricas e método.');
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Slidable(
+                        key: ValueKey('snap_${r.item.id}'),
+                        endActionPane: ActionPane(
+                          motion: const DrawerMotion(),
+                          extentRatio: 0.56,
+                          children: [
+                            SlidableAction(
+                              onPressed: (_) => _combineFromBlock(block),
+                              backgroundColor: const Color(0xFF7E57C2),
+                              foregroundColor: Colors.white,
+                              icon: Icons.merge_type_rounded,
+                              label: 'Combinar',
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(14),
+                                bottomLeft: Radius.circular(14),
+                              ),
+                            ),
+                            SlidableAction(
+                              onPressed: (_) => _removeBlockAt(blockIndex),
+                              backgroundColor:
+                                  AppColors.danger.withValues(alpha: 0.92),
+                              foregroundColor: Colors.white,
+                              icon: Icons.delete_outline_rounded,
+                              label: 'Excluir',
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(14),
+                                bottomRight: Radius.circular(14),
+                              ),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _editRowWithId(r.item.id),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Ink(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    AppColors.calendarFutureProgrammed
+                                        .withValues(alpha: 0.2),
+                                    AppColors.cadastroCardBorder
+                                        .withValues(alpha: 0.11),
+                                    Colors.black.withValues(alpha: 0.26),
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: AppColors.cadastroCardBorder.withValues(
+                                    alpha: 0.82,
+                                  ),
+                                  width: 1.15,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.calendarFutureProgrammed
+                                        .withValues(alpha: 0.12),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    r.exerciseName,
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    detail.toString(),
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.52,
+                                      ),
+                                      fontSize: 13,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final names = block.map((r) => r.exerciseName).join(' · ');
+                  final detailCombo = StringBuffer();
+                  for (var k = 0; k < block.length; k++) {
+                    final r = block[k];
+                    final wi = r.item;
+                    final repsD = weekScheduleRepsDisplay(wi);
+                    if (k > 0) detailCombo.write('\n');
+                    detailCombo.write(
+                      '${r.exerciseName}: ${wi.sets}×$repsD  ·  '
+                      '${wi.loadKg?.toString() ?? '—'} kg  ·  '
+                      '${wi.restBetweenSetsSec}s',
+                    );
+                  }
+                  detailCombo.write(
+                    '\nToque para escolher qual exercício editar.',
+                  );
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Slidable(
-                      key: ValueKey('${r.item.id}_$i'),
+                      key: ValueKey('snap_combo_${block.first.item.comboId}_$blockIndex'),
                       endActionPane: ActionPane(
                         motion: const DrawerMotion(),
-                        extentRatio: 0.34,
+                        extentRatio: 0.56,
                         children: [
                           SlidableAction(
-                            onPressed: (_) => _removeRowAt(i),
-                            backgroundColor: AppColors.danger.withValues(alpha: 0.92),
+                            onPressed: (_) => _combineFromBlock(block),
+                            backgroundColor: const Color(0xFF7E57C2),
+                            foregroundColor: Colors.white,
+                            icon: Icons.merge_type_rounded,
+                            label: 'Combinar',
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(14),
+                              bottomLeft: Radius.circular(14),
+                            ),
+                          ),
+                          SlidableAction(
+                            onPressed: (_) => _removeBlockAt(blockIndex),
+                            backgroundColor:
+                                AppColors.danger.withValues(alpha: 0.92),
                             foregroundColor: Colors.white,
                             icon: Icons.delete_outline_rounded,
                             label: 'Excluir',
                             borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(14),
-                              bottomLeft: Radius.circular(14),
+                              topRight: Radius.circular(14),
+                              bottomRight: Radius.circular(14),
                             ),
                           ),
                         ],
                       ),
                       child: Material(
                         color: Colors.transparent,
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                AppColors.cadastroCardBorder.withValues(alpha: 0.1),
-                                Colors.black.withValues(alpha: 0.22),
-                                AppColors.accentGreen.withValues(alpha: 0.04),
-                              ],
-                            ),
-                            border: Border.all(
-                              color: AppColors.cadastroCardBorder.withValues(
-                                alpha: 0.48,
-                              ),
-                              width: 1.1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accentGreen.withValues(alpha: 0.06),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                r.exerciseName,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                  height: 1.2,
+                        child: InkWell(
+                          onTap: () async {
+                            final choice = await showModalBottomSheet<
+                                WeekScheduleRow>(
+                              context: context,
+                              backgroundColor: AppColors.barBackground,
+                              builder: (ctx) => SafeArea(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    const Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Text(
+                                        'Editar exercício do bloco',
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ),
+                                    for (final r in block)
+                                      ListTile(
+                                        title: Text(
+                                          r.exerciseName,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        onTap: () => Navigator.pop(ctx, r),
+                                      ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _sets[i],
-                                      keyboardType: TextInputType.number,
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 15,
-                                      ),
-                                      decoration: _metricDecoration('Séries *'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _reps[i],
-                                      keyboardType: TextInputType.number,
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 15,
-                                      ),
-                                      decoration: _metricDecoration('Reps *'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _loads[i],
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 15,
-                                      ),
-                                      decoration: _metricDecoration('kg'),
-                                    ),
-                                  ),
+                            );
+                            if (!context.mounted || choice == null) return;
+                            await _editRowWithId(choice.item.id);
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Ink(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.calendarFutureProgrammed
+                                      .withValues(alpha: 0.2),
+                                  AppColors.cadastroCardBorder
+                                      .withValues(alpha: 0.11),
+                                  Colors.black.withValues(alpha: 0.26),
                                 ],
                               ),
-                            ],
+                              border: Border.all(
+                                color: AppColors.cadastroCardBorder.withValues(
+                                  alpha: 0.82,
+                                ),
+                                width: 1.15,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.calendarFutureProgrammed
+                                      .withValues(alpha: 0.12),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Combinação: $names',
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  detailCombo.toString(),
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.52),
+                                    fontSize: 13,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -808,41 +1420,164 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
             onPressed: _rows.isEmpty
                 ? null
                 : () async {
-                    final out = <WeekScheduleRow>[];
-                    for (var i = 0; i < _rows.length; i++) {
-                      final orig = _rows[i];
-                      final s = int.tryParse(_sets[i].text.trim());
-                      final re = int.tryParse(_reps[i].text.trim());
-                      if (s == null || re == null || s <= 0 || re <= 0) {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    for (final r in _rows) {
+                      if (!weekScheduleItemHasValidPrescription(r.item)) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
+                          SnackBar(
                             content: Text(
-                              'Preencha séries e repetições (> 0) em todos os exercícios.',
+                              'Toque em «${r.exerciseName}» e preencha séries e repetições.',
                             ),
                           ),
                         );
                         return;
                       }
-                      final lText = _loads[i].text.trim().replaceAll(',', '.');
-                      final l = lText.isEmpty ? null : double.tryParse(lText);
-                      final newItem = orig.item.copyWith(
-                        sets: s,
-                        reps: re,
-                        loadKg: Value(l),
-                        needsDetail: false,
-                      );
-                      out.add(
-                        WeekScheduleRow(
-                          item: newItem,
-                          exerciseName: orig.exerciseName,
-                        ),
-                      );
                     }
-                    await widget.onConfirm(out);
+                    await widget.onConfirm(List<WeekScheduleRow>.from(_rows));
                   },
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Lista pesquisável de exercícios para incluir no snapshot do dia (modal aninhada).
+class _DaySnapshotAddExercisePicker extends StatefulWidget {
+  const _DaySnapshotAddExercisePicker({
+    required this.scrollController,
+    required this.repo,
+    this.excludeExerciseIds,
+  });
+
+  final ScrollController scrollController;
+  final AppDataRepository repo;
+  final Set<String>? excludeExerciseIds;
+
+  @override
+  State<_DaySnapshotAddExercisePicker> createState() =>
+      _DaySnapshotAddExercisePickerState();
+}
+
+class _DaySnapshotAddExercisePickerState
+    extends State<_DaySnapshotAddExercisePicker> {
+  final _queryC = TextEditingController();
+
+  @override
+  void dispose() {
+    _queryC.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final blue = AppColors.cadastroCardBorder;
+    final blueSoft = AppColors.calendarFutureProgrammed;
+
+    return FuturisticBackground(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+            child: AppCadastroSearchField(
+              controller: _queryC,
+              label: 'Buscar por nome',
+              hint: 'Digite para filtrar',
+              onChanged: (_) => setState(() {}),
+              autofocus: true,
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<List<ExerciseEntity>>(
+              stream: widget.repo.watchExercisesAlphabetical(),
+              builder: (context, snap) {
+                final all = snap.data ?? [];
+                final excl = widget.excludeExerciseIds;
+                final pool = excl == null || excl.isEmpty
+                    ? all
+                    : all.where((e) => !excl.contains(e.id)).toList();
+                if (pool.isEmpty) {
+                  return Center(
+                    child: Text(
+                      all.isEmpty
+                          ? 'Nenhum exercício cadastrado.'
+                          : 'Nenhum exercício disponível (todos já estão neste dia).',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 14,
+                      ),
+                    ),
+                  );
+                }
+                final filtered = filterExercisesByNameQuery(
+                  _queryC.text.trim(),
+                  pool,
+                );
+                if (filtered.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        'Nenhum exercício encontrado.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  controller: widget.scrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                  itemCount: filtered.length,
+                  itemBuilder: (_, i) {
+                    final e = filtered[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: FuturisticCard(
+                        onTap: () => Navigator.pop(context, e),
+                        borderColor: blue.withValues(alpha: 0.82),
+                        borderWidth: 1.1,
+                        backgroundGradient: [
+                          blueSoft.withValues(alpha: 0.2),
+                          blue.withValues(alpha: 0.1),
+                          Colors.black.withValues(alpha: 0.28),
+                        ],
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                e.name,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              Icons.touch_app_rounded,
+                              color: AppColors.accentGreen.withValues(
+                                alpha: 0.85,
+                              ),
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -61,16 +61,26 @@ class FuturisticCard extends StatelessWidget {
     required this.child,
     this.onTap,
     this.borderColor,
+    this.backgroundGradient,
+    this.borderWidth = 1,
   });
 
   final Widget child;
   final VoidCallback? onTap;
-  /// Se nulo, mantém a borda rosa (ex.: calendário).
+  /// Se nulo, mantém a borda rosa (cadastro / padrão).
   final Color? borderColor;
+  /// Se nulo, gradiente rosa suave + escuro (padrão).
+  final List<Color>? backgroundGradient;
+  final double borderWidth;
 
   @override
   Widget build(BuildContext context) {
     final border = borderColor ?? AppColors.accentPink.withValues(alpha: 0.55);
+    final colors = backgroundGradient ??
+        <Color>[
+          AppColors.accentPink.withValues(alpha: 0.07),
+          Colors.black.withValues(alpha: 0.2),
+        ];
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -81,14 +91,11 @@ class FuturisticCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             gradient: LinearGradient(
-              colors: [
-                AppColors.accentPink.withValues(alpha: 0.07),
-                Colors.black.withValues(alpha: 0.2),
-              ],
+              colors: colors,
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            border: Border.all(color: border),
+            border: Border.all(color: border, width: borderWidth),
           ),
           child: child,
         ),

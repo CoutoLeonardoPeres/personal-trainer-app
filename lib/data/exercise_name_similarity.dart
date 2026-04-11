@@ -25,6 +25,43 @@ int _levenshtein(String a, String b) {
   return row0[b.length];
 }
 
+/// Exercícios cujo nome contém [query] (trim, sem diferenciar maiúsculas).
+List<ExerciseEntity> exercisesNameContains(
+  String query,
+  List<ExerciseEntity> all, {
+  String? excludeExerciseId,
+}) {
+  final q = normalizeExerciseName(query);
+  if (q.isEmpty) return [];
+  final out = <ExerciseEntity>[];
+  for (final e in all) {
+    if (excludeExerciseId != null && e.id == excludeExerciseId) continue;
+    if (normalizeExerciseName(e.name).contains(q)) {
+      out.add(e);
+    }
+  }
+  out.sort(
+    (a, b) => normalizeExerciseName(a.name).compareTo(normalizeExerciseName(b.name)),
+  );
+  return out;
+}
+
+/// Filtra [items] por nome; com [query] vazio devolve a mesma ordem de [items].
+List<ExerciseEntity> filterExercisesByNameQuery(
+  String query,
+  List<ExerciseEntity> items,
+) {
+  final q = normalizeExerciseName(query);
+  if (q.isEmpty) return List<ExerciseEntity>.from(items);
+  final out = items
+      .where((e) => normalizeExerciseName(e.name).contains(q))
+      .toList()
+    ..sort(
+      (a, b) => normalizeExerciseName(a.name).compareTo(normalizeExerciseName(b.name)),
+    );
+  return out;
+}
+
 ExerciseEntity? findDuplicateExerciseByNormalizedName(
   String name,
   List<ExerciseEntity> all, {

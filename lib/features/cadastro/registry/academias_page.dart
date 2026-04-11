@@ -22,6 +22,7 @@ class AcademiasPage extends StatelessWidget {
         onPressed: () => _form(context, repo, null),
         child: const Icon(Icons.add),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: FuturisticBackground(
         child: StreamBuilder<List<GymEntity>>(
           stream: repo.watchGymsAlphabetical(),
@@ -36,15 +37,18 @@ class AcademiasPage extends StatelessWidget {
               );
             }
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
               itemCount: list.length,
               itemBuilder: (_, i) {
                 final e = list[i];
+                void openForm() => _form(context, repo, e);
                 return SwipeableRegistryCard(
                   slidableKey: e.id,
                   title: e.name,
                   subtitle: '${e.city} — ${e.stateUf}',
-                  onEdit: () => _form(context, repo, e),
+                  onEdit: openForm,
+                  onCardTap: openForm,
+                  showEditOnSwipe: false,
                   onDelete: () async {
                     final ok = await confirmDeleteDialog(context, itemName: e.name);
                     if (ok == true && context.mounted) await repo.deleteGym(e.id);
