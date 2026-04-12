@@ -89,7 +89,7 @@ class SettingsPage extends StatelessWidget {
                   color: AppColors.accentGreen,
                 ),
                 title: const Text(
-                  'Logs do app',
+                  'Logs do Personal Gym',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
                 subtitle: Text(
@@ -259,7 +259,7 @@ class SettingsPage extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sem Supabase ativo. Use --dart-define no build ou guarde anon key + URL em Nuvem (Supabase) e reinicie o app.',
+            'Sem Supabase ativo. Use --dart-define no build ou guarde anon key + URL em Nuvem (Supabase) e reinicie o Personal Gym.',
           ),
         ),
       );
@@ -312,7 +312,7 @@ class SettingsPage extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sem Supabase ativo. Use --dart-define no build ou guarde anon key + URL em Nuvem (Supabase) e reinicie o app.',
+            'Sem Supabase ativo. Use --dart-define no build ou guarde anon key + URL em Nuvem (Supabase) e reinicie o Personal Gym.',
           ),
         ),
       );
@@ -417,7 +417,7 @@ class SettingsPage extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sem Supabase ativo. Use --dart-define no build ou guarde anon key + URL em Nuvem (Supabase) e reinicie o app.',
+            'Sem Supabase ativo. Use --dart-define no build ou guarde anon key + URL em Nuvem (Supabase) e reinicie o Personal Gym.',
           ),
         ),
       );
@@ -519,12 +519,12 @@ class _SupabaseSyncSection extends StatelessWidget {
           ? 'Chave via build (--dart-define). '
           : 'Chave guardada neste aparelho. ';
       return '${source}Fluxo: listas e formulários usam só o SQLite no celular; a nuvem é atualizada depois, em segundo plano, sem bloquear a tela. '
-          'Alterações recentes seguem na fila de sync; o envio de todas as tabelas roda ao minimizar/sair do app (no máx. a cada 30 min após sucesso, ou 4 min entre tentativas se falhar). '
+          'Alterações recentes seguem na fila de sync; o envio de todas as tabelas roda ao minimizar/sair do Personal Gym (no máx. a cada 30 min após sucesso, ou 4 min entre tentativas se falhar). '
           'Para forçar: Enviar tudo para a nuvem. A nuvem não preenche o celular sozinha — use Importar. '
           '401: use a anon key JWT (eyJ…) e a URL corretas do painel.';
     }
     return 'Sem chave ativa ainda. Opções: (1) --dart-define=SUPABASE_ANON_KEY=… e opcionalmente SUPABASE_URL no build; '
-        '(2) preencher o formulário abaixo e reiniciar o app por completo. O indicador na barra fica desligado até ligar.';
+        '(2) preencher o formulário abaixo e reiniciar o Personal Gym por completo. O indicador na barra fica desligado até ligar.';
   }
 
   String _statusLabel(SupabaseCloudStatus s) {
@@ -752,7 +752,7 @@ class _SupabaseLocalCredentialsCardState
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Guardado. Feche o app por completo (remova da lista de apps recentes) e abra de novo para o Supabase ligar.',
+          'Guardado. Feche o Personal Gym por completo (remova da lista de apps recentes) e abra de novo para o Supabase ligar.',
         ),
         duration: Duration(seconds: 6),
       ),
@@ -769,7 +769,7 @@ class _SupabaseLocalCredentialsCardState
           style: TextStyle(color: AppColors.textPrimary),
         ),
         content: Text(
-          'Só após reiniciar o app a nuvem ficará desligada.',
+          'Só após reiniciar o Personal Gym a nuvem ficará desligada.',
           style: TextStyle(color: AppColors.textMuted),
         ),
         actions: [
@@ -792,7 +792,7 @@ class _SupabaseLocalCredentialsCardState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Chave removida. Reinicie o app por completo.'),
+        content: Text('Chave removida. Reinicie o Personal Gym por completo.'),
         duration: Duration(seconds: 5),
       ),
     );
@@ -988,7 +988,7 @@ class _SessionProfileSection extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Quem está usando o app neste aparelho (até haver login). Define quais alunos e treinos aparecem.',
+              'Quem está usando o Personal Gym neste aparelho (até haver login). Define quais alunos e treinos aparecem.',
               style: TextStyle(
                 color: AppColors.textMuted.withValues(alpha: 0.95),
                 fontSize: 12,

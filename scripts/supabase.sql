@@ -270,6 +270,7 @@ create table if not exists public.student_performance_reports (
 
 -- -----------------------------
 -- MIGRAÇÕES COMPATÍVEIS
+-- (cópia só destas linhas para projetos antigos: scripts/supabase_migrate_planning_tables.sql)
 -- -----------------------------
 
 alter table public.personals add column if not exists cep text;

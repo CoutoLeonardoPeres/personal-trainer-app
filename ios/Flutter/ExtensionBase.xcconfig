@@ -1,0 +1,6 @@
+// Base para targets que não devem herdar Pods-Runner.* (ex.: extensão WidgetKit).
+// Inclui Generated (FLUTTER_BUILD_*) e copia para CURRENT_PROJECT_VERSION / MARKETING_VERSION:
+// o processamento do Info.plist da extensão nem sempre expande $(FLUTTER_BUILD_NUMBER) sozinho.
+#include "Generated.xcconfig"
+CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)
+MARKETING_VERSION = $(FLUTTER_BUILD_NAME)

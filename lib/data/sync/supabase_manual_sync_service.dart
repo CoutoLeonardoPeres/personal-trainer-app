@@ -8,6 +8,7 @@ import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import 'supabase_catalog_cloud_reconcile.dart';
+import 'supabase_push_diff.dart';
 import 'supabase_table_mappers.dart';
 
 /// Resultado do ping REST.
@@ -30,12 +31,18 @@ class SupabaseTablePushResult {
     required this.rowCount,
     required this.ok,
     this.errorMessage,
+    this.pushLikelyChangedOnCloud,
+    this.pushLikelyAlreadyAligned,
   });
 
   final String tableName;
   final int rowCount;
   final bool ok;
   final String? errorMessage;
+  /// Estimativa antes do upsert: linhas que parecem novas ou com `updated_at` local mais recente que a nuvem.
+  final int? pushLikelyChangedOnCloud;
+  /// Estimativa: já alinhadas (mesmo ts ou par student_gyms existente).
+  final int? pushLikelyAlreadyAligned;
 }
 
 /// Relatório completo: teste + cada tabela.
@@ -68,7 +75,13 @@ class SupabaseManualSyncReport {
     buf.writeln('Tabelas (${tables.length}):');
     for (final t in tables) {
       final status = t.ok ? 'OK' : 'ERRO';
-      buf.writeln('  [$status] ${t.tableName}: ${t.rowCount} linha(s)');
+      buf.write('  [$status] ${t.tableName}: ${t.rowCount} linha(s) enviada(s) (upsert)');
+      final ch = t.pushLikelyChangedOnCloud;
+      final al = t.pushLikelyAlreadyAligned;
+      if (ch != null && al != null) {
+        buf.write(' — ~$ch provável(is) alteração(ões) na nuvem, ~$al já alinhada(s)');
+      }
+      buf.writeln();
       if (t.errorMessage != null && t.errorMessage!.isNotEmpty) {
         buf.writeln('      → ${t.errorMessage}');
       }
@@ -77,6 +90,11 @@ class SupabaseManualSyncReport {
     buf.writeln(
       'Resumo: $successTableCount/${tables.length} tabelas sem erro, $totalRows linhas enviadas (upsert).',
     );
+    if (successTableCount < tables.length) {
+      buf.writeln(
+        'Aviso: há tabelas em erro — a contagem de linhas pode ser parcial (chunks interrompidos).',
+      );
+    }
     buf.writeln('Início: ${startedAt.toIso8601String()}');
     buf.writeln('Fim: ${finishedAt.toIso8601String()}');
     return buf.toString();
@@ -108,16 +126,16 @@ class SupabaseManualSyncService {
         'valor em Authorization: Bearer, e o PostgREST espera um JWT nesse header.\n'
         '• Confirme a URL: --dart-define=SUPABASE_URL=https://<ref>.supabase.co '
         '(o mesmo projeto da chave).\n'
-        '• Não use chave secret (sb_secret_…) nem service_role no app.';
+        '• Não use chave secret (sb_secret_…) nem service_role no Personal Gym.';
   }
 
   static Future<SupabaseConnectionTestResult> testConnectionOnly() async {
     if (!supabaseAppEnabled) {
       return SupabaseConnectionTestResult(
         ok: false,
-        message: 'App sem Supabase ativo. Opções: (1) --dart-define=SUPABASE_ANON_KEY=<JWT eyJ…> '
+        message: 'Personal Gym sem Supabase ativo. Opções: (1) --dart-define=SUPABASE_ANON_KEY=<JWT eyJ…> '
             'e opcionalmente SUPABASE_URL; (2) Configurações → Nuvem → guardar anon JWT + URL e '
-            'reiniciar o app por completo. Não use sb_publishable_… como se fosse anon — use o JWT '
+            'reiniciar o Personal Gym por completo. Não use sb_publishable_… como se fosse anon — use o JWT '
             'em Settings → API → Legacy API keys.',
       );
     }
@@ -364,6 +382,18 @@ class SupabaseManualSyncService {
         tableName: tableName,
         rowCount: 0,
         ok: true,
+        pushLikelyChangedOnCloud: 0,
+        pushLikelyAlreadyAligned: 0,
+      );
+    }
+    SupabasePushDiff diff;
+    try {
+      diff = await computeSupabasePushDiff(client, tableName, rows);
+    } catch (e) {
+      diff = SupabasePushDiff(
+        total: rows.length,
+        cloudStaleOrNewCount: rows.length,
+        likelyAlreadyAlignedCount: 0,
       );
     }
     var sent = 0;
@@ -379,13 +409,32 @@ class SupabaseManualSyncService {
         tableName: tableName,
         rowCount: sent,
         ok: true,
+        pushLikelyChangedOnCloud: diff.cloudStaleOrNewCount,
+        pushLikelyAlreadyAligned: diff.likelyAlreadyAlignedCount,
       );
     } catch (e) {
+      var msg = e.toString();
+      final needsPlanningMigration = msg.contains('PGRST204') &&
+          msg.contains('schema cache') &&
+          (msg.contains('combo_id') ||
+              msg.contains('training_method_id') ||
+              msg.contains('reps_text') ||
+              msg.contains('last_reps_text'));
+      if (needsPlanningMigration) {
+        msg += '\n\n—\n'
+            'Faltam colunas de planeamento/treino no Postgres (ou o cache da API está desatualizado).\n'
+            '1) SQL Editor: executar scripts/supabase_migrate_planning_tables.sql '
+            '(paridade com scripts/supabase.sql, ~migrações 280–302).\n'
+            '2) Supabase: Settings → Data API → «Reload schema» (ou espere ~1 min).\n'
+            '3) Voltar a sincronizar.';
+      }
       return SupabaseTablePushResult(
         tableName: tableName,
         rowCount: sent,
         ok: false,
-        errorMessage: e.toString(),
+        errorMessage: msg,
+        pushLikelyChangedOnCloud: diff.cloudStaleOrNewCount,
+        pushLikelyAlreadyAligned: diff.likelyAlreadyAlignedCount,
       );
     }
   }

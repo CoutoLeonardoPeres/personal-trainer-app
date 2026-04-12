@@ -71,7 +71,9 @@ Expression<bool> _dayWorkoutSubjectToGroupTemplateSync($DayWorkoutsTable w) =>
     w.status.equals('started').not() &
     w.status.equals('scheduled').not();
 
-/// Repositório central: CRUD local, auditoria e fila para Supabase (segundo plano).
+/// Repositório central: toda mutação relevante grava primeiro no SQLite e em seguida
+/// regista em [audit_logs] + [RemoteSyncService.enqueueAudit], que dispara o envio
+/// incremental ao Supabase em segundo plano ([SupabaseRemoteSyncService]).
 class AppDataRepository {
   AppDataRepository(
     this._db,
@@ -1237,6 +1239,7 @@ class AppDataRepository {
         ),
       );
     }
+    await _audit('update', 'workout_group', entityId: workoutGroupId);
   }
 
   Future<void> _normalizeWeekScheduleComboRest(String blockId, String comboId) async {
@@ -1260,6 +1263,7 @@ class AppDataRepository {
         ),
       );
     }
+    await _audit('schedule_exercises_week', 'week_schedule', entityId: blockId);
   }
 
   Future<void> removeWorkoutGroupExerciseLine(String lineId) async {
@@ -1281,14 +1285,16 @@ class AppDataRepository {
             ))
           .get();
       if (sibs.length == 1) {
+        final onlyId = sibs.single.id;
         await (_db.update(_db.workoutGroupExercises)
-              ..where((t) => t.id.equals(sibs.single.id)))
+              ..where((t) => t.id.equals(onlyId)))
             .write(
           WorkoutGroupExercisesCompanion(
             comboId: const Value(null),
             updatedAt: Value(DateTime.now()),
           ),
         );
+        await _audit('update', 'workout_group_exercise', entityId: onlyId);
       }
     }
   }
@@ -2104,6 +2110,9 @@ class AppDataRepository {
     final now = DateTime.now();
     final blockId = item.blockId;
     final cid = item.comboId?.trim();
+    final linkedDayWorkouts = await (_db.select(_db.dayWorkouts)
+          ..where((d) => d.weekItemId.equals(itemId)))
+        .get();
     await (_db.update(_db.dayWorkouts)..where((d) => d.weekItemId.equals(itemId))).write(
           DayWorkoutsCompanion(
             status: const Value('cancelled'),
@@ -2114,19 +2123,24 @@ class AppDataRepository {
         );
     await (_db.delete(_db.weekScheduleItems)..where((i) => i.id.equals(itemId))).go();
     await _audit('delete', 'week_schedule_item', entityId: itemId);
+    for (final w in linkedDayWorkouts) {
+      await _audit('update', 'day_workout', entityId: w.id);
+    }
     if (cid != null && cid.isNotEmpty) {
       final sibs = await (_db.select(_db.weekScheduleItems)
             ..where((i) => i.blockId.equals(blockId) & i.comboId.equals(cid)))
           .get();
       if (sibs.length == 1) {
+        final onlyId = sibs.single.id;
         await (_db.update(_db.weekScheduleItems)
-              ..where((i) => i.id.equals(sibs.single.id)))
+              ..where((i) => i.id.equals(onlyId)))
             .write(
           WeekScheduleItemsCompanion(
             comboId: const Value(null),
             updatedAt: Value(now),
           ),
         );
+        await _audit('update', 'week_schedule_item', entityId: onlyId);
       }
     }
   }
@@ -2148,6 +2162,9 @@ class AppDataRepository {
         .get();
     final now = DateTime.now();
     for (final item in lines) {
+      final linkedDayWorkouts = await (_db.select(_db.dayWorkouts)
+            ..where((d) => d.weekItemId.equals(item.id)))
+          .get();
       await (_db.update(_db.dayWorkouts)
             ..where((d) => d.weekItemId.equals(item.id)))
           .write(
@@ -2160,6 +2177,9 @@ class AppDataRepository {
       );
       await (_db.delete(_db.weekScheduleItems)..where((i) => i.id.equals(item.id))).go();
       await _audit('delete', 'week_schedule_item', entityId: item.id);
+      for (final w in linkedDayWorkouts) {
+        await _audit('update', 'day_workout', entityId: w.id);
+      }
     }
   }
 
@@ -2306,7 +2326,7 @@ class AppDataRepository {
     });
     await _audit(
       'reorder',
-      'week_schedule_item',
+      'week_schedule',
       entityId: blockId,
       payload: {
         'sourceWorkoutGroupId': sourceWorkoutGroupId,
@@ -2520,6 +2540,34 @@ class AppDataRepository {
                 w.studentId.equals(studentId) & w.status.equals('started'),
           ))
         .watch();
+  }
+
+  /// Snapshot pontual (ex.: ao pausar app para atualizar Live Activity no lock screen).
+  Future<List<DayWorkoutEntity>> fetchStudentStartedDayWorkouts(
+    String studentId,
+  ) async {
+    await requireStudentAccess(studentId);
+    return (_db.select(_db.dayWorkouts)
+          ..where(
+            (w) =>
+                w.studentId.equals(studentId) & w.status.equals('started'),
+          ))
+        .get();
+  }
+
+  /// Treinos `started` que a sessão atual pode ver (aluno: só o seu; personal: os seus alunos; admin: todos).
+  Stream<List<DayWorkoutEntity>> watchAccessibleStartedDayWorkouts() {
+    return (_db.select(_db.dayWorkouts)
+          ..where((w) => w.status.equals('started')))
+        .watch()
+        .asyncMap(_visibleDayWorkouts);
+  }
+
+  Future<List<DayWorkoutEntity>> fetchAccessibleStartedDayWorkouts() async {
+    final raw = await (_db.select(_db.dayWorkouts)
+          ..where((w) => w.status.equals('started')))
+        .get();
+    return _visibleDayWorkouts(raw);
   }
 
   Stream<List<DayWorkoutExerciseEntity>> watchDayWorkoutExercises(

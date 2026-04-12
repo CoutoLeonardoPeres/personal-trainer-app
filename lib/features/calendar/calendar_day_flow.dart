@@ -49,6 +49,18 @@ class CalendarDayFlow {
     }
   }
 
+  /// Deep link / atalho: abre a folha de exercícios do treino (mesmo UI que programado/concluído).
+  static Future<void> openDayWorkoutSheetById(
+    BuildContext context,
+    AppDataRepository repo,
+    String dayWorkoutId,
+  ) async {
+    final w = await repo.getDayWorkout(dayWorkoutId);
+    if (w == null || !context.mounted) return;
+    final calDay = weekScheduleLocalCalendarDate(w.dayDate);
+    await _onWorkoutSelected(context, repo, calDay, w);
+  }
+
   static Future<void> _openEmptyDay(
     BuildContext context,
     AppDataRepository repo,

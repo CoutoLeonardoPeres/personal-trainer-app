@@ -46,12 +46,14 @@ class _InterSetRestDialog extends StatefulWidget {
   State<_InterSetRestDialog> createState() => _InterSetRestDialogState();
 }
 
-class _InterSetRestDialogState extends State<_InterSetRestDialog> {
+class _InterSetRestDialogState extends State<_InterSetRestDialog>
+    with WidgetsBindingObserver {
   Timer? _ticker;
   late DateTime _countdownStart;
   DateTime? _postPhaseStart;
   var _phaseCountdown = true;
   var _transitionedToPost = false;
+  var _playedEndSound = false;
   RestLiveActivityController? _restLive;
 
   @override
@@ -63,29 +65,54 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _countdownStart = DateTime.now();
-    _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) => _onTick());
+    _ticker = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => unawaited(_syncPhaseWithWallClock()),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _restLive?.beginCountdown(prescribedSec: widget.prescribedSec);
+      final end = _restLive?.countdownEndsAt;
+      if (end != null) {
+        setState(() {
+          _countdownStart =
+              end.subtract(Duration(seconds: widget.prescribedSec));
+        });
+      }
     });
   }
 
-  Future<void> _onTick() async {
-    if (!mounted) return;
-    if (_phaseCountdown && !_transitionedToPost && _remainingCountdownSec <= 0) {
-      _transitionedToPost = true;
-      _phaseCountdown = false;
-      _postPhaseStart = DateTime.now();
-      if (mounted) {
-        _restLive?.enterPostPhase();
-      }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncPhaseWithWallClock());
+    }
+  }
+
+  /// Alinha fase com o relógio real (timers pausam com app em background / ecrã bloqueado).
+  Future<void> _syncPhaseWithWallClock() async {
+    _restLive?.syncWithWallClock();
+    if (_transitionedToPost) {
+      if (mounted) setState(() {});
+      return;
+    }
+    final ctrl = _restLive;
+    if (ctrl == null || !ctrl.inPostPhase) {
+      if (mounted) setState(() {});
+      return;
+    }
+    _transitionedToPost = true;
+    _phaseCountdown = false;
+    _postPhaseStart = ctrl.postPhaseStartedAt ??
+        _countdownStart.add(Duration(seconds: widget.prescribedSec));
+    if (!_playedEndSound) {
+      _playedEndSound = true;
       final on = await RestTimerPrefs.isSoundEnabled();
       if (on && mounted) {
         await SystemSound.play(SystemSoundType.alert);
       }
-      if (mounted) setState(() {});
-      return;
     }
     if (mounted) setState(() {});
   }
@@ -121,16 +148,19 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog> {
 
   void _skipCountdown() {
     if (!_phaseCountdown) return;
+    final now = DateTime.now();
+    _playedEndSound = true;
+    _restLive?.enterPostPhase(startedAt: now);
     setState(() {
       _transitionedToPost = true;
       _phaseCountdown = false;
-      _postPhaseStart = DateTime.now();
+      _postPhaseStart = now;
     });
-    _restLive?.enterPostPhase();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     _restLive?.clear();
     super.dispose();

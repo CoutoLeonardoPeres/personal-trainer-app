@@ -1,11 +1,11 @@
 {
-    "name": "app_personal",
-    "short_name": "app_personal",
+    "name": "Personal Gym",
+    "short_name": "Personal Gym",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Gestão de treinos para personal trainers e alunos.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

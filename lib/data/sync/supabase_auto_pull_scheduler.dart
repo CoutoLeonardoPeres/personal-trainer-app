@@ -26,12 +26,14 @@ abstract final class SupabaseAutoPullScheduler {
     required SupabaseSyncController sync,
     required AppSession session,
     Duration delay = const Duration(seconds: 14),
+    /// Quando true, ignora o intervalo mínimo entre importações (ex.: arranque ou voltar ao primeiro plano).
+    bool bypassMinInterval = false,
   }) {
     _scheduledPull?.cancel();
     if (!supabaseAppEnabled) return;
     _scheduledPull = Timer(delay, () {
       _scheduledPull = null;
-      unawaited(_runIfDue(db, sync, session));
+      unawaited(_runIfDue(db, sync, session, bypassMinInterval: bypassMinInterval));
     });
   }
 
@@ -43,14 +45,16 @@ abstract final class SupabaseAutoPullScheduler {
   static Future<void> _runIfDue(
     AppDatabase db,
     SupabaseSyncController sync,
-    AppSession session,
-  ) async {
+    AppSession session, {
+    bool bypassMinInterval = false,
+  }) async {
     if (!supabaseAppEnabled) return;
 
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now().millisecondsSinceEpoch;
     final last = prefs.getInt(_kLastPullMs) ?? 0;
-    if (now - last < _minGapBetweenPulls.inMilliseconds) {
+    if (!bypassMinInterval &&
+        now - last < _minGapBetweenPulls.inMilliseconds) {
       if (kDebugMode) {
         debugPrint(
           'SupabaseAutoPullScheduler: pulado (última importação há menos de '

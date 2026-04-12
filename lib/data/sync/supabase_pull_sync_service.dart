@@ -13,12 +13,27 @@ import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
 
 class SupabasePullTableResult {
-  SupabasePullTableResult(this.tableName, this.rowCount, this.ok, [this.error]);
+  SupabasePullTableResult(
+    this.tableName,
+    this.rowCount,
+    this.ok, [
+    this.error,
+    this.rowsWrittenToLocal,
+    this.rowsSkippedLocalNewer,
+    this.rowsSkippedRedirect,
+  ]);
 
   final String tableName;
+  /// Linhas lidas da nuvem (iteradas).
   final int rowCount;
   final bool ok;
   final String? error;
+  /// Gravações em SQLite ([insertOnConflictUpdate]).
+  final int? rowsWrittenToLocal;
+  /// Admin: cópia local tinha [updated_at] mais recente.
+  final int? rowsSkippedLocalNewer;
+  /// Reconciliação por nome (muscle/exercise) — não grava esta linha remota.
+  final int? rowsSkippedRedirect;
 }
 
 class SupabasePullReport {
@@ -42,7 +57,20 @@ class SupabasePullReport {
     b.writeln('Conexão: ${connectionOk ? "OK" : "FALHOU"} — $connectionMessage');
     b.writeln();
     for (final t in tables) {
-      b.writeln('[${t.ok ? "OK" : "ERRO"}] ${t.tableName}: ${t.rowCount} linha(s)');
+      b.write('[${t.ok ? "OK" : "ERRO"}] ${t.tableName}: ${t.rowCount} recebida(s) da nuvem');
+      final w = t.rowsWrittenToLocal;
+      if (w != null) {
+        b.write(' | $w gravada(s) no dispositivo');
+        final sn = t.rowsSkippedLocalNewer ?? 0;
+        if (sn > 0) {
+          b.write(' | $sn ignorada(s) (cópia local mais recente)');
+        }
+        final rd = t.rowsSkippedRedirect ?? 0;
+        if (rd > 0) {
+          b.write(' | $rd ignorada(s) (reconciliação por nome / id)');
+        }
+      }
+      b.writeln();
       if (t.error != null) b.writeln('  → ${t.error}');
     }
     b.writeln();
@@ -276,6 +304,9 @@ class SupabasePullSyncService {
       var localList = await _db.select(_db.muscleGroups).get();
       var localUpd = {for (final g in localList) g.id: g.updatedAt};
       final full = _pullFullCloud;
+      var written = 0;
+      var skippedNewer = 0;
+      var skippedRedirect = 0;
       for (final r in rows) {
         final remoteId = _str(r, 'id');
         final name = _str(r, 'name').trim();
@@ -289,10 +320,12 @@ class SupabasePullSyncService {
         }
         if (sameNameLocal != null && sameNameLocal.id != remoteId) {
           _pullMuscleGroupIdRedirect[remoteId] = sameNameLocal.id;
+          skippedRedirect++;
           continue;
         }
         final remoteUpd = _ts(r['updated_at']);
         if (_adminKeepLocalNewer(full, remoteUpd, localUpd[remoteId])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.muscleGroups).insertOnConflictUpdate(
@@ -303,10 +336,19 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
         localList = await _db.select(_db.muscleGroups).get();
         localUpd = {for (final g in localList) g.id: g.updatedAt};
       }
-      return SupabasePullTableResult('muscle_groups', rows.length, true);
+      return SupabasePullTableResult(
+        'muscle_groups',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        skippedRedirect,
+      );
     } catch (e) {
       return SupabasePullTableResult('muscle_groups', 0, false, e.toString());
     }
@@ -319,6 +361,9 @@ class SupabasePullSyncService {
       var localList = await _db.select(_db.exercises).get();
       var localUpd = {for (final e in localList) e.id: e.updatedAt};
       final full = _pullFullCloud;
+      var written = 0;
+      var skippedNewer = 0;
+      var skippedRedirect = 0;
       for (final r in rows) {
         final remoteId = _str(r, 'id');
         final name = _str(r, 'name').trim();
@@ -332,10 +377,12 @@ class SupabasePullSyncService {
         }
         if (sameNameLocal != null && sameNameLocal.id != remoteId) {
           _pullExerciseIdRedirect[remoteId] = sameNameLocal.id;
+          skippedRedirect++;
           continue;
         }
         final remoteUpd = _ts(r['updated_at']);
         if (_adminKeepLocalNewer(full, remoteUpd, localUpd[remoteId])) {
+          skippedNewer++;
           continue;
         }
         final rawMg = _str(r, 'muscle_group_id');
@@ -352,10 +399,19 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
         localList = await _db.select(_db.exercises).get();
         localUpd = {for (final e in localList) e.id: e.updatedAt};
       }
-      return SupabasePullTableResult('exercises', rows.length, true);
+      return SupabasePullTableResult(
+        'exercises',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        skippedRedirect,
+      );
     } catch (e) {
       return SupabasePullTableResult('exercises', 0, false, e.toString());
     }
@@ -368,9 +424,12 @@ class SupabasePullSyncService {
       final localUpd = {
         for (final x in await _db.select(_db.gyms).get()) x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.gyms).insertOnConflictUpdate(
@@ -389,8 +448,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('gyms', rows.length, true);
+      return SupabasePullTableResult(
+        'gyms',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('gyms', 0, false, e.toString());
     }
@@ -430,9 +498,12 @@ class SupabasePullSyncService {
       final personalUpd = {
         for (final x in await _db.select(_db.personals).get()) x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), personalUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.personals).insertOnConflictUpdate(
@@ -457,8 +528,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('personals', rows.length, true);
+      return SupabasePullTableResult(
+        'personals',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('personals', 0, false, e.toString());
     }
@@ -499,9 +579,12 @@ class SupabasePullSyncService {
       final studentUpd = {
         for (final x in await _db.select(_db.students).get()) x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), studentUpd[id])) {
+          skippedNewer++;
           continue;
         }
         final bd = r['birth_date'];
@@ -529,8 +612,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('students', rows.length, true);
+      return SupabasePullTableResult(
+        'students',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('students', 0, false, e.toString());
     }
@@ -551,6 +643,7 @@ class SupabasePullSyncService {
           _pullScopeStudentIds,
         );
       }
+      var written = 0;
       for (final r in rows) {
         await _db.into(_db.studentGyms).insertOnConflictUpdate(
               StudentGymsCompanion.insert(
@@ -558,8 +651,17 @@ class SupabasePullSyncService {
                 gymId: _str(r, 'gym_id'),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('student_gyms', rows.length, true);
+      return SupabasePullTableResult(
+        'student_gyms',
+        rows.length,
+        true,
+        null,
+        written,
+        0,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('student_gyms', 0, false, e.toString());
     }
@@ -573,9 +675,12 @@ class SupabasePullSyncService {
         for (final x in await _db.select(_db.trainingMethods).get())
           x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.trainingMethods).insertOnConflictUpdate(
@@ -587,8 +692,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('training_methods', rows.length, true);
+      return SupabasePullTableResult(
+        'training_methods',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('training_methods', 0, false, e.toString());
     }
@@ -616,9 +730,12 @@ class SupabasePullSyncService {
       final localUpd = {
         for (final x in await _db.select(_db.workoutGroups).get()) x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.workoutGroups).insertOnConflictUpdate(
@@ -630,8 +747,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('workout_groups', rows.length, true);
+      return SupabasePullTableResult(
+        'workout_groups',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('workout_groups', 0, false, e.toString());
     }
@@ -659,11 +785,14 @@ class SupabasePullSyncService {
         for (final x in await _db.select(_db.workoutGroupExercises).get())
           x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         final remoteUpd =
             _tsOpt(r['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
         if (_adminKeepLocalNewer(full, remoteUpd, localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.workoutGroupExercises).insertOnConflictUpdate(
@@ -682,8 +811,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(remoteUpd),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('workout_group_exercises', rows.length, true);
+      return SupabasePullTableResult(
+        'workout_group_exercises',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult(
         'workout_group_exercises',
@@ -715,9 +853,12 @@ class SupabasePullSyncService {
         for (final x in await _db.select(_db.weekScheduleBlocks).get())
           x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.weekScheduleBlocks).insertOnConflictUpdate(
@@ -730,8 +871,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(_ts(r['updated_at'])),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('week_schedule_blocks', rows.length, true);
+      return SupabasePullTableResult(
+        'week_schedule_blocks',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('week_schedule_blocks', 0, false, e.toString());
     }
@@ -760,6 +910,8 @@ class SupabasePullSyncService {
         for (final x in await _db.select(_db.weekScheduleItems).get())
           x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         if (trackWorkoutGroupRefs) {
           _noteWorkoutGroupRef(_strOpt(r, 'source_workout_group_id'));
@@ -768,6 +920,7 @@ class SupabasePullSyncService {
         final remoteUpd =
             _tsOpt(r['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
         if (_adminKeepLocalNewer(full, remoteUpd, localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.weekScheduleItems).insertOnConflictUpdate(
@@ -788,8 +941,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(remoteUpd),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('week_schedule_items', rows.length, true);
+      return SupabasePullTableResult(
+        'week_schedule_items',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('week_schedule_items', 0, false, e.toString());
     }
@@ -820,12 +982,15 @@ class SupabasePullSyncService {
       final dayWUpd = {
         for (final x in await _db.select(_db.dayWorkouts).get()) x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         if (trackWorkoutGroupRefs) {
           _noteWorkoutGroupRef(_strOpt(r, 'source_workout_group_id'));
         }
         final id = _str(r, 'id');
         if (_adminKeepLocalNewer(full, _ts(r['updated_at']), dayWUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.dayWorkouts).insertOnConflictUpdate(
@@ -854,8 +1019,17 @@ class SupabasePullSyncService {
                 ),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('day_workouts', rows.length, true);
+      return SupabasePullTableResult(
+        'day_workouts',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('day_workouts', 0, false, e.toString());
     }
@@ -881,11 +1055,14 @@ class SupabasePullSyncService {
         for (final x in await _db.select(_db.dayWorkoutExercises).get())
           x.id: x.updatedAt,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         final remoteUpd =
             _tsOpt(r['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
         if (_adminKeepLocalNewer(full, remoteUpd, localUpd[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.dayWorkoutExercises).insertOnConflictUpdate(
@@ -906,8 +1083,17 @@ class SupabasePullSyncService {
                 updatedAt: Value(remoteUpd),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('day_workout_exercises', rows.length, true);
+      return SupabasePullTableResult(
+        'day_workout_exercises',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult(
         'day_workout_exercises',
@@ -925,10 +1111,13 @@ class SupabasePullSyncService {
       final localAt = {
         for (final x in await _db.select(_db.auditLogs).get()) x.id: x.at,
       };
+      var written = 0;
+      var skippedNewer = 0;
       for (final r in rows) {
         final id = _str(r, 'id');
         final remoteAt = _ts(r['at']);
         if (_adminKeepLocalNewer(full, remoteAt, localAt[id])) {
+          skippedNewer++;
           continue;
         }
         await _db.into(_db.auditLogs).insertOnConflictUpdate(
@@ -941,8 +1130,17 @@ class SupabasePullSyncService {
                 payloadJson: Value(_strOpt(r, 'payload_json')),
               ),
             );
+        written++;
       }
-      return SupabasePullTableResult('audit_logs', rows.length, true);
+      return SupabasePullTableResult(
+        'audit_logs',
+        rows.length,
+        true,
+        null,
+        written,
+        skippedNewer,
+        0,
+      );
     } catch (e) {
       return SupabasePullTableResult('audit_logs', 0, false, e.toString());
     }

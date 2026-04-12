@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/ui/app_bottom_nav.dart';
+import '../../core/workout/workout_live_deep_link_controller.dart';
 import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../data/repositories/app_data_repository.dart';
 import '../cadastro/cadastro_hub_page.dart';
+import '../calendar/calendar_day_flow.dart';
 import '../calendar/calendar_page.dart';
 import '../performance/performance_page.dart';
 import '../planning/planning_page.dart';
@@ -25,6 +29,42 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   MainNavTab _tab = MainNavTab.calendar;
   bool _tabLoading = false;
+  var _deepLinkListenerAttached = false;
+  WorkoutLiveDeepLinkController? _deepLink;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _deepLink ??= context.read<WorkoutLiveDeepLinkController>();
+    if (!_deepLinkListenerAttached) {
+      _deepLinkListenerAttached = true;
+      _deepLink!.addListener(_onWorkoutDeepLink);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_flushWorkoutDeepLink());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _deepLink?.removeListener(_onWorkoutDeepLink);
+    super.dispose();
+  }
+
+  void _onWorkoutDeepLink() {
+    unawaited(_flushWorkoutDeepLink());
+  }
+
+  Future<void> _flushWorkoutDeepLink() async {
+    final c = _deepLink;
+    if (c == null || !mounted) return;
+    final id = c.takePendingWorkoutId();
+    if (id == null) return;
+    await _select(MainNavTab.calendar);
+    if (!mounted) return;
+    final repo = context.read<AppDataRepository>();
+    await CalendarDayFlow.openDayWorkoutSheetById(context, repo, id);
+  }
 
   Future<void> _select(MainNavTab tab) async {
     if (tab == _tab) return;

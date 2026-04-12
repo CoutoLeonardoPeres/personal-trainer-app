@@ -16,6 +16,12 @@ class RestLiveActivityController extends ChangeNotifier {
 
   bool get inPostPhase => _postPhase;
 
+  /// Fim do countdown (para alinhar UI com o mesmo instante).
+  DateTime? get countdownEndsAt => _deadline;
+
+  /// Início da fase pós-intervalo (bipe / “pronto para próxima”).
+  DateTime? get postPhaseStartedAt => _postStart;
+
   /// Fase regressiva: segundos até acabar o intervalo prescrito.
   int get remainingCountdownSec {
     final d = _deadline;
@@ -45,10 +51,23 @@ class RestLiveActivityController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void enterPostPhase() {
+  /// Quando o app volta do segundo plano / ecrã bloqueado: entra na fase pós-bipe
+  /// se o prazo já passou (timers Dart não correm em background).
+  void syncWithWallClock() {
+    if (!hasRestSession || _postPhase) return;
+    final d = _deadline;
+    if (d == null) return;
+    if (DateTime.now().isBefore(d)) return;
+    _postPhase = true;
+    _postStart = d;
+    _startPulse();
+    notifyListeners();
+  }
+
+  void enterPostPhase({DateTime? startedAt}) {
     if (!hasRestSession) return;
     _postPhase = true;
-    _postStart = DateTime.now();
+    _postStart = startedAt ?? DateTime.now();
     _startPulse();
     notifyListeners();
   }

@@ -1,7 +1,7 @@
 /// URL padrão do projeto [projectRef]; pode ser sobrescrita no build com
 /// `--dart-define=SUPABASE_URL=https://SEU_REF.supabase.co` (deve coincidir com o painel).
 abstract final class SupabaseConstants {
-  static const String projectDisplayName = 'PersonalTreiner';
+  static const String projectDisplayName = 'Personal Gym';
   static const String projectRef = 'onmzbyltmbdkuodirfow';
   static const String defaultUrl = 'https://onmzbyltmbdkuodirfow.supabase.co';
 

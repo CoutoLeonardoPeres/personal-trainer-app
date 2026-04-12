@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../core/supabase/supabase_sync_controller.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../core/workout/rest_live_activity_controller.dart';
+import '../core/workout/workout_live_deep_link_controller.dart';
 import '../core/widgets/student_workout_live_activity_bar.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/app_data_repository.dart';
@@ -30,6 +32,7 @@ class _LoadedServices {
     required this.fidelity,
     required this.repo,
     required this.remoteSync,
+    required this.deepLink,
   });
 
   final AppDatabase db;
@@ -38,6 +41,7 @@ class _LoadedServices {
   final SupabaseCloudFidelityChecker fidelity;
   final AppDataRepository repo;
   final RemoteSyncService remoteSync;
+  final WorkoutLiveDeepLinkController deepLink;
 }
 
 /// Raiz do app: um único [MaterialApp] “de carregamento” e, depois,
@@ -56,6 +60,49 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   Object? _loadError;
   bool _loadStarted = false;
   String? _lastBootBuildMode;
+  StreamSubscription<Uri>? _appLinkSubscription;
+
+  void _cancelAppLinks() {
+    _appLinkSubscription?.cancel();
+    _appLinkSubscription = null;
+  }
+
+  Future<void> _handleWorkoutAppLink(Uri uri, _LoadedServices s) async {
+    if (uri.scheme != 'apppersonal') return;
+    if (uri.host != 'workout') return;
+    final pathOk = uri.path == '/register-set' ||
+        (uri.pathSegments.length == 1 &&
+            uri.pathSegments.first == 'register-set');
+    if (!pathOk) return;
+
+    final wid = uri.queryParameters['wid']?.trim();
+    String? id;
+    if (wid != null && wid.isNotEmpty) {
+      final w = await s.repo.getDayWorkout(wid);
+      if (w != null && w.status == 'started') {
+        id = w.id;
+      }
+    }
+    if (id == null) {
+      final list = await s.repo.fetchAccessibleStartedDayWorkouts();
+      if (list.isNotEmpty) id = list.first.id;
+    }
+    if (id == null) return;
+    s.deepLink.requestOpenActiveSheet(id);
+  }
+
+  void _startAppLinks(_LoadedServices s) {
+    _cancelAppLinks();
+    final appLinks = AppLinks();
+    _appLinkSubscription = appLinks.uriLinkStream.listen((uri) {
+      unawaited(_handleWorkoutAppLink(uri, s));
+    });
+    unawaited(appLinks.getInitialLink().then((uri) {
+      if (uri != null && mounted) {
+        unawaited(_handleWorkoutAppLink(uri, s));
+      }
+    }));
+  }
 
   @override
   void initState() {
@@ -88,6 +135,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         session,
         remoteSync: remoteSync,
       );
+      final deepLink = WorkoutLiveDeepLinkController();
       final bundle = _LoadedServices(
         db: db,
         session: session,
@@ -95,12 +143,17 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         fidelity: fidelity,
         repo: repo,
         remoteSync: remoteSync,
+        deepLink: deepLink,
       );
       if (!mounted) return;
       bootTrace('_loadServices', 'AppDatabase + repo OK → setState(services)');
       setState(() {
         _services = bundle;
         _loadError = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _services != bundle) return;
+        _startAppLinks(bundle);
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         bootTrace('postFrame', 'após services → Supabase/cloud');
@@ -142,11 +195,14 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       db: s.db,
       sync: s.sync,
       session: s.session,
+      delay: const Duration(seconds: 4),
+      bypassMinInterval: true,
     );
   }
 
   void _retryLoad() {
     final old = _services;
+    _cancelAppLinks();
     setState(() {
       _loadError = null;
       _services = null;
@@ -168,6 +224,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   @override
   void dispose() {
     logLaunch('PersonalTrainerApp.dispose — DB será fechado');
+    _cancelAppLinks();
     WidgetsBinding.instance.removeObserver(this);
     final s = _services;
     if (s != null) {
@@ -200,6 +257,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
               db: s.db,
               sync: s.sync,
               session: s.session,
+              bypassMinInterval: true,
             );
           },
           Priority.idle,
@@ -256,9 +314,12 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         ChangeNotifierProvider<RestLiveActivityController>(
           create: (_) => RestLiveActivityController(),
         ),
+        ChangeNotifierProvider<WorkoutLiveDeepLinkController>.value(
+          value: s.deepLink,
+        ),
       ],
       child: MaterialApp(
-        title: 'Personal Trainer',
+        title: 'Personal Gym',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
         builder: (context, child) =>
@@ -297,7 +358,7 @@ class _StartupPlaceholder extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Personal Trainer',
+                'Personal Gym',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: AppColors.splashMint,

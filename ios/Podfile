@@ -59,6 +59,30 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
+    # PrivacyInfo.xcprivacy não é código-fonte; podspecs com `**/*` metem-no em Compile Sources
+    # e o Xcode acusa: "no rule to process file ... xcprivacy ... for architecture arm64".
+    # Preferir source_build_phase (API do xcodeproj) — em alguns ambientes `phase.class.name`
+    # não termina em PBXSourcesBuildPhase e o bloco antigo não removia nada.
+    sources_phase = target.respond_to?(:source_build_phase) ? target.source_build_phase : nil
+    if sources_phase
+      sources_phase.files.to_a.each do |bf|
+        ref = bf.file_ref
+        path = ref&.path.to_s
+        real = (ref.respond_to?(:real_path) && ref.real_path) ? ref.real_path.to_s : ''
+        next unless path.end_with?('.xcprivacy') || real.end_with?('.xcprivacy')
+        sources_phase.remove_build_file(bf)
+      end
+    else
+      target.build_phases.each do |phase|
+        next unless phase.class.name.end_with?('PBXSourcesBuildPhase')
+        phase.files.to_a.each do |bf|
+          path = bf.file_ref&.path.to_s
+          next unless path.end_with?('.xcprivacy')
+          phase.remove_build_file(bf)
+        end
+      end
+    end
+
     # Xcode 16+: módulos Swift explícitos às vezes falham ao resolver `@import Flutter` em plugins.
     target.build_configurations.each do |config|
       config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
@@ -67,6 +91,12 @@ post_install do |installer|
       config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
       # Menos verificação de módulo Swift: reduz atrito com privacy bundles dos plugins no Xcode 16+.
       config.build_settings['SWIFT_VERIFY_EMITTED_MODULE_INTERFACE'] = 'NO'
+
+      # Xcode 16+: pods com IPHONEOS_DEPLOYMENT_TARGET 9.0 geram aviso (mínimo suportado 12+).
+      dt = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_s
+      if dt.empty? || (dt !~ /\$\(/ && dt.to_f < 12.0)
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      end
     end
 
     # sqlite3.c no Xcode 16+: MAX/MIN; i64→int; #warning gethostuuid em iOS; vírgula em FK (amalgamação)
@@ -94,6 +124,13 @@ post_install do |installer|
         config.build_settings['OTHER_CFLAGS'] = cflags.strip
         # Evita que #warning do sqlite3.c (ex.: gethostuuid no iOS) vire falha de build
         config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      end
+    end
+
+    # live_activities (pub): Swift 6 + SDK recente — ActivityState.pending e capturas Sendable no Task.
+    if target.name == 'live_activities'
+      target.build_configurations.each do |config|
+        config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
       end
     end
   end
@@ -207,6 +244,196 @@ OBJC
     if src.include?('keyWindow.rootViewController')
       patched = src.sub(old_fn, new_fn)
       File.write(share_m, patched) if patched != src
+    end
+  end
+
+  # live_activities: ActivityKit ainda expõe tipos não-Sendable; Swift 6 avisa sem @preconcurrency.
+  live_activities_swift = File.expand_path('.symlinks/plugins/live_activities/ios/live_activities/Sources/live_activities/LiveActivitiesPlugin.swift', __dir__)
+  if File.exist?(live_activities_swift)
+    las = File.read(live_activities_swift)
+    unless las.include?('@preconcurrency import ActivityKit')
+      las = las.sub(/^import ActivityKit(\r?\n)/, "@preconcurrency import ActivityKit\\1")
+    end
+    # ContentState só com appGroupId: ActivityKit pode não re-renderizar no lock screen quando só muda App Group.
+    unless las.include?('var refreshToken: Int64')
+      las = las.sub(
+        "        public struct ContentState: Codable, Hashable {\n            var appGroupId: String\n        }",
+        "        public struct ContentState: Codable, Hashable {\n            var appGroupId: String\n            var refreshToken: Int64\n        }"
+      )
+      las = las.sub(
+        'let initialContentState = LiveActivitiesAppAttributes.LiveDeliveryData(appGroupId: appGroupId!)',
+        "let initialContentState = LiveActivitiesAppAttributes.LiveDeliveryData(\n            appGroupId: appGroupId!,\n            refreshToken: Int64(Date().timeIntervalSince1970 * 1000))"
+      )
+      las = las.sub(
+        'let updatedStatus = LiveActivitiesAppAttributes.LiveDeliveryData(appGroupId: self.appGroupId!)',
+        "let updatedStatus = LiveActivitiesAppAttributes.LiveDeliveryData(\n                appGroupId: self.appGroupId!,\n                refreshToken: Int64(Date().timeIntervalSince1970 * 1000))"
+      )
+    end
+    # FlutterSceneLifeCycleDelegate: no ObjC o método devolve BOOL; assinatura Swift tem de ser -> Bool.
+    unless las.include?('openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool')
+      las = las.sub(
+        'public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {',
+        'public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool {'
+      )
+      las = las.sub(
+        "        guard let url = URLContexts.first?.url else { return }\n        _ = handleURL(url)",
+        "        guard let url = URLContexts.first?.url else { return false }\n        return handleURL(url)"
+      )
+    end
+    # SDK recente: ActivityState.pending (ex. Live Activity agendada) — switch tem de listar o caso.
+    unless las.include?('case .pending:')
+      las = las.sub(
+        "        case .stale:\n            return \"stale\"\n        @unknown default:\n            return \"unknown\"",
+        "        case .stale:\n            return \"stale\"\n        case .pending:\n            return \"pending\"\n        @unknown default:\n            return \"unknown\""
+      )
+      las = las.sub(
+        "                case .stale:\n                    DispatchQueue.main.async {\n                        var response: Dictionary<String, Any> = Dictionary()\n                        response[\"activityId\"] = activity.id\n                        response[\"status\"] = \"stale\"\n                        self.activityEventSink?.self(response)\n                    }\n                @unknown default:",
+        "                case .stale:\n                    DispatchQueue.main.async {\n                        var response: Dictionary<String, Any> = Dictionary()\n                        response[\"activityId\"] = activity.id\n                        response[\"status\"] = \"stale\"\n                        self.activityEventSink?.self(response)\n                    }\n                case .pending:\n                    break\n                @unknown default:"
+      )
+    end
+    # Swift 6: Task {} é @Sendable; evita DispatchQueue.main.async { self… } dentro do for await.
+    if las.include?('pushToStartTokenUpdates') && las.include?('self.pushToStartTokenEventSink?(token)') && !las.include?('Task { @MainActor in')
+      las = las.sub(
+        "            Task {\n                for await data in Activity<LiveActivitiesAppAttributes>.pushToStartTokenUpdates {\n                    let token = data.map { String(format: \"%02x\", $0) }.joined()\n                    \n                    DispatchQueue.main.async {\n                        self.pushToStartTokenEventSink?(token)\n                    }\n                }\n            }",
+        "            Task { @MainActor in\n                for await data in Activity<LiveActivitiesAppAttributes>.pushToStartTokenUpdates {\n                    let token = data.map { String(format: \"%02x\", $0) }.joined()\n                    self.pushToStartTokenEventSink?(token)\n                }\n            }"
+      )
+    end
+    # Swift 6: monitorLiveActivity / monitorTokenChanges — Task @MainActor + sem DispatchQueue (evita avisos Sendable).
+    if las.include?('for await state in activity.activityStateUpdates') && las.include?('DispatchQueue.main.async') && las.include?('case .pending:')
+      old_mon = <<'SWIFT'
+        Task {
+            for await state in activity.activityStateUpdates {
+                switch state {
+                case .active:
+                    monitorTokenChanges(activity)
+                case .dismissed, .ended:
+                    DispatchQueue.main.async {
+                        var response: Dictionary<String, Any> = Dictionary()
+                        response["activityId"] = activity.id
+                        response["status"] = "ended"
+                        self.activityEventSink?.self(response)
+                    }
+                case .stale:
+                    DispatchQueue.main.async {
+                        var response: Dictionary<String, Any> = Dictionary()
+                        response["activityId"] = activity.id
+                        response["status"] = "stale"
+                        self.activityEventSink?.self(response)
+                    }
+                case .pending:
+                    break
+                @unknown default:
+                    DispatchQueue.main.async {
+                        var response: Dictionary<String, Any> = Dictionary()
+                        response["activityId"] = activity.id
+                        response["status"] = "unknown"
+                        self.activityEventSink?.self(response)
+                    }
+                }
+            }
+        }
+SWIFT
+      new_mon = <<'SWIFT'
+        Task { @MainActor in
+            for await state in activity.activityStateUpdates {
+                switch state {
+                case .active:
+                    monitorTokenChanges(activity)
+                case .dismissed, .ended:
+                    var response: Dictionary<String, Any> = Dictionary()
+                    response["activityId"] = activity.id
+                    response["status"] = "ended"
+                    self.activityEventSink?.self(response)
+                case .stale:
+                    var response: Dictionary<String, Any> = Dictionary()
+                    response["activityId"] = activity.id
+                    response["status"] = "stale"
+                    self.activityEventSink?.self(response)
+                case .pending:
+                    break
+                @unknown default:
+                    var response: Dictionary<String, Any> = Dictionary()
+                    response["activityId"] = activity.id
+                    response["status"] = "unknown"
+                    self.activityEventSink?.self(response)
+                }
+            }
+        }
+SWIFT
+      las = las.sub(old_mon, new_mon) if las.include?('DispatchQueue.main.async')
+    end
+    if las.include?('for await data in activity.pushTokenUpdates') && las.include?('DispatchQueue.main.async')
+      old_tok = <<'SWIFT'
+        Task {
+            for await data in activity.pushTokenUpdates {
+                DispatchQueue.main.async {
+                    var response: Dictionary<String, Any> = Dictionary()
+                    let pushToken = data.map {String(format: "%02x", $0)}.joined()
+                    response["token"] = pushToken
+                    response["activityId"] = activity.id
+                    response["status"] = "active"
+                    self.activityEventSink?.self(response)
+                }
+            }
+        }
+SWIFT
+      new_tok = <<'SWIFT'
+        Task { @MainActor in
+            for await data in activity.pushTokenUpdates {
+                var response: Dictionary<String, Any> = Dictionary()
+                let pushToken = data.map {String(format: "%02x", $0)}.joined()
+                response["token"] = pushToken
+                response["activityId"] = activity.id
+                response["status"] = "active"
+                self.activityEventSink?.self(response)
+            }
+        }
+SWIFT
+      las = las.sub(old_tok, new_tok)
+    end
+    File.write(live_activities_swift, las)
+  end
+
+  # permission_handler_apple: ramo pre-iOS 12 usa subscriberCellularProvider (deprecated); app mínimo é 13.
+  phone_strategy = File.expand_path('.symlinks/plugins/permission_handler_apple/ios/Classes/strategies/PhonePermissionStrategy.m', __dir__)
+  if File.exist?(phone_strategy)
+    ph = File.read(phone_strategy)
+    old_phone = <<~'OBJC'
+-(bool) canDevicePlaceAPhoneCall {
+  CTTelephonyNetworkInfo *netInfo = [[CTTelephonyNetworkInfo alloc] init];
+  
+  if(@available(iOS 12.0, *)) {
+    NSDictionary<NSString *, CTCarrier *> *providers = [netInfo serviceSubscriberCellularProviders];
+    for (NSString *key in providers) {
+      CTCarrier *carrier = [providers objectForKey:key];
+      if ([self canPlacePhoneCallWithCarrier:carrier]) {
+        return YES;
+      }
+    }
+    
+    return NO;
+  } else {
+    CTCarrier *carrier = [netInfo subscriberCellularProvider];
+    return [self canPlacePhoneCallWithCarrier:carrier];
+  }
+}
+OBJC
+    new_phone = <<~'OBJC'
+-(bool) canDevicePlaceAPhoneCall {
+  CTTelephonyNetworkInfo *netInfo = [[CTTelephonyNetworkInfo alloc] init];
+  NSDictionary<NSString *, CTCarrier *> *providers = [netInfo serviceSubscriberCellularProviders];
+  for (NSString *key in providers) {
+    CTCarrier *carrier = providers[key];
+    if ([self canPlacePhoneCallWithCarrier:carrier]) {
+      return YES;
+    }
+  }
+  return NO;
+}
+OBJC
+    if ph.include?('subscriberCellularProvider')
+      ph_patched = ph.sub(old_phone, new_phone)
+      File.write(phone_strategy, ph_patched) if ph_patched != ph
     end
   end
 end

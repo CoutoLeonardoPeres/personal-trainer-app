@@ -132,7 +132,7 @@ class _SplashPageState extends State<SplashPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Personal Trainer',
+                    'Personal Gym',
                     textAlign: TextAlign.center,
                     style: titleStyle,
                   ),
@@ -157,7 +157,7 @@ class _SplashPageState extends State<SplashPage> {
                     )
                   else ...[
                     Text(
-                      'Falha ao iniciar o app',
+                      'Falha ao iniciar o Personal Gym',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: Colors.white,

@@ -185,7 +185,7 @@ class PersonaisPage extends StatelessWidget {
               value: isAdmin,
               onChanged: (v) => setSt(() => isAdmin = v),
               title: const Text(
-                'Administrador do app',
+                'Administrador do Personal Gym',
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               subtitle: const Text(

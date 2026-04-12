@@ -49,8 +49,10 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
   bool _workerRunning = false;
   bool _recovering = false;
 
-  /// Libera o thread de UI entre um envio e outro (~1 frame a 60 Hz).
-  static const Duration _yieldBetweenJobs = Duration(milliseconds: 18);
+  /// Um `Duration.zero` entre jobs devolve o controlo ao loop de eventos sem esperar
+  /// um frame inteiro — fila continua não bloqueante e o primeiro envio sai logo a seguir
+  /// à gravação local.
+  static const Duration _yieldBetweenJobs = Duration.zero;
 
   @override
   Future<void> enqueueAudit({
