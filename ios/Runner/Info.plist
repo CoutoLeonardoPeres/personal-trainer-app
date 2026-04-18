@@ -78,5 +78,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>O Personal Gym usa Face ID para desbloquear o app ao voltar do segundo plano, se você ativar essa opção em Configurações.</string>
 </dict>
 </plist>

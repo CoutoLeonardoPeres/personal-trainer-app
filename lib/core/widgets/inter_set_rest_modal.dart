@@ -54,6 +54,7 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
   var _phaseCountdown = true;
   var _transitionedToPost = false;
   var _playedEndSound = false;
+  var _finishRequested = false;
   RestLiveActivityController? _restLive;
 
   @override
@@ -130,20 +131,29 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
   }
 
   void _finish() {
+    if (_finishRequested) return;
+    _finishRequested = true;
     _ticker?.cancel();
     _restLive?.clear();
     final postStart = _postPhaseStart;
     final countMs = postStart == null
         ? DateTime.now().difference(_countdownStart).inMilliseconds
         : postStart.difference(_countdownStart).inMilliseconds;
-    final postMs = postStart == null ? 0 : DateTime.now().difference(postStart).inMilliseconds;
-    Navigator.of(context).pop(
-      InterSetRestMetrics(
-        prescribedSec: widget.prescribedSec,
-        countdownElapsedMs: countMs.clamp(0, 1 << 30),
-        postPhaseMs: postMs.clamp(0, 1 << 30),
-      ),
+    final postMs = postStart == null
+        ? 0
+        : DateTime.now().difference(postStart).inMilliseconds;
+    final result = InterSetRestMetrics(
+      prescribedSec: widget.prescribedSec,
+      countdownElapsedMs: countMs.clamp(0, 1 << 30),
+      postPhaseMs: postMs.clamp(0, 1 << 30),
     );
+    // Adia o pop para o próximo frame: o toque que fecha este diálogo não deve
+    // cair no botão «Adicionar» / linha de série por baixo e reabrir o modal.
+    final routeCtx = context;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!routeCtx.mounted) return;
+      Navigator.of(routeCtx, rootNavigator: true).pop(result);
+    });
   }
 
   void _skipCountdown() {

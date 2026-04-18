@@ -52,6 +52,8 @@ Map<String, dynamic> supabasePersonal(PersonalEntity e) => {
       'must_change_password': e.mustChangePassword,
       'password_hash': e.passwordHash,
       'is_admin': e.isAdmin,
+      'access_tier': e.accessTier,
+      'max_students_cap': e.maxStudentsCap,
       'created_at': supabaseTs(e.createdAt),
       'updated_at': supabaseTs(e.updatedAt),
     };
@@ -59,6 +61,8 @@ Map<String, dynamic> supabasePersonal(PersonalEntity e) => {
 Map<String, dynamic> supabaseStudent(StudentEntity e) => {
       'id': e.id,
       'name': e.name,
+      'is_archived': e.isArchived,
+      'archived_at': e.archivedAt != null ? supabaseTs(e.archivedAt!) : null,
       'email': e.email,
       'goal': e.goal,
       'cpf': e.cpf,
@@ -75,6 +79,10 @@ Map<String, dynamic> supabaseStudent(StudentEntity e) => {
       'must_change_password': e.mustChangePassword,
       'password_hash': e.passwordHash,
       'created_by_personal_id': e.createdByPersonalId,
+      'anamnese_completed': e.anamneseCompleted,
+      'access_tier': e.accessTier,
+      'premium_plan_expires_at':
+          e.premiumPlanExpiresAt != null ? supabaseTs(e.premiumPlanExpiresAt!) : null,
       'created_at': supabaseTs(e.createdAt),
       'updated_at': supabaseTs(e.updatedAt),
     };
@@ -98,6 +106,7 @@ Map<String, dynamic> supabaseWorkoutGroup(WorkoutGroupEntity e) => {
       'description': e.description,
       'created_at': supabaseTs(e.createdAt),
       'updated_at': supabaseTs(e.updatedAt),
+      'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
     };
 
 Map<String, dynamic> supabaseWorkoutGroupExercise(WorkoutGroupExerciseEntity e) => {

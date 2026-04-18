@@ -8,12 +8,104 @@ import '../../../core/ui/app_modal_sheet.dart';
 import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
 import '../../../core/widgets/gradient_app_bar.dart';
+import '../../../core/widgets/modern_loading.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
 import '../../../data/local/app_database.dart';
 import '../../../data/repositories/app_data_repository.dart';
 
 class PersonaisPage extends StatelessWidget {
   const PersonaisPage({super.key});
+
+  static Future<void> _showPersonalPasswordResetDialog(
+    BuildContext context, {
+    required String loginEmail,
+    required String password,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.barBackground,
+        title: const Text(
+          'Nova senha provisória',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'No app, o login do personal é o e-mail cadastrado. '
+              'No próximo acesso será pedida troca de senha.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'E-mail (login):',
+              style: TextStyle(
+                color: AppColors.splashMint.withValues(alpha: 0.9),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              loginEmail.isEmpty ? '(e-mail em branco no cadastro)' : loginEmail,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                fontStyle: loginEmail.isEmpty ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Senha provisória:',
+              style: TextStyle(
+                color: AppColors.splashMint,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              password,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Guarde ou copie agora. Se o envio por e-mail estiver ativo, '
+              'a senha também foi enviada para a caixa de entrada.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final clip = loginEmail.isEmpty
+                  ? 'Senha provisória: $password'
+                  : 'Login (e-mail): $loginEmail\nSenha: $password';
+              await Clipboard.setData(ClipboardData(text: clip));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Copiado para a área de transferência')),
+                );
+              }
+            },
+            child: const Text('Copiar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   static String _personalSubtitle(PersonalEntity e) {
     final parts = <String>[
@@ -94,6 +186,9 @@ class PersonaisPage extends StatelessWidget {
     );
     String? uf = x?.stateUf;
     var isAdmin = x?.isAdmin ?? false;
+    var passwordHashForSave = x?.passwordHash;
+    var mustChangeForSave = x?.mustChangePassword ?? true;
+    var pwdBusy = false;
 
     showAppModalSheet<void>(
       context: context,
@@ -180,6 +275,110 @@ class PersonaisPage extends StatelessWidget {
               'Senha provisória: enviar por e-mail quando o serviço de e-mail estiver configurado.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
             ),
+            if (x != null) ...[
+              const SizedBox(height: kCadastroFieldGap),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.splashMint,
+                    side: BorderSide(
+                      color: AppColors.splashMint.withValues(alpha: 0.65),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  ),
+                  onPressed: pwdBusy
+                      ? null
+                      : () async {
+                          final go = await showDialog<bool>(
+                            context: ctx,
+                            builder: (dCtx) => AlertDialog(
+                              backgroundColor: AppColors.barBackground,
+                              title: const Text(
+                                'Gerar nova senha?',
+                                style: TextStyle(color: AppColors.textPrimary),
+                              ),
+                              content: Text(
+                                'A senha atual deixará de funcionar. Será criada uma '
+                                'senha provisória; no próximo login será pedida troca de senha.',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.82),
+                                  fontSize: 14,
+                                  height: 1.35,
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(dCtx, false),
+                                  child: const Text('Cancelar'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(dCtx, true),
+                                  child: const Text('Gerar'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (go != true || !ctx.mounted) return;
+                          setSt(() => pwdBusy = true);
+                          try {
+                            final r = await repo.adminGenerateNewPersonalPassword(x.id);
+                            passwordHashForSave = r.provisionalPassword;
+                            mustChangeForSave = true;
+                            if (!ctx.mounted) return;
+                            if (r.emailSent) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Nova senha enviada por e-mail (verifique spam). '
+                                    'Use essa senha no próximo acesso.',
+                                  ),
+                                ),
+                              );
+                            } else if (context.mounted) {
+                              await _showPersonalPasswordResetDialog(
+                                context,
+                                loginEmail: r.loginEmail,
+                                password: r.provisionalPassword,
+                              );
+                            }
+                          } on ArgumentError catch (e) {
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    e.message ?? 'Não foi possível gerar.',
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(content: Text('Erro: $e')),
+                              );
+                            }
+                          } finally {
+                            if (ctx.mounted) setSt(() => pwdBusy = false);
+                          }
+                        },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (pwdBusy)
+                        const ModernLoadingIndicator(size: 20)
+                      else
+                        const Icon(Icons.vpn_key_outlined, size: 20),
+                      const SizedBox(width: 10),
+                      Text(
+                        pwdBusy ? 'A gerar…' : 'Gerar nova senha',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: kCadastroFieldGap),
             SwitchListTile.adaptive(
               value: isAdmin,
@@ -236,10 +435,11 @@ class PersonaisPage extends StatelessWidget {
                   phoneCommercial: telCom.isEmpty ? null : telCom,
                   phoneMobile: telCel.isEmpty ? null : telCel,
                   email: email.text.trim(),
-                  mustChangePassword: x?.mustChangePassword ?? true,
-                  passwordHash: x?.passwordHash,
+                  mustChangePassword: mustChangeForSave,
+                  passwordHash: passwordHashForSave,
                   isAdmin: isAdmin,
                 );
+                await repo.refreshSessionPersonalAdminFlag();
                 if (ctx.mounted) Navigator.pop(ctx);
               },
             ),

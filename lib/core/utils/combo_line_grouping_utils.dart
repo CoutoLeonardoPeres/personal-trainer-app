@@ -57,9 +57,14 @@ List<List<WeekScheduleRow>> weekScheduleRowsAsComboBlocks(
 List<List<DayWorkoutExerciseEntity>> dayWorkoutLinesAsComboBlocks(
   List<DayWorkoutExerciseEntity> lines,
 ) {
-  final sorted = List<DayWorkoutExerciseEntity>.from(lines)
-    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-  return _comboBlocksFromSorted(sorted, (e) => e.comboId);
+  // Preserva a ordem recebida.
+  //
+  // Na tela de treino em execução, [lines] já pode vir reordenada pela ordem
+  // real de preenchimento (histórico de séries). Se voltarmos a ordenar por
+  // [sortOrder] aqui, os cards "concluídos" deixam de se acumular em sequência
+  // de execução, quebrando a visualização do personal.
+  final ordered = List<DayWorkoutExerciseEntity>.from(lines);
+  return _comboBlocksFromSorted(ordered, (e) => e.comboId);
 }
 
 List<DayWorkoutExerciseEntity> flattenDayWorkoutComboBlocks(
@@ -69,7 +74,8 @@ List<DayWorkoutExerciseEntity> flattenDayWorkoutComboBlocks(
 }
 
 /// Ordena blocos pelo histórico de séries (como a lista plana), mantendo o combo junto.
-List<DayWorkoutExerciseEntity> orderDayWorkoutLinesByPerformedHistoryRespectingCombos(
+List<DayWorkoutExerciseEntity>
+orderDayWorkoutLinesByPerformedHistoryRespectingCombos(
   List<DayWorkoutExerciseEntity> plannedLines,
 ) {
   final blocks = dayWorkoutLinesAsComboBlocks(plannedLines);

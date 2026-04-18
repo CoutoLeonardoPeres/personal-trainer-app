@@ -21,36 +21,85 @@ class AppSession extends ChangeNotifier {
   static const _kRole = 'app_session_role';
   static const _kPersonalId = 'app_session_personal_id';
   static const _kStudentId = 'app_session_student_id';
+  /// Após «Sair da conta»: o app exige login (e-mail + senha) antes do [MainShell].
+  static const _kRequiresLocalRelogin = 'app_requires_local_relogin';
 
   SessionRole _role = SessionRole.adminPersonal;
   String? _personalId;
   String? _studentId;
   var _bootstrapped = false;
+  var _requiresLocalRelogin = false;
+
+  /// Personal com papel «Personal» na UI mas com [PersonalEntity.isAdmin] no SQLite —
+  /// deve ver todos os alunos, catálogo e sync como administrador.
+  bool _personalDbIsAdmin = false;
 
   SessionRole get role => _role;
   String? get personalId => _personalId;
   String? get studentId => _studentId;
 
+  /// Quando true, o arranque deve mostrar a tela de login local em vez do shell.
+  bool get requiresLocalRelogin => _requiresLocalRelogin;
+
   bool get isAdminPersonal => _role == SessionRole.adminPersonal;
   bool get isPersonalTrainer => _role == SessionRole.personalTrainer;
   bool get isStudent => _role == SessionRole.student;
 
+  /// Administrador por papel **ou** personal com flag `is_admin` no cadastro (mesmo com papel «Personal»).
+  bool get hasFullOrgAccess =>
+      isAdminPersonal || (isPersonalTrainer && _personalDbIsAdmin);
+
+  /// Atualiza [_personalDbIsAdmin] a partir do SQLite (chamar após boot, troca de sessão ou pull de personals).
+  Future<void> hydratePersonalAdminFlag(AppDatabase db) async {
+    if (_role != SessionRole.personalTrainer) {
+      if (_personalDbIsAdmin) {
+        _personalDbIsAdmin = false;
+        notifyListeners();
+      }
+      return;
+    }
+    final pid = _personalId;
+    if (pid == null) {
+      if (_personalDbIsAdmin) {
+        _personalDbIsAdmin = false;
+        notifyListeners();
+      }
+      return;
+    }
+    final p = await (db.select(db.personals)..where((x) => x.id.equals(pid)))
+        .getSingleOrNull();
+    final next = p?.isAdmin ?? false;
+    if (_personalDbIsAdmin != next) {
+      _personalDbIsAdmin = next;
+      notifyListeners();
+    }
+  }
+
   /// Aluno visto por admin, pelo personal que cadastrou ou pelo próprio aluno.
   bool canAccessStudent(StudentEntity student) {
-    switch (_role) {
-      case SessionRole.adminPersonal:
-        return true;
-      case SessionRole.personalTrainer:
-        final pid = _personalId;
-        if (pid == null) return false;
-        return student.createdByPersonalId == pid;
-      case SessionRole.student:
-        return student.id == _studentId;
+    if (hasFullOrgAccess) return true;
+    if (_role == SessionRole.personalTrainer) {
+      final pid = _personalId;
+      if (pid == null) return false;
+      return student.createdByPersonalId == pid;
     }
+    if (_role == SessionRole.student) {
+      return student.id == _studentId;
+    }
+    return false;
   }
 
   Future<void> loadFromPrefs() async {
     final p = await SharedPreferences.getInstance();
+    _requiresLocalRelogin = p.getBool(_kRequiresLocalRelogin) ?? false;
+    if (_requiresLocalRelogin) {
+      _role = SessionRole.adminPersonal;
+      _personalId = null;
+      _studentId = null;
+      _personalDbIsAdmin = false;
+      notifyListeners();
+      return;
+    }
     final r = p.getInt(_kRole);
     if (r != null && r >= 0 && r < SessionRole.values.length) {
       _role = SessionRole.values[r];
@@ -58,6 +107,33 @@ class AppSession extends ChangeNotifier {
     _personalId = p.getString(_kPersonalId);
     _studentId = p.getString(_kStudentId);
     notifyListeners();
+  }
+
+  /// Encerra sessão local e marca que o próximo arranque exige login (e-mail + senha).
+  Future<void> markLoggedOutRequiresRelogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kRequiresLocalRelogin, true);
+    await prefs.remove(_kRole);
+    await prefs.remove(_kPersonalId);
+    await prefs.remove(_kStudentId);
+    _requiresLocalRelogin = true;
+    _role = SessionRole.adminPersonal;
+    _personalId = null;
+    _studentId = null;
+    _personalDbIsAdmin = false;
+    notifyListeners();
+  }
+
+  /// Após login local bem-sucedido na tela dedicada.
+  Future<void> completeLocalLoginAfterPasswordCheck({
+    required SessionRole role,
+    String? personalId,
+    String? studentId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kRequiresLocalRelogin, false);
+    _requiresLocalRelogin = false;
+    await setSession(role: role, personalId: personalId, studentId: studentId);
   }
 
   Future<void> setSession({
@@ -68,6 +144,9 @@ class AppSession extends ChangeNotifier {
     _role = role;
     _personalId = personalId;
     _studentId = studentId;
+    if (role != SessionRole.personalTrainer && _personalDbIsAdmin) {
+      _personalDbIsAdmin = false;
+    }
     final p = await SharedPreferences.getInstance();
     await p.setInt(_kRole, role.index);
     if (personalId != null) {
@@ -88,6 +167,15 @@ class AppSession extends ChangeNotifier {
     if (_bootstrapped) return;
     _bootstrapped = true;
     final p = await SharedPreferences.getInstance();
+    if (p.getBool(_kRequiresLocalRelogin) == true) {
+      _requiresLocalRelogin = true;
+      _role = SessionRole.adminPersonal;
+      _personalId = null;
+      _studentId = null;
+      _personalDbIsAdmin = false;
+      notifyListeners();
+      return;
+    }
     if (p.containsKey(_kRole)) {
       await loadFromPrefs();
       return;
@@ -124,6 +212,7 @@ class AppSession extends ChangeNotifier {
   /// ex. papel `personalTrainer` sem [personalId] → [canAccessStudent] falha para todos
   /// e os streams do calendário/planejamento ficam permanentemente em erro (cache).
   Future<void> repairSessionIfInconsistent(AppDatabase db) async {
+    if (_requiresLocalRelogin) return;
     if (_role == SessionRole.personalTrainer && _personalId == null) {
       final personals = await (db.select(db.personals)
             ..orderBy([(t) => OrderingTerm.asc(t.name)]))

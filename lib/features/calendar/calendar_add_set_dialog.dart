@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/modern_loading.dart';
 import '../../core/widgets/inter_set_rest_modal.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
@@ -13,8 +16,12 @@ Future<void> showCalendarAddSetDialog({
   required AppDataRepository repo,
   required DayWorkoutExerciseEntity line,
   required String exerciseName,
+
   /// Contexto ainda montado após fechar o diálogo (ex.: folha do calendário) — modal de descanso.
   required BuildContext restFlowContext,
+
+  /// Treino `started`: carga (kg) e repetições obrigatórias.
+  bool requireAllMetricFields = false,
 }) {
   return showDialog<void>(
     context: context,
@@ -26,6 +33,7 @@ Future<void> showCalendarAddSetDialog({
       line: line,
       exerciseName: exerciseName,
       restFlowContext: restFlowContext,
+      requireAllMetricFields: requireAllMetricFields,
     ),
   );
 }
@@ -38,6 +46,7 @@ Future<void> showCalendarEditPerformedSetDialog({
   required int performedIndex,
   required DayWorkoutPerformedSet initial,
   required String exerciseName,
+  bool requireAllMetricFields = false,
 }) {
   return showDialog<void>(
     context: context,
@@ -50,6 +59,7 @@ Future<void> showCalendarEditPerformedSetDialog({
       performedIndex: performedIndex,
       initial: initial,
       exerciseName: exerciseName,
+      requireAllMetricFields: requireAllMetricFields,
     ),
   );
 }
@@ -75,6 +85,7 @@ class _EditPerformedSetDialog extends StatefulWidget {
     required this.performedIndex,
     required this.initial,
     required this.exerciseName,
+    this.requireAllMetricFields = false,
   });
 
   final AppDataRepository repo;
@@ -82,9 +93,11 @@ class _EditPerformedSetDialog extends StatefulWidget {
   final int performedIndex;
   final DayWorkoutPerformedSet initial;
   final String exerciseName;
+  final bool requireAllMetricFields;
 
   @override
-  State<_EditPerformedSetDialog> createState() => _EditPerformedSetDialogState();
+  State<_EditPerformedSetDialog> createState() =>
+      _EditPerformedSetDialogState();
 }
 
 class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
@@ -101,8 +114,8 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
     _cargaCtrl = TextEditingController(
       text: load != null
           ? (load == load.roundToDouble()
-              ? '${load.toInt()}'
-              : '$load'.replaceAll('.', ','))
+                ? '${load.toInt()}'
+                : '$load'.replaceAll('.', ','))
           : '',
     );
     _repsCtrl = TextEditingController(text: '${widget.initial.reps}');
@@ -132,13 +145,23 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
     final cargaRaw = _cargaCtrl.text.trim().replaceAll(',', '.');
     double? loadKg;
     if (cargaRaw.isEmpty) {
+      if (widget.requireAllMetricFields) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Informe a carga (kg) — obrigatório durante o treino.',
+            ),
+          ),
+        );
+        return;
+      }
       loadKg = null;
     } else {
       loadKg = double.tryParse(cargaRaw);
       if (loadKg == null || loadKg < 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Carga inválida.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Carga inválida.')));
         return;
       }
     }
@@ -177,75 +200,83 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final screenH = MediaQuery.sizeOf(context).height;
-    final maxDialogH =
-        (screenH * 0.88 - bottomInset - 16).clamp(240.0, 560.0);
     final seriesLabel = 'Série ${widget.performedIndex + 1}';
 
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
+      alignment: Alignment.topCenter,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
-        child: _FuturisticSetMetricDialogChrome(
-          title: 'Carga e repetições',
-          exerciseName: widget.exerciseName,
-          subtitle: 'Altere o registro desta série.',
-          seriesBadge: seriesLabel,
-          saving: _saving,
-          onClose: () {
-            FocusManager.instance.primaryFocus?.unfocus();
-            Navigator.of(context).pop();
-          },
-          bottomInset: bottomInset,
-          scrollableChild: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _FuturisticMetricField(
-                label: 'Carga (kg)',
-                hint: 'Opcional',
-                icon: Icons.monitor_weight_outlined,
-                controller: _cargaCtrl,
-                focusNode: _cargaFocus,
-                textInputAction: TextInputAction.next,
-                onSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_repsFocus);
-                },
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // [Dialog] remove os viewInsets do MediaQuery filho; a altura útil vem
+          // das constraints (já desconta teclado via AnimatedPadding interno).
+          final maxDialogH = (constraints.maxHeight - 8).clamp(240.0, 560.0);
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
+            child: _FuturisticSetMetricDialogChrome(
+              title: 'Carga e repetições',
+              exerciseName: widget.exerciseName,
+              subtitle: widget.requireAllMetricFields
+                  ? 'Com o treino em execução, carga (kg) e repetições são obrigatórias.'
+                  : 'Altere o registro desta série.',
+              seriesBadge: seriesLabel,
+              saving: _saving,
+              onClose: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(context).pop();
+              },
+              scrollableChild: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _FuturisticMetricField(
+                    label: 'Carga (kg)',
+                    hint: widget.requireAllMetricFields
+                        ? 'Obrigatório'
+                        : 'Opcional',
+                    icon: Icons.monitor_weight_outlined,
+                    controller: _cargaCtrl,
+                    focusNode: _cargaFocus,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) {
+                      FocusScope.of(context).requestFocus(_repsFocus);
+                    },
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _FuturisticMetricField(
+                    label: 'Repetições',
+                    hint: 'Por série',
+                    icon: Icons.repeat_rounded,
+                    controller: _repsCtrl,
+                    focusNode: _repsFocus,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) =>
+                        FocusManager.instance.primaryFocus?.unfocus(),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      signed: false,
+                      decimal: false,
+                    ),
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  const SizedBox(height: 24),
+                  _FuturisticPrimaryCta(
+                    label: 'Salvar alterações',
+                    icon: Icons.save_rounded,
+                    onPressed: _saving ? null : _submit,
+                    busy: _saving,
+                  ),
                 ],
               ),
-              const SizedBox(height: 18),
-              _FuturisticMetricField(
-                label: 'Repetições',
-                hint: 'Por série',
-                icon: Icons.repeat_rounded,
-                controller: _repsCtrl,
-                focusNode: _repsFocus,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) =>
-                    FocusManager.instance.primaryFocus?.unfocus(),
-                keyboardType: const TextInputType.numberWithOptions(
-                  signed: false,
-                  decimal: false,
-                ),
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              ),
-              const SizedBox(height: 24),
-              _FuturisticPrimaryCta(
-                label: 'Salvar alterações',
-                icon: Icons.save_rounded,
-                onPressed: _saving ? null : _submit,
-                busy: _saving,
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -326,7 +357,9 @@ class _FuturisticDeleteSeriesDialog extends StatelessWidget {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.danger.withValues(alpha: 0.2),
+                                  color: AppColors.danger.withValues(
+                                    alpha: 0.2,
+                                  ),
                                   blurRadius: 12,
                                 ),
                               ],
@@ -510,12 +543,14 @@ class _AddSetDialog extends StatefulWidget {
     required this.line,
     required this.exerciseName,
     required this.restFlowContext,
+    this.requireAllMetricFields = false,
   });
 
   final AppDataRepository repo;
   final DayWorkoutExerciseEntity line;
   final String exerciseName;
   final BuildContext restFlowContext;
+  final bool requireAllMetricFields;
 
   @override
   State<_AddSetDialog> createState() => _AddSetDialogState();
@@ -566,9 +601,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final last = performed.isNotEmpty ? performed.last : null;
     final loadSeed = last?.loadKg ?? widget.line.loadKg;
     final repsSeed = last?.reps ?? widget.line.reps;
-    _cargaCtrl = TextEditingController(
-      text: _formatLoadText(loadSeed),
-    );
+    _cargaCtrl = TextEditingController(text: _formatLoadText(loadSeed));
     _repsCtrl = TextEditingController(text: '$repsSeed');
     _initialLoadText = _cargaCtrl.text;
     _initialRepsText = _repsCtrl.text;
@@ -599,55 +632,46 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final cargaRaw = _cargaCtrl.text.trim().replaceAll(',', '.');
     double? loadKg;
     if (cargaRaw.isEmpty) {
+      if (widget.requireAllMetricFields) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Informe a carga (kg) — obrigatório durante o treino.',
+            ),
+          ),
+        );
+        return;
+      }
       loadKg = null;
     } else {
       loadKg = double.tryParse(cargaRaw);
       if (loadKg == null || loadKg < 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Carga inválida.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Carga inválida.')));
         return;
       }
     }
 
     setState(() => _saving = true);
+    final dayWorkoutId = widget.line.dayWorkoutId;
+    final lineId = widget.line.id;
+    final planned = widget.line.sets;
+    final restSec = widget.line.restBetweenSetsSec;
+    var saved = false;
     try {
-      final performedBefore = DayWorkoutPerformedSetCodec.decode(
-        widget.line.performedSetsJson,
-      ).length;
-      await widget.repo.appendDayWorkoutExercisePerformedSet(
-        lineId: widget.line.id,
+      await _appendPerformedSetWithRetry(
+        lineId: lineId,
         loadKg: loadKg,
         reps: reps,
       );
+      saved = true;
       if (mounted) {
         final messenger = ScaffoldMessenger.of(context);
         Navigator.of(context).pop();
         messenger.showSnackBar(
           const SnackBar(content: Text('Série registrada.')),
         );
-        final planned = widget.line.sets;
-        final restSec = widget.line.restBetweenSetsSec;
-        final nextCount = performedBefore + 1;
-        final lastInCombo =
-            await widget.repo.isLastLineInExerciseCombo(widget.line.id);
-        if (nextCount < planned &&
-            restSec > 0 &&
-            lastInCombo &&
-            widget.restFlowContext.mounted) {
-          final metrics = await showInterSetRestModal(
-            context: widget.restFlowContext,
-            prescribedSec: restSec,
-          );
-          if (metrics != null && widget.restFlowContext.mounted) {
-            await widget.repo.patchLastPerformedSetRestTelemetry(
-              lineId: widget.line.id,
-              prescribedSec: metrics.prescribedSec,
-              countdownElapsedMs: metrics.countdownElapsedMs,
-              postPhaseMs: metrics.postPhaseMs,
-            );
-          }
-        }
       }
     } on ArgumentError catch (e) {
       if (mounted) {
@@ -655,23 +679,117 @@ class _AddSetDialogState extends State<_AddSetDialog> {
           SnackBar(content: Text(e.message ?? 'Não foi possível salvar.')),
         );
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Não foi possível salvar.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlySaveError(e))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+
+    if (!saved) return;
+    final restCtx = widget.restFlowContext;
+    if (!restCtx.mounted) return;
+    unawaited(
+      _runPostSaveRestFlow(
+        repo: widget.repo,
+        restFlowContext: restCtx,
+        dayWorkoutId: dayWorkoutId,
+        lineId: lineId,
+        plannedSets: planned,
+        restSec: restSec,
+      ),
+    );
+  }
+
+  Future<void> _appendPerformedSetWithRetry({
+    required String lineId,
+    required double? loadKg,
+    required int reps,
+  }) async {
+    Object? lastError;
+    for (var i = 0; i < 3; i++) {
+      try {
+        await widget.repo.appendDayWorkoutExercisePerformedSet(
+          lineId: lineId,
+          loadKg: loadKg,
+          reps: reps,
+        );
+        return;
+      } catch (e) {
+        lastError = e;
+        final msg = e.toString().toLowerCase();
+        final retryable =
+            msg.contains('database is locked') ||
+            msg.contains('database table is locked') ||
+            msg.contains('sqlite_busy') ||
+            msg.contains('busy');
+        if (!retryable || i == 2) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 120 * (i + 1)));
+      }
+    }
+    throw lastError ?? Exception('Falha ao registrar série.');
+  }
+
+  String _friendlySaveError(Object e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('database is locked') ||
+        msg.contains('database table is locked') ||
+        msg.contains('sqlite_busy') ||
+        msg.contains('busy')) {
+      return 'Banco ocupado no momento. Tente confirmar a série novamente.';
+    }
+    return 'Não foi possível salvar.';
+  }
+
+  Future<void> _runPostSaveRestFlow({
+    required AppDataRepository repo,
+    required BuildContext restFlowContext,
+    required String dayWorkoutId,
+    required String lineId,
+    required int plannedSets,
+    required int restSec,
+  }) async {
+    try {
+      final lines = await repo.getDayWorkoutExercises(dayWorkoutId);
+      DayWorkoutExerciseEntity? current;
+      for (final l in lines) {
+        if (l.id == lineId) {
+          current = l;
+          break;
+        }
+      }
+      if (current == null) return;
+      final doneCount = DayWorkoutPerformedSetCodec.decode(
+        current.performedSetsJson,
+      ).length;
+      final lastInCombo = await repo.isLastLineInExerciseCombo(lineId);
+      if (doneCount < plannedSets &&
+          restSec > 0 &&
+          lastInCombo &&
+          restFlowContext.mounted) {
+        final metrics = await showInterSetRestModal(
+          context: restFlowContext,
+          prescribedSec: restSec,
+        );
+        if (metrics != null && restFlowContext.mounted) {
+          await repo.patchLastPerformedSetRestTelemetry(
+            lineId: lineId,
+            prescribedSec: metrics.prescribedSec,
+            countdownElapsedMs: metrics.countdownElapsedMs,
+            postPhaseMs: metrics.postPhaseMs,
+          );
+        }
+      }
+    } catch (_) {
+      // O registro da série já foi salvo; não falhar UX por erro de telemetria/descanso.
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final screenH = MediaQuery.sizeOf(context).height;
-    final maxDialogH =
-        (screenH * 0.88 - bottomInset - 16).clamp(240.0, 560.0);
     final performed = DayWorkoutPerformedSetCodec.decode(
       widget.line.performedSetsJson,
     );
@@ -681,66 +799,76 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
+      alignment: Alignment.topCenter,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
-        child: _FuturisticSetMetricDialogChrome(
-          title: 'Registrar série',
-          exerciseName: widget.exerciseName,
-          subtitle: 'Informe carga e repetições desta execução.',
-          seriesBadge: seriesLabel,
-          saving: _saving,
-          onClose: () {
-            FocusManager.instance.primaryFocus?.unfocus();
-            Navigator.of(context).pop();
-          },
-          bottomInset: bottomInset,
-          scrollableChild: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _FuturisticMetricField(
-                label: 'Carga (kg)',
-                hint: 'Opcional',
-                icon: Icons.monitor_weight_outlined,
-                controller: _cargaCtrl,
-                focusNode: _cargaFocus,
-                textInputAction: TextInputAction.next,
-                onSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_repsFocus);
-                },
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxDialogH = (constraints.maxHeight - 8).clamp(240.0, 560.0);
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 420, maxHeight: maxDialogH),
+            child: _FuturisticSetMetricDialogChrome(
+              title: 'Registrar série',
+              exerciseName: widget.exerciseName,
+              subtitle: widget.requireAllMetricFields
+                  ? 'Com o treino em execução, carga (kg) e repetições são obrigatórias.'
+                  : 'Informe carga e repetições desta execução.',
+              seriesBadge: seriesLabel,
+              saving: _saving,
+              onClose: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(context).pop();
+              },
+              scrollableChild: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _FuturisticMetricField(
+                    label: 'Carga (kg)',
+                    hint: widget.requireAllMetricFields
+                        ? 'Obrigatório'
+                        : 'Opcional',
+                    icon: Icons.monitor_weight_outlined,
+                    controller: _cargaCtrl,
+                    focusNode: _cargaFocus,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) {
+                      FocusScope.of(context).requestFocus(_repsFocus);
+                    },
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _FuturisticMetricField(
+                    label: 'Repetições',
+                    hint: 'Por série',
+                    icon: Icons.repeat_rounded,
+                    controller: _repsCtrl,
+                    focusNode: _repsFocus,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) =>
+                        FocusManager.instance.primaryFocus?.unfocus(),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      signed: false,
+                      decimal: false,
+                    ),
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  const SizedBox(height: 24),
+                  _FuturisticPrimaryCta(
+                    label: 'Confirmar série',
+                    icon: Icons.add_task_rounded,
+                    onPressed: _saving ? null : _submit,
+                    busy: _saving,
+                  ),
                 ],
               ),
-              const SizedBox(height: 18),
-              _FuturisticMetricField(
-                label: 'Repetições',
-                hint: 'Por série',
-                icon: Icons.repeat_rounded,
-                controller: _repsCtrl,
-                focusNode: _repsFocus,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) =>
-                    FocusManager.instance.primaryFocus?.unfocus(),
-                keyboardType: const TextInputType.numberWithOptions(
-                  signed: false,
-                  decimal: false,
-                ),
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              ),
-              const SizedBox(height: 24),
-              _FuturisticPrimaryCta(
-                label: 'Confirmar série',
-                icon: Icons.add_task_rounded,
-                onPressed: _saving ? null : _submit,
-                busy: _saving,
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -753,7 +881,6 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
     required this.exerciseName,
     required this.saving,
     required this.onClose,
-    required this.bottomInset,
     required this.scrollableChild,
     this.subtitle,
     this.seriesBadge,
@@ -765,7 +892,6 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
   final String? seriesBadge;
   final bool saving;
   final VoidCallback onClose;
-  final double bottomInset;
   final Widget scrollableChild;
 
   @override
@@ -852,7 +978,9 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                         Text(
                           title.toUpperCase(),
                           style: TextStyle(
-                            color: AppColors.accentGreen.withValues(alpha: 0.92),
+                            color: AppColors.accentGreen.withValues(
+                              alpha: 0.92,
+                            ),
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1.5,
@@ -939,7 +1067,7 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 physics: const ClampingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(18, 10, 18, 14 + bottomInset),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
                 child: scrollableChild,
               ),
             ),
@@ -1045,7 +1173,7 @@ class _FuturisticMetricField extends StatelessWidget {
               onSubmitted: onSubmitted,
               inputFormatters: inputFormatters,
               textAlign: TextAlign.center,
-              scrollPadding: const EdgeInsets.only(bottom: 120, top: 24),
+              scrollPadding: const EdgeInsets.only(bottom: 220, top: 24),
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 30,
@@ -1055,8 +1183,10 @@ class _FuturisticMetricField extends StatelessWidget {
               decoration: InputDecoration(
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 14,
+                ),
                 hintText: '0',
                 hintStyle: TextStyle(
                   color: Colors.white.withValues(alpha: 0.14),
@@ -1134,12 +1264,9 @@ class _FuturisticPrimaryCta extends StatelessWidget {
             child: Center(
               child: busy
                   ? const SizedBox(
-                      width: 26,
-                      height: 26,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.8,
-                        color: Color(0xFF0A0A12),
-                      ),
+                      width: 28,
+                      height: 28,
+                      child: ModernLoadingIndicator(size: 28),
                     )
                   : Row(
                       mainAxisAlignment: MainAxisAlignment.center,

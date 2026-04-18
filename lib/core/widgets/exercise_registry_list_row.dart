@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../theme/app_colors.dart';
+import '../ui/exercise_video_web_page.dart';
 import '../../data/local/app_database.dart';
 import 'swipeable_registry_card.dart';
 
@@ -18,6 +19,134 @@ String exerciseVideoSubtitle(ExerciseEntity e) {
   return parts.join(' • ');
 }
 
+bool exerciseEntityHasAnyVideoUrl(ExerciseEntity? e) {
+  if (e == null) return false;
+  bool has(String? u) => u != null && u.trim().isNotEmpty;
+  return has(e.videoUrl) || has(e.alternativeVideoUrl);
+}
+
+void openExerciseVideoInApp(
+  BuildContext context,
+  String rawUrl,
+  String title,
+) {
+  ExerciseVideoWebPage.showInAppWindow(
+    context,
+    initialUrl: rawUrl,
+    title: title,
+  );
+}
+
+/// Botões de vídeo principal / alternativo (mesmo padrão da tela de exercícios).
+List<Widget> exerciseRegistryVideoTrailingButtons(
+  BuildContext context,
+  ExerciseEntity? ex,
+  String exerciseDisplayName, {
+  double iconSize = 22,
+}) {
+  if (ex == null) return const [];
+  final widgets = <Widget>[];
+  final main = ex.videoUrl?.trim();
+  if (main != null && main.isNotEmpty) {
+    widgets.add(
+      IconButton(
+        tooltip: 'Abrir vídeo',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        icon: Icon(
+          Icons.play_circle_fill_rounded,
+          color: kExerciseRegistryRowIconTint,
+          size: iconSize,
+        ),
+        onPressed: () => openExerciseVideoInApp(
+          context,
+          main,
+          'Vídeo — $exerciseDisplayName',
+        ),
+      ),
+    );
+  }
+  final alt = ex.alternativeVideoUrl?.trim();
+  if (alt != null && alt.isNotEmpty) {
+    widgets.add(
+      IconButton(
+        tooltip: 'Vídeo alternativo',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        icon: Icon(
+          Icons.video_library_rounded,
+          color: kExerciseRegistryRowIconTint,
+          size: iconSize * 0.92,
+        ),
+        onPressed: () => openExerciseVideoInApp(
+          context,
+          alt,
+          'Vídeo alternativo — $exerciseDisplayName',
+        ),
+      ),
+    );
+  }
+  return widgets;
+}
+
+Future<void> showExerciseBlockVideoLinksBottomSheet(
+  BuildContext context, {
+  required String title,
+  required List<({String name, ExerciseEntity? exercise})> lines,
+}) async {
+  final withVideo = <({String name, ExerciseEntity ex})>[];
+  for (final line in lines) {
+    final ex = line.exercise;
+    if (exerciseEntityHasAnyVideoUrl(ex)) {
+      withVideo.add((name: line.name, ex: ex!));
+    }
+  }
+  if (withVideo.isEmpty) return;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.barBackground,
+    builder: (ctx) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.55,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            for (final entry in withVideo)
+              ListTile(
+                title: Text(
+                  entry.name,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: exerciseRegistryVideoTrailingButtons(
+                    ctx,
+                    entry.ex,
+                    entry.name,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Card de linha de exercício (azul translúcido) ou variante de alerta (vermelho).
 class ExerciseRegistryListRow extends StatelessWidget {
   const ExerciseRegistryListRow({
@@ -27,13 +156,17 @@ class ExerciseRegistryListRow extends StatelessWidget {
     this.onTap,
     this.trailing = const [],
     this.urgent = false,
+    this.scale,
+    this.backgroundGradient,
+    this.borderColor,
+    this.subtitleColor,
     this.slidableDeleteLabel = 'Excluir',
     this.onSlidableDelete,
     this.onSlidableCombine,
     this.slidableKey,
   });
 
-  static const double _scale = 0.7;
+  static const double _defaultScale = 0.7;
   static const double _fontBoost = 1.3;
 
   static const Color _cardBlueSubtitle = Color(0xFF90CAF9);
@@ -45,6 +178,12 @@ class ExerciseRegistryListRow extends StatelessWidget {
 
   /// Destaque vermelho (ex.: falta séries/reps no grupo).
   final bool urgent;
+
+  /// Ajustes visuais opcionais (usado em modais específicos).
+  final double? scale;
+  final List<Color>? backgroundGradient;
+  final Color? borderColor;
+  final Color? subtitleColor;
   final String slidableDeleteLabel;
   final VoidCallback? onSlidableDelete;
   final VoidCallback? onSlidableCombine;
@@ -54,28 +193,37 @@ class ExerciseRegistryListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final padH = 12 * _scale;
-    final padV = 12 * _scale;
-    final radius = 14 * _scale;
-    final titleSize = 15 * _scale * _fontBoost;
-    final subSize = 12 * _scale * _fontBoost;
+    final s = scale ?? _defaultScale;
+    final padH = 12 * s;
+    final padV = 12 * s;
+    final radius = 14 * s;
+    final titleSize = 15 * s * _fontBoost;
+    final subSize = 12 * s * _fontBoost;
 
-    final borderColor = urgent
-        ? AppColors.danger.withValues(alpha: 0.72)
-        : AppColors.cadastroCardBorder.withValues(alpha: 0.82);
+    final resolvedBorderColor =
+        borderColor ??
+        (urgent
+            ? AppColors.danger.withValues(alpha: 0.72)
+            : AppColors.cadastroCardBorder.withValues(alpha: 0.82));
     final splash = urgent
         ? AppColors.danger.withValues(alpha: 0.18)
         : AppColors.cadastroCardBorder.withValues(alpha: 0.22);
     final highlight = urgent
         ? AppColors.danger.withValues(alpha: 0.1)
         : AppColors.cadastroCardBorder.withValues(alpha: 0.12);
-    final subColor = urgent
-        ? AppColors.textMuted
-        : _cardBlueSubtitle.withValues(alpha: 0.95);
+    final resolvedSubColor =
+        subtitleColor ??
+        (urgent
+            ? AppColors.textMuted
+            : _cardBlueSubtitle.withValues(alpha: 0.95));
 
+    final resolvedGradient = backgroundGradient;
     final decoration = BoxDecoration(
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: borderColor, width: urgent ? 1.0 : 1.05),
+      border: Border.all(
+        color: resolvedBorderColor,
+        width: urgent ? 1.0 : 1.05,
+      ),
       gradient: urgent
           ? LinearGradient(
               begin: Alignment.topLeft,
@@ -88,11 +236,13 @@ class ExerciseRegistryListRow extends StatelessWidget {
           : LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                AppColors.registryRowBlueDeep.withValues(alpha: 0.2),
-                AppColors.cadastroCardBorder.withValues(alpha: 0.08),
-                Colors.black.withValues(alpha: 0.22),
-              ],
+              colors:
+                  resolvedGradient ??
+                  [
+                    AppColors.registryRowBlueDeep.withValues(alpha: 0.2),
+                    AppColors.cadastroCardBorder.withValues(alpha: 0.08),
+                    Colors.black.withValues(alpha: 0.22),
+                  ],
             ),
     );
 
@@ -125,11 +275,11 @@ class ExerciseRegistryListRow extends StatelessWidget {
                           height: 1.2,
                         ),
                       ),
-                      SizedBox(height: 4 * _scale),
+                      SizedBox(height: 4 * s),
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: subColor,
+                          color: resolvedSubColor,
                           fontSize: subSize,
                           height: 1.25,
                         ),
@@ -149,7 +299,7 @@ class ExerciseRegistryListRow extends StatelessWidget {
       return Padding(padding: const EdgeInsets.only(bottom: 6), child: card);
     }
 
-    final r = kRegistrySlidableActionRadius * _scale;
+    final r = kRegistrySlidableActionRadius * s;
     final actions = <Widget>[
       if (onSlidableCombine != null)
         SlidableAction(

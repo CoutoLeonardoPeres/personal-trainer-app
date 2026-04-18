@@ -1,0 +1,47 @@
+-- =============================================================================
+-- RBAC + anamnese — colunas alinhadas ao SQLite (Drift)
+-- Execute no Supabase SQL Editor após atualizar o app. Idempotente.
+-- =============================================================================
+
+alter table public.personals
+  add column if not exists access_tier text not null default 'legacy';
+
+alter table public.personals
+  add column if not exists max_students_cap integer null;
+
+alter table public.students
+  add column if not exists anamnese_completed boolean not null default true;
+
+alter table public.students
+  add column if not exists access_tier text not null default 'legacy';
+
+alter table public.personals
+  add column if not exists auth_user_id uuid unique references auth.users (id) on delete set null;
+
+alter table public.students
+  add column if not exists auth_user_id uuid unique references auth.users (id) on delete set null;
+
+alter table public.students
+  add column if not exists premium_plan_expires_at timestamptz null;
+
+create index if not exists idx_personals_auth_user_id on public.personals (auth_user_id);
+create index if not exists idx_students_auth_user_id on public.students (auth_user_id);
+
+update public.students
+set access_tier = 'legacy'
+where access_tier is null or trim(access_tier) = '';
+
+update public.personals
+set access_tier = 'legacy'
+where access_tier is null or trim(access_tier) = '';
+
+-- -----------------------------------------------------------------------------
+-- RLS com auth.uid()
+-- -----------------------------------------------------------------------------
+-- Script completo (funções + políticas; fase 2 comentada até migração Auth):
+--   scripts/supabase_rls_strict_auth_uid.sql
+--
+-- No app: Configurações → Conta Supabase (JWT) → signInWithPassword após ligar
+-- auth_user_id às linhas de personals/students.
+--
+-- Alternativa sem JWT no cliente: Edge Functions com service_role + validação.

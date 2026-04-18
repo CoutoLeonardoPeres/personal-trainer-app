@@ -6,10 +6,15 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth/app_session.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/workout/active_workout_sheet_coordinator.dart';
+import '../../core/workout/rest_live_activity_controller.dart';
 import '../../core/utils/combo_line_grouping_utils.dart';
 import '../../core/utils/day_workout_line_order_utils.dart';
 import '../../core/utils/reps_text_utils.dart';
 import '../../core/ui/keyboard_bottom_inset.dart';
+import '../../core/widgets/count_up_score_text.dart';
+import '../../core/widgets/inter_set_rest_modal.dart';
+import '../../domain/scoring.dart' as scoring;
 import '../../core/ui/exercise_video_web_page.dart';
 import '../../core/widgets/swipeable_registry_card.dart'
     show kRegistrySlidableActionRadius;
@@ -88,40 +93,28 @@ Widget _calendarSheetHeaderScoreValue({
       children: [
         Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
         const SizedBox(width: 4),
-        Text(
-          has ? workout.workoutScore!.toStringAsFixed(2) : '—',
-          style: valueStyle.copyWith(
-            color: has
-                ? AppColors.splashMint.withValues(alpha: 0.98)
-                : AppColors.textMuted,
-          ),
-        ),
+        has
+            ? CountUpScoreText(
+                key: ValueKey('dw_header_score_${workout.id}'),
+                target: workout.workoutScore!,
+                duration: const Duration(milliseconds: 900),
+                format: (v) => v.toStringAsFixed(2),
+                style: valueStyle.copyWith(
+                  color: AppColors.splashMint.withValues(alpha: 0.98),
+                ),
+              )
+            : Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
       ],
     );
   }
   if (workout.status == 'started') {
-    return StreamBuilder<List<DayWorkoutExerciseEntity>>(
-      stream: repo.watchDayWorkoutExercises(workout.id),
-      builder: (context, lineSnap) {
-        final exerciseLines = lineSnap.data ?? [];
-        final score = repo.liveWorkoutScorePerActiveMinute(
-          workout: workout,
-          exercises: exerciseLines,
-        );
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
-            const SizedBox(width: 4),
-            Text(
-              score.toStringAsFixed(2),
-              style: valueStyle.copyWith(
-                color: AppColors.splashMint.withValues(alpha: 0.98),
-              ),
-            ),
-          ],
-        );
-      },
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+        const SizedBox(width: 4),
+        Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
+      ],
     );
   }
   return Row(
@@ -129,18 +122,9 @@ Widget _calendarSheetHeaderScoreValue({
     children: [
       Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
       const SizedBox(width: 4),
-      Text(
-        '—',
-        style: valueStyle.copyWith(color: AppColors.textMuted),
-      ),
+      Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
     ],
   );
-}
-
-String _formatVolumeScore(double v) {
-  if (v == 0) return '0';
-  if (v == v.roundToDouble()) return '${v.toInt()}';
-  return v.toStringAsFixed(1);
 }
 
 enum _ExerciseScoreTrend { better, worse, same, noPrevious }
@@ -179,20 +163,29 @@ String calendarExerciseDisplayName(
 /// Escala visual das linhas de série na expansão (~70% do tamanho original).
 const double _kSerieScale = 0.7;
 
+String _formatReferenceLoadKg(double kg) {
+  if (kg == kg.roundToDouble()) return '${kg.toInt()}';
+  return kg.toStringAsFixed(1).replaceAll('.', ',');
+}
+
 /// Linha prescrita (meta da série) — fundo azulado.
 /// [onTap] na próxima série vazia: mesmo fluxo do botão Adicionar.
+/// [referenceLastMaxLoadKg]: maior carga numa série do último treino concluído
+/// (mesmo exercício); `null` não mostra nada (ex.: primeira vez).
 class _SeriePrescribedRow extends StatelessWidget {
   const _SeriePrescribedRow({
     required this.index,
     required this.prescribedRepsLabel,
     this.onTap,
     this.tooltip,
+    this.referenceLastMaxLoadKg,
   });
 
   final int index;
   final String prescribedRepsLabel;
   final VoidCallback? onTap;
   final String? tooltip;
+  final double? referenceLastMaxLoadKg;
 
   @override
   Widget build(BuildContext context) {
@@ -254,6 +247,19 @@ class _SeriePrescribedRow extends StatelessWidget {
               fontSize: fsVal,
             ),
           ),
+          if (referenceLastMaxLoadKg != null) ...[
+            const Spacer(),
+            Text(
+              'últ. treino ${_formatReferenceLoadKg(referenceLastMaxLoadKg!)} kg',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.52),
+                fontWeight: FontWeight.w600,
+                fontSize: fsLabel * 0.92,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -430,6 +436,7 @@ class _PerformedSerieSlidableRow extends StatelessWidget {
     required this.displayIndex,
     required this.entry,
     required this.exerciseLabel,
+    required this.requireAllMetricFields,
   });
 
   final AppDataRepository repo;
@@ -438,6 +445,7 @@ class _PerformedSerieSlidableRow extends StatelessWidget {
   final int displayIndex;
   final DayWorkoutPerformedSet entry;
   final String exerciseLabel;
+  final bool requireAllMetricFields;
 
   Future<void> _onDelete(BuildContext context) async {
     Slidable.of(context)?.close();
@@ -486,6 +494,7 @@ class _PerformedSerieSlidableRow extends StatelessWidget {
         performedIndex: performedIndex,
         initial: entry,
         exerciseName: exerciseLabel,
+        requireAllMetricFields: requireAllMetricFields,
       );
     });
   }
@@ -543,6 +552,8 @@ class CalendarExerciseLineCard extends StatefulWidget {
     this.onToggleAlternative,
     this.performedSetsRepo,
     this.executedOutOfPlannedOrder = false,
+    this.forceExpanded = false,
+    this.collapseSignal = 0,
   });
 
   final DayWorkoutExerciseEntity line;
@@ -559,7 +570,8 @@ class CalendarExerciseLineCard extends StatefulWidget {
   final bool useAlternative;
 
   /// Ao arrastar a barra e tocar na ação rosa; alterna principal ↔ alternativo.
-  /// Com [workoutStatus] `completed`, o gesto é ignorado mesmo se o callback for passado.
+  /// Com [workoutStatus] `completed`, ou quando todas as séries planejadas já foram
+  /// registradas, o gesto fica desligado (não passar callback).
   final VoidCallback? onToggleAlternative;
 
   /// Quando não nulo, séries registradas na expansão ganham slide Editar/Excluir.
@@ -567,6 +579,8 @@ class CalendarExerciseLineCard extends StatefulWidget {
 
   /// Exercício com série registrada antes de algum anterior ainda não iniciado na ordem planejada.
   final bool executedOutOfPlannedOrder;
+  final bool forceExpanded;
+  final int collapseSignal;
 
   static bool hasMainVideoLink(ExerciseEntity? ex) {
     if (ex == null) return false;
@@ -589,6 +603,8 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   var _expanded = false;
   Future<double?>? _previousScoreFuture;
   String? _comparisonKey;
+  Future<double?>? _referenceLastMaxLoadFuture;
+  String? _referenceLoadKey;
 
   bool get _usesSlidable =>
       widget.onToggleAlternative != null && widget.workoutStatus != 'completed';
@@ -632,6 +648,26 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
     return _previousScoreFuture!;
   }
 
+  Future<double?> _referenceLastMaxLoadKg() {
+    final key =
+        '${widget.line.dayWorkoutId}|${widget.line.exerciseId}|${widget.workoutStatus}';
+    if (_referenceLastMaxLoadFuture != null && _referenceLoadKey == key) {
+      return _referenceLastMaxLoadFuture!;
+    }
+    _referenceLoadKey = key;
+    final repo = widget.performedSetsRepo;
+    if (widget.workoutStatus != 'started' || repo == null) {
+      _referenceLastMaxLoadFuture = Future<double?>.value(null);
+    } else {
+      _referenceLastMaxLoadFuture = repo
+          .maxLoadKgLastCompletedSameExerciseForWorkout(
+            dayWorkoutId: widget.line.dayWorkoutId,
+            exerciseId: widget.line.exerciseId,
+          );
+    }
+    return _referenceLastMaxLoadFuture!;
+  }
+
   _ExerciseScoreTrend _scoreTrend(double current, double? previous) {
     if (previous == null) return _ExerciseScoreTrend.noPrevious;
     const eps = 0.0001;
@@ -662,6 +698,20 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
     };
   }
 
+  String _scoreDeltaPercentLabel(double current, double? previous) {
+    if (previous == null) return '--';
+    const eps = 0.0001;
+    final diff = current - previous;
+    if (diff.abs() <= eps) return '0%';
+    if (previous.abs() <= eps) {
+      return diff > 0 ? '+100%+' : '-100%';
+    }
+    final pct = (diff / previous) * 100.0;
+    final decimals = pct.abs() >= 100 ? 0 : 1;
+    final txt = pct.toStringAsFixed(decimals).replaceAll('.', ',');
+    return '$txt%';
+  }
+
   @override
   void didUpdateWidget(CalendarExerciseLineCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -670,9 +720,20 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
     }
     if (oldWidget.line.dayWorkoutId != widget.line.dayWorkoutId ||
         oldWidget.line.exerciseId != widget.line.exerciseId ||
-        oldWidget.performedSetsRepo != widget.performedSetsRepo) {
+        oldWidget.performedSetsRepo != widget.performedSetsRepo ||
+        oldWidget.workoutStatus != widget.workoutStatus) {
       _comparisonKey = null;
       _previousScoreFuture = null;
+      _referenceLoadKey = null;
+      _referenceLastMaxLoadFuture = null;
+    }
+    if (oldWidget.collapseSignal != widget.collapseSignal) {
+      _expanded = false;
+    }
+    if (widget.forceExpanded &&
+        (!oldWidget.forceExpanded ||
+            oldWidget.collapseSignal != widget.collapseSignal)) {
+      _expanded = true;
     }
   }
 
@@ -697,13 +758,17 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   Widget build(BuildContext context) {
     final line = widget.line;
     final load = line.loadKg != null ? ' · ${line.loadKg} kg' : '';
-    final volumeFromSets = DayWorkoutPerformedSetCodec.totalVolumeScore(
+    final scoreFromSets = DayWorkoutPerformedSetCodec.totalExerciseScore(
       _performed,
     );
     final displayScore = _performed.isNotEmpty
-        ? volumeFromSets
-        : (line.exerciseScore ?? 0);
-    final scoreStr = _formatVolumeScore(displayScore);
+        ? scoreFromSets
+        : (line.exerciseScore ??
+              scoring.prescribedExerciseLineScore(
+                sets: line.sets,
+                loadKg: line.loadKg ?? 0,
+                reps: line.reps,
+              ));
     final ex = widget.exercise;
     final useAlt = widget.useAlternative;
     final displayName = calendarExerciseDisplayName(
@@ -850,16 +915,36 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.only(top: 1, bottom: 1),
-                              child: Text(
-                                displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  height: 1.15,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${line.sets}×${_dweRepsCompact(line)}$load',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      fontSize: 12.65,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -944,55 +1029,47 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                     ),
                                 ],
                               ),
-                              const SizedBox(height: 3),
-                              Padding(
-                                padding: const EdgeInsets.only(right: 10),
-                                child: FutureBuilder<double?>(
-                                  future: _previousScore(),
-                                  builder: (context, snap) {
-                                    final trend = _scoreTrend(
-                                      displayScore,
-                                      snap.data,
-                                    );
-                                    final v = _scoreVisual(trend);
-                                    return Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        ConstrainedBox(
-                                          constraints: const BoxConstraints(
-                                            maxWidth: 112,
-                                          ),
-                                          child: Text(
-                                            '${line.sets}×${_dweRepsCompact(line)}$load',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            textAlign: TextAlign.left,
-                                            style: TextStyle(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.55,
-                                              ),
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
+                              const SizedBox(height: 6),
+                              FutureBuilder<double?>(
+                                future: _previousScore(),
+                                builder: (context, snap) {
+                                  final trend = _scoreTrend(
+                                    displayScore,
+                                    snap.data,
+                                  );
+                                  final v = _scoreVisual(trend);
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      CountUpScoreText(
+                                        key: ValueKey('ex_score_${line.id}'),
+                                        target: displayScore,
+                                        duration: const Duration(
+                                          milliseconds: 650,
                                         ),
-                                        const SizedBox(width: 6),
-                                        Icon(v.icon, size: 15, color: v.color),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          scoreStr,
-                                          style: TextStyle(
-                                            color: v.color,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                          ),
+                                        style: TextStyle(
+                                          color: v.color,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13.8,
                                         ),
-                                      ],
-                                    );
-                                  },
-                                ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _scoreDeltaPercentLabel(
+                                          displayScore,
+                                          snap.data,
+                                        ),
+                                        style: TextStyle(
+                                          color: v.color,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13.8,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -1036,55 +1113,64 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                         left: 6 * _kSerieScale,
                         right: 2 * _kSerieScale,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Séries:',
-                            style: TextStyle(
-                              color: titleAccent,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14 * _kSerieScale,
-                            ),
-                          ),
-                          SizedBox(height: 10 * _kSerieScale),
-                          for (var i = 0; i < line.sets; i++) ...[
-                            _SeriePrescribedRow(
-                              index: i + 1,
-                              prescribedRepsLabel: _dweRepsCompact(line),
-                              onTap:
-                                  i == _performed.length &&
-                                      canAddMoreSeries &&
-                                      _canMutatePerformedSets
-                                  ? widget.onAdicionar
-                                  : null,
-                              tooltip:
-                                  i == _performed.length &&
-                                      canAddMoreSeries &&
-                                      _canMutatePerformedSets
-                                  ? _addSeriesTooltip
-                                  : null,
-                            ),
-                            if (i < _performed.length) ...[
-                              SizedBox(height: 6 * _kSerieScale),
-                              if (_repoForPerformedSlidable != null)
-                                _PerformedSerieSlidableRow(
-                                  repo: _repoForPerformedSlidable!,
-                                  lineId: line.id,
-                                  performedIndex: i,
-                                  displayIndex: i + 1,
-                                  entry: _performed[i],
-                                  exerciseLabel: displayName,
-                                )
-                              else
-                                _SerieLoggedRow(
-                                  index: i + 1,
-                                  entry: _performed[i],
+                      child: FutureBuilder<double?>(
+                        future: _referenceLastMaxLoadKg(),
+                        builder: (context, refSnap) {
+                          final refKg = refSnap.data;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Séries:',
+                                style: TextStyle(
+                                  color: titleAccent,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14 * _kSerieScale,
                                 ),
+                              ),
+                              SizedBox(height: 10 * _kSerieScale),
+                              for (var i = 0; i < line.sets; i++) ...[
+                                _SeriePrescribedRow(
+                                  index: i + 1,
+                                  prescribedRepsLabel: _dweRepsCompact(line),
+                                  referenceLastMaxLoadKg: refKg,
+                                  onTap:
+                                      i == _performed.length &&
+                                          canAddMoreSeries &&
+                                          _canMutatePerformedSets
+                                      ? widget.onAdicionar
+                                      : null,
+                                  tooltip:
+                                      i == _performed.length &&
+                                          canAddMoreSeries &&
+                                          _canMutatePerformedSets
+                                      ? _addSeriesTooltip
+                                      : null,
+                                ),
+                                if (i < _performed.length) ...[
+                                  SizedBox(height: 6 * _kSerieScale),
+                                  if (_repoForPerformedSlidable != null)
+                                    _PerformedSerieSlidableRow(
+                                      repo: _repoForPerformedSlidable!,
+                                      lineId: line.id,
+                                      performedIndex: i,
+                                      displayIndex: i + 1,
+                                      entry: _performed[i],
+                                      exerciseLabel: displayName,
+                                      requireAllMetricFields:
+                                          widget.workoutStatus == 'started',
+                                    )
+                                  else
+                                    _SerieLoggedRow(
+                                      index: i + 1,
+                                      entry: _performed[i],
+                                    ),
+                                ],
+                                SizedBox(height: 10 * _kSerieScale),
+                              ],
                             ],
-                            SizedBox(height: 10 * _kSerieScale),
-                          ],
-                        ],
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -1184,6 +1270,15 @@ String _formatWorkoutTimer(int sec) {
   return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
 }
 
+/// Evita tap-through: o toque que fecha o overlay não deve acionar botões por baixo
+/// (ex.: reabrir «Registrar série» logo após fechar o cronômetro entre séries).
+void _schedulePopDialogResult(BuildContext dialogContext, Object? result) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!dialogContext.mounted) return;
+    Navigator.of(dialogContext, rootNavigator: true).pop(result);
+  });
+}
+
 /// Pausar cronômetro ou concluir treino (permanece na mesma sheet).
 Future<String?> showFuturisticPauseOrCompleteDialog(BuildContext context) {
   return showDialog<String>(
@@ -1277,36 +1372,52 @@ Future<void> showProgrammedDayExercisesSheet({
   required AppDataRepository repo,
   required DayWorkoutEntity workout,
   required String studentName,
+  bool studentInactive = false,
   required DateTime day,
   String? workoutBadgeLabel,
   Future<void> Function(BuildContext sheetContext)? onSwapWorkout,
+  bool showRestTimerOverlayFromLive = false,
 }) async {
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (sheetCtx) {
-      return KeyboardBottomInsetPadding(
-        child: DraggableScrollableSheet(
-          initialChildSize: 0.87,
-          minChildSize: 0.45,
-          maxChildSize: 0.87,
-          expand: false,
-          builder: (context, scroll) {
-            return _DayExercisesSheetScaffold(
-              scrollController: scroll,
-              repo: repo,
-              studentName: studentName,
-              day: day,
-              workout: workout,
-              workoutBadgeLabel: workoutBadgeLabel,
-              onSwapWorkout: onSwapWorkout,
-            );
-          },
-        ),
-      );
-    },
-  );
+  await ActiveWorkoutSheetCoordinator.openSingleton(workout.id, () async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      routeSettings: RouteSettings(
+        name: 'programmed_day_exercises_sheet',
+        arguments: workout.id,
+      ),
+      builder: (sheetCtx) {
+        ActiveWorkoutSheetCoordinator.registerSheet(workout.id, () {
+          if (sheetCtx.mounted) {
+            Navigator.of(sheetCtx, rootNavigator: true).pop();
+          }
+        });
+        return KeyboardBottomInsetPadding(
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.87,
+            minChildSize: 0.45,
+            maxChildSize: 0.87,
+            expand: false,
+            builder: (context, scroll) {
+              return _DayExercisesSheetScaffold(
+                scrollController: scroll,
+                repo: repo,
+                studentName: studentName,
+                studentInactive: studentInactive,
+                day: day,
+                workout: workout,
+                workoutBadgeLabel: workoutBadgeLabel,
+                onSwapWorkout: onSwapWorkout,
+                showRestTimerOverlayFromLive: showRestTimerOverlayFromLive,
+              );
+            },
+          ),
+        );
+      },
+    );
+  });
 }
 
 class _DayExercisesSheetScaffold extends StatefulWidget {
@@ -1314,19 +1425,23 @@ class _DayExercisesSheetScaffold extends StatefulWidget {
     required this.scrollController,
     required this.repo,
     required this.studentName,
+    this.studentInactive = false,
     required this.day,
     required this.workout,
     this.workoutBadgeLabel,
     this.onSwapWorkout,
+    this.showRestTimerOverlayFromLive = false,
   });
 
   final ScrollController scrollController;
   final AppDataRepository repo;
   final String studentName;
+  final bool studentInactive;
   final DateTime day;
   final DayWorkoutEntity workout;
   final String? workoutBadgeLabel;
   final Future<void> Function(BuildContext sheetContext)? onSwapWorkout;
+  final bool showRestTimerOverlayFromLive;
 
   @override
   State<_DayExercisesSheetScaffold> createState() =>
@@ -1339,6 +1454,83 @@ class _DayExercisesSheetScaffoldState
   final Map<String, bool> _useAlternativeByLineId = {};
   Timer? _tick;
   var _tickerRunning = false;
+  var _restPopupOpenAttempted = false;
+  var _focusCurrentExerciseAfterRestClose = false;
+  String? _forceExpandedLineId;
+  var _collapseAllSignal = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showRestTimerOverlayFromLive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_tryOpenRestTimerOverlayFromLive());
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      try {
+        final n = await widget.repo
+            .repairDayWorkoutExercisesFromSourceGroupIfNeeded(
+              widget.workout.id,
+            );
+        if (mounted && n > 0) {
+          setState(() => _refreshKey++);
+        }
+      } catch (_) {
+        // Sem permissão ou dados inconsistentes: mantém a lista atual.
+      }
+    });
+  }
+
+  Future<void> _tryOpenRestTimerOverlayFromLive() async {
+    if (!mounted || _restPopupOpenAttempted) return;
+    _restPopupOpenAttempted = true;
+    final rest = context.read<RestLiveActivityController>();
+    if (!rest.hasRestSession) return;
+    final prescribedSec = rest.prescribedSec;
+    if (prescribedSec <= 0) return;
+    await showInterSetRestModal(context: context, prescribedSec: prescribedSec);
+    if (!mounted) return;
+    setState(() {
+      _focusCurrentExerciseAfterRestClose = true;
+      _refreshKey++;
+    });
+  }
+
+  String? _lineBeingFilledId(List<DayWorkoutExerciseEntity> lines) {
+    var bestLoggedAtMs = -1;
+    String? bestLineId;
+    for (final line in lines) {
+      final sets = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+      for (final s in sets) {
+        final ms = s.loggedAtMs ?? -1;
+        if (ms > bestLoggedAtMs) {
+          bestLoggedAtMs = ms;
+          bestLineId = line.id;
+        }
+      }
+    }
+    if (bestLineId != null) return bestLineId;
+    if (lines.isEmpty) return null;
+    return lines.first.id;
+  }
+
+  void _scheduleFocusCurrentExerciseAfterRestClose(
+    List<DayWorkoutExerciseEntity> lines,
+  ) {
+    if (!_focusCurrentExerciseAfterRestClose || lines.isEmpty) return;
+    final targetLineId = _lineBeingFilledId(lines);
+    if (targetLineId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_focusCurrentExerciseAfterRestClose) return;
+      setState(() {
+        _focusCurrentExerciseAfterRestClose = false;
+        _collapseAllSignal++;
+        _forceExpandedLineId = targetLineId;
+      });
+    });
+  }
 
   @override
   void dispose() {
@@ -1638,8 +1830,12 @@ class _DayExercisesSheetScaffoldState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
-                                  Icons.person_rounded,
-                                  color: AppColors.splashMint,
+                                  widget.studentInactive
+                                      ? Icons.person_off_rounded
+                                      : Icons.person_rounded,
+                                  color: widget.studentInactive
+                                      ? const Color(0xFFFFB74D)
+                                      : AppColors.splashMint,
                                   size: iconW,
                                 ),
                                 const SizedBox(width: gap),
@@ -1659,6 +1855,31 @@ class _DayExercisesSheetScaffoldState
                                           height: 1.15,
                                         ),
                                       ),
+                                      if (widget.studentInactive) ...[
+                                        const SizedBox(height: 5),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.archive_outlined,
+                                              size: 13,
+                                              color: const Color(
+                                                0xFFFFB74D,
+                                              ).withValues(alpha: 0.95),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Aluno inativo',
+                                              style: TextStyle(
+                                                color: const Color(
+                                                  0xFFFFB74D,
+                                                ).withValues(alpha: 0.95),
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                       const SizedBox(
                                         height: kGapStudentToWorkout,
                                       ),
@@ -1765,14 +1986,15 @@ class _DayExercisesSheetScaffoldState
                         builder: (context, lineSnap) {
                           final plannedLinesRaw = lineSnap.data ?? [];
                           final plannedOrder =
-                              List<DayWorkoutExerciseEntity>.from(plannedLinesRaw)
-                                ..sort(
-                                  (a, b) =>
-                                      a.sortOrder.compareTo(b.sortOrder),
-                                );
+                              List<DayWorkoutExerciseEntity>.from(
+                                plannedLinesRaw,
+                              )..sort(
+                                (a, b) => a.sortOrder.compareTo(b.sortOrder),
+                              );
                           final lines = orderDayWorkoutLinesByPerformedHistory(
                             plannedLinesRaw,
                           );
+                          _scheduleFocusCurrentExerciseAfterRestClose(lines);
                           final blocks = dayWorkoutLinesAsComboBlocks(lines);
                           if (lines.isEmpty) {
                             return const Center(
@@ -1794,12 +2016,11 @@ class _DayExercisesSheetScaffoldState
                                   final name = ex?.name ?? 'Exercício';
                                   final outOfOrder =
                                       dayWorkoutLineExecutedOutOfPlannedOrder(
-                                    plannedOrder,
-                                    line,
-                                  );
+                                        plannedOrder,
+                                        line,
+                                      );
                                   final useAlt =
-                                      _useAlternativeByLineId[line.id] ??
-                                      false;
+                                      _useAlternativeByLineId[line.id] ?? false;
                                   final performed =
                                       DayWorkoutPerformedSetCodec.decode(
                                         line.performedSetsJson,
@@ -1807,17 +2028,23 @@ class _DayExercisesSheetScaffoldState
                                   final canAddSerie =
                                       line.sets > 0 &&
                                       performed.length < line.sets;
+                                  final allPlannedSeriesLogged =
+                                      line.sets > 0 &&
+                                      performed.length >= line.sets;
                                   final dialogTitle =
                                       calendarExerciseDisplayName(
-                                    name,
-                                    ex,
-                                    useAlt,
-                                  );
+                                        name,
+                                        ex,
+                                        useAlt,
+                                      );
                                   return CalendarExerciseLineCard(
                                     line: line,
                                     exerciseName: name,
                                     exercise: ex,
                                     expandable: true,
+                                    forceExpanded:
+                                        _forceExpandedLineId == line.id,
+                                    collapseSignal: _collapseAllSignal,
                                     workoutStatus: w.status,
                                     workoutPaused:
                                         w.status == 'started' &&
@@ -1826,23 +2053,25 @@ class _DayExercisesSheetScaffoldState
                                     executedOutOfPlannedOrder: outOfOrder,
                                     onToggleAlternative:
                                         calendarExerciseHasAlternative(ex) &&
-                                                w.status != 'completed'
-                                            ? () => setState(() {
-                                                  _useAlternativeByLineId[
-                                                          line.id] =
-                                                      !(_useAlternativeByLineId[
-                                                              line.id] ??
-                                                          false);
-                                                })
-                                            : null,
+                                            w.status != 'completed' &&
+                                            !allPlannedSeriesLogged
+                                        ? () => setState(() {
+                                            _useAlternativeByLineId[line.id] =
+                                                !(_useAlternativeByLineId[line
+                                                        .id] ??
+                                                    false);
+                                          })
+                                        : null,
                                     onAdicionar: canAddSerie
                                         ? () => showCalendarAddSetDialog(
-                                              context: context,
-                                              restFlowContext: context,
-                                              repo: widget.repo,
-                                              line: line,
-                                              exerciseName: dialogTitle,
-                                            )
+                                            context: context,
+                                            restFlowContext: context,
+                                            repo: widget.repo,
+                                            line: line,
+                                            exerciseName: dialogTitle,
+                                            requireAllMetricFields:
+                                                w.status == 'started',
+                                          )
                                         : null,
                                     performedSetsRepo: widget.repo,
                                   );
@@ -1875,7 +2104,11 @@ class _DayExercisesSheetScaffoldState
                                           ),
                                         ),
                                       ),
-                                      for (var j = 0; j < block.length; j++) ...[
+                                      for (
+                                        var j = 0;
+                                        j < block.length;
+                                        j++
+                                      ) ...[
                                         if (j > 0) const SizedBox(height: 8),
                                         lineCard(block[j]),
                                       ],
@@ -2327,7 +2560,8 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => Navigator.pop(context, 'start'),
+                          onTap: () =>
+                              _schedulePopDialogResult(context, 'start'),
                           borderRadius: BorderRadius.circular(16),
                           child: Ink(
                             decoration: BoxDecoration(
@@ -2379,7 +2613,8 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                         Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: () => Navigator.pop(context, 'swap'),
+                            onTap: () =>
+                                _schedulePopDialogResult(context, 'swap'),
                             borderRadius: BorderRadius.circular(16),
                             child: Ink(
                               decoration: BoxDecoration(
@@ -2429,7 +2664,8 @@ class _FuturisticStartOrSwapDialog extends StatelessWidget {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => Navigator.pop(context, 'cancel'),
+                          onTap: () =>
+                              _schedulePopDialogResult(context, 'cancel'),
                           borderRadius: BorderRadius.circular(14),
                           child: Ink(
                             decoration: BoxDecoration(
@@ -2577,7 +2813,8 @@ class _FuturisticPauseOrCompleteDialog extends StatelessWidget {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => Navigator.pop(context, 'pause'),
+                          onTap: () =>
+                              _schedulePopDialogResult(context, 'pause'),
                           borderRadius: BorderRadius.circular(16),
                           child: Ink(
                             decoration: BoxDecoration(
@@ -2626,7 +2863,8 @@ class _FuturisticPauseOrCompleteDialog extends StatelessWidget {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => Navigator.pop(context, 'complete'),
+                          onTap: () =>
+                              _schedulePopDialogResult(context, 'complete'),
                           borderRadius: BorderRadius.circular(16),
                           child: Ink(
                             decoration: BoxDecoration(
@@ -2805,7 +3043,8 @@ class _FuturisticResumeOrCompleteDialog extends StatelessWidget {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => Navigator.pop(context, 'resume'),
+                          onTap: () =>
+                              _schedulePopDialogResult(context, 'resume'),
                           borderRadius: BorderRadius.circular(16),
                           child: Ink(
                             decoration: BoxDecoration(
@@ -2856,7 +3095,8 @@ class _FuturisticResumeOrCompleteDialog extends StatelessWidget {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => Navigator.pop(context, 'complete'),
+                          onTap: () =>
+                              _schedulePopDialogResult(context, 'complete'),
                           borderRadius: BorderRadius.circular(16),
                           child: Ink(
                             decoration: BoxDecoration(
@@ -3047,7 +3287,8 @@ class _FuturisticIncompleteBeforeCompleteDialog extends StatelessWidget {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () => Navigator.pop(context, false),
+                                onTap: () =>
+                                    _schedulePopDialogResult(context, false),
                                 borderRadius: BorderRadius.circular(14),
                                 child: Ink(
                                   decoration: BoxDecoration(
@@ -3082,7 +3323,8 @@ class _FuturisticIncompleteBeforeCompleteDialog extends StatelessWidget {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () => Navigator.pop(context, true),
+                                onTap: () =>
+                                    _schedulePopDialogResult(context, true),
                                 borderRadius: BorderRadius.circular(14),
                                 child: Ink(
                                   decoration: BoxDecoration(

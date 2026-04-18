@@ -11,6 +11,15 @@ abstract class RemoteSyncService {
   });
 
   Future<void> recoverPendingWork() async {}
+
+  /// Espelha só a linha `students` no Postgres (incl. `password_hash`); não altera `student_gyms`.
+  Future<void> mirrorStudentRowNow(String studentId) async {}
+
+  /// Espelha só a linha `personals` no Postgres (incl. `password_hash`).
+  Future<void> mirrorPersonalRowNow(String personalId) async {}
+
+  /// Força atualização imediata do treino e suas linhas a partir da nuvem.
+  Future<void> refreshDayWorkoutFromCloud(String dayWorkoutId) async {}
 }
 
 class NoOpRemoteSyncService implements RemoteSyncService {
@@ -27,4 +36,13 @@ class NoOpRemoteSyncService implements RemoteSyncService {
 
   @override
   Future<void> recoverPendingWork() async {}
+
+  @override
+  Future<void> mirrorStudentRowNow(String studentId) async {}
+
+  @override
+  Future<void> mirrorPersonalRowNow(String personalId) async {}
+
+  @override
+  Future<void> refreshDayWorkoutFromCloud(String dayWorkoutId) async {}
 }

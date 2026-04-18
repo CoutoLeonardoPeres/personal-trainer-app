@@ -3,6 +3,21 @@ import 'performance_report_document.dart';
 String _norm(String s) =>
     s.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
 
+DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Maior número de dias entre dois treinos consecutivos (por data civil).
+int maxGapDaysBetweenCompletedWorkouts(List<DateTime> sortedUniqueLocalDays) {
+  if (sortedUniqueLocalDays.length < 2) return 0;
+  var maxG = 0;
+  for (var i = 1; i < sortedUniqueLocalDays.length; i++) {
+    final gap = sortedUniqueLocalDays[i]
+        .difference(sortedUniqueLocalDays[i - 1])
+        .inDays;
+    if (gap > maxG) maxG = gap;
+  }
+  return maxG;
+}
+
 /// Respostas com várias opções separadas por «;» (ex.: prioridade na anamnese).
 List<String> _anamnesePriorityParts(String raw) {
   return raw
@@ -78,6 +93,8 @@ void appendTrainingVsAnamneseAnalysis(
   required List<({String mgId, double avgScore})> bestGroups,
   required Map<String, String> muscleNamesById,
   required List<({String exId, double trend, int sessions})> attention,
+  required List<DateTime> completedWorkoutLocalDaysSortedUnique,
+  required int periodCalendarDays,
 }) {
   if (latestAnswers.isEmpty) return;
 
@@ -128,6 +145,33 @@ void appendTrainingVsAnamneseAnalysis(
     doc.writeln(PerformanceReportSpanStyle.coachingInsight, line);
   }
 
+  doc.writeln(
+    PerformanceReportSpanStyle.sectionHeading,
+    '7c. Adesão ao calendário (treinos concluídos vs anamnese)',
+  );
+  final uniqueDays = completedWorkoutLocalDaysSortedUnique
+      .map(_dateOnly)
+      .toList();
+  uniqueDays.sort();
+  final maxGap = maxGapDaysBetweenCompletedWorkouts(uniqueDays);
+  doc.writeln(
+    PerformanceReportSpanStyle.body,
+    '- Dias distintos com treino concluído no período: ${uniqueDays.length} '
+    '(em $periodCalendarDays dias civis da janela do relatório).',
+  );
+  doc.writeln(
+    PerformanceReportSpanStyle.body,
+    '- Maior intervalo entre dois treinos concluídos consecutivos (por data): '
+    '$maxGap dia(s).',
+  );
+  if (dias != null) {
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      '- Dias/semana que o aluno declarou poder treinar (anamnese): $dias.',
+    );
+  }
+  doc.write(PerformanceReportSpanStyle.body, '\n');
+
   final wk = periodWeeks > 0 ? snapshotCount / periodWeeks : avgWorkoutsPerWeek;
   if (dias != null && periodWeeks >= 0.5) {
     if (wk + 0.35 < dias) {
@@ -143,6 +187,18 @@ void appendTrainingVsAnamneseAnalysis(
         'lesões.',
       );
     }
+  }
+
+  if (maxGap >= 14 && snapshotCount >= 2) {
+    insight(
+      'Lacunas: intervalo muito longo ($maxGap dias) entre treinos concluídos — '
+      'risco de perda de condicionamento e desalinhamento com prazo/objetivos da anamnese.',
+    );
+  } else if (maxGap >= 10 && snapshotCount >= 2) {
+    insight(
+      'Lacunas: houve até $maxGap dias sem treino concluído entre duas sessões — '
+      'avaliar adesão, viagens, lesão ou carga de trabalho vs objetivos declarados.',
+    );
   }
 
   if (_norm(objetivo).contains('emagrec')) {
@@ -206,6 +262,26 @@ void appendTrainingVsAnamneseAnalysis(
       'alinhar expectativas de resultado com frequência real e intensidade.',
     );
   }
+  final prazoN = _norm(prazo);
+  if ((prazoN.contains('3') && prazoN.contains('mês')) ||
+      prazoN.contains('trimestre')) {
+    if (periodWeeks >= 10 && snapshotCount < 18) {
+      insight(
+        'Prazo declarado na faixa de ~3 meses: com menos de ~18 sessões em '
+        '${periodWeeks.toStringAsFixed(0)} semana(s), o ritmo pode ser insuficiente '
+        'para objetivos ambiciosos de composição/força — revisar frequência e prioridades.',
+      );
+    }
+  }
+  if (prazoN.contains('6') && prazoN.contains('mês')) {
+    if (periodWeeks >= 20 && snapshotCount < 40) {
+      insight(
+        'Prazo longo (≈6 meses) com densidade de treinos relativamente baixa no '
+        'período analisado — cruzar com objetivos (massa/definição) e musculatura '
+        'prioritária da anamnese.',
+      );
+    }
+  }
 
   if (bestGroups.isNotEmpty && weakGroups.isNotEmpty) {
     final best = bestGroups.first;
@@ -220,4 +296,57 @@ void appendTrainingVsAnamneseAnalysis(
   }
 
   doc.write(PerformanceReportSpanStyle.body, '\n');
+}
+
+/// Todas as perguntas do formulário com resposta ou «(não informado)», mais chaves
+/// extra no mapa — texto pensado para o modelo de IA e para o personal.
+void appendLatestAnamneseFullInventoryForAi(
+  PerformanceReportDocument doc, {
+  required Map<String, String> answers,
+  required List<String> questionPromptsInOrder,
+}) {
+  doc.write(PerformanceReportSpanStyle.body, '\n');
+  doc.writeln(
+    PerformanceReportSpanStyle.sectionHeading,
+    '7a. Inventário completo — última anamnese (todas as perguntas do formulário)',
+  );
+  doc.writeln(
+    PerformanceReportSpanStyle.body,
+    'Use esta secção para cruzar hábitos, limitações, sono, objetivos e prioridades '
+    'corporais com o que foi efetivamente treinado no período do relatório.',
+  );
+  doc.write(PerformanceReportSpanStyle.body, '\n');
+
+  final known = <String>{};
+  for (final prompt in questionPromptsInOrder) {
+    known.add(prompt);
+    final v = (answers[prompt] ?? '').trim();
+    doc.write(PerformanceReportSpanStyle.anamneseQuestion, '- ');
+    doc.writeln(PerformanceReportSpanStyle.anamneseQuestion, prompt);
+    doc.writeln(
+      PerformanceReportSpanStyle.anamneseAnswer,
+      v.isEmpty ? '  (não informado)' : '  $v',
+    );
+  }
+
+  final extraKeys = answers.keys
+      .map((k) => k.trim())
+      .where((k) => k.isNotEmpty && !known.contains(k))
+      .toList()
+    ..sort();
+  if (extraKeys.isEmpty) return;
+
+  doc.writeln(
+    PerformanceReportSpanStyle.sectionHeading,
+    '7a (continuação). Outras respostas gravadas (chaves fora do formulário atual)',
+  );
+  for (final k in extraKeys) {
+    final v = (answers[k] ?? '').trim();
+    doc.write(PerformanceReportSpanStyle.anamneseQuestion, '- ');
+    doc.writeln(PerformanceReportSpanStyle.anamneseQuestion, k);
+    doc.writeln(
+      PerformanceReportSpanStyle.anamneseAnswer,
+      v.isEmpty ? '  (não informado)' : '  $v',
+    );
+  }
 }

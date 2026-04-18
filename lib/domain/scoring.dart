@@ -1,38 +1,31 @@
-/// Score por série: carga (kg) × repetições.
-double setScore({required double loadKg, required int reps}) => loadKg * reps;
+/// Contribuição de uma série para o score do exercício: (carga × repetições) ÷ 10.
+double perSetScoreContribution({required double loadKg, required int reps}) {
+  if (reps < 1) return 0;
+  return loadKg * reps / 10.0;
+}
 
-/// Score do exercício: soma das séries.
-double exerciseTotalScore(List<double> setScores) =>
-    setScores.fold(0.0, (a, b) => a + b);
+/// Score prescrito da linha (sem séries registadas): nº de séries × (carga × reps ÷ 10).
+double prescribedExerciseLineScore({
+  required int sets,
+  required double loadKg,
+  required int reps,
+}) {
+  if (sets <= 0) return 0;
+  return sets * perSetScoreContribution(loadKg: loadKg, reps: reps);
+}
 
-/// Score do treino: soma dos scores dos exercícios ÷ tempo ativo (segundos).
-/// Evita divisão por zero.
-double workoutScore({
-  required double exercisesScoreSum,
+/// Score final do treino: (Σ score dos exercícios **concluídos**) × 10 ÷ minutos ativos × (nº concluídos).
+///
+/// Exercício concluído: `sets > 0` e pelo menos `sets` entradas em `performed_sets_json`.
+double workoutFinalScoreFromExerciseScores({
+  required double exerciseScoresSum,
   required int activeDurationSeconds,
+  required int completedExerciseCount,
 }) {
   if (activeDurationSeconds <= 0) return 0;
-  return exercisesScoreSum / activeDurationSeconds;
-}
-
-/// Volume já registrado (soma carga×reps das séries) ÷ minutos de treino **ativo**,
-/// multiplicado por **10** — valor gravado em [DayWorkoutEntity.workoutScore] no instante
-/// do registro da série (com o tempo ativo daquele momento).
-double workoutScoreStoredAtInstant({
-  required double performedVolumeSum,
-  required int activeDurationSeconds,
-}) {
+  if (completedExerciseCount <= 0) return 0;
   final minutes = activeDurationSeconds / 60.0;
   if (minutes <= 0) return 0;
-  return 10.0 * performedVolumeSum / minutes;
+  return exerciseScoresSum * 10.0 / minutes * completedExerciseCount;
 }
 
-/// Legado (sem fator 10). Preferir [workoutScoreStoredAtInstant].
-double workoutScorePerActiveMinute({
-  required double exercisesScoreSum,
-  required int activeDurationSeconds,
-}) {
-  final minutes = activeDurationSeconds / 60.0;
-  if (minutes <= 0) return 0;
-  return exercisesScoreSum / minutes;
-}

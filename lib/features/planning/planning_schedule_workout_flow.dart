@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/modern_loading.dart';
 import '../../core/ui/app_modal_sheet.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
@@ -337,7 +338,7 @@ Future<void> showPlanningScheduleWorkoutSheet({
                   return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(32),
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: ModernLoadingIndicator(size: 52),
                     ),
                   );
                 }
@@ -550,7 +551,7 @@ Future<void> showPlanningCopyWorkoutSheet({
                   return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(32),
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: ModernLoadingIndicator(size: 52),
                     ),
                   );
                 }

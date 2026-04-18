@@ -3,13 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/access/access_tiers.dart';
 import '../../core/auth/app_session.dart';
+import '../../core/preferences/biometric_lock_prefs.dart';
+import '../../core/supabase/supabase_auth_service.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_constants.dart';
 import '../../core/supabase/supabase_prefs_config.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../../core/preferences/rest_timer_prefs.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/modern_loading.dart';
 import '../../core/ui/keyboard_bottom_inset.dart';
 import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
@@ -31,6 +35,12 @@ class SettingsPage extends StatelessWidget {
           children: [
             const _SessionProfileSection(),
             const SizedBox(height: 8),
+            const _AdminRbacSection(),
+            const SizedBox(height: 8),
+            const _SupabaseAuthSection(),
+            const SizedBox(height: 8),
+            const _BiometricLockTile(),
+            const SizedBox(height: 8),
             const _SupabaseSyncSection(),
             const SizedBox(height: 8),
             const _RestTimerSoundTile(),
@@ -45,7 +55,7 @@ class SettingsPage extends StatelessWidget {
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               subtitle: const Text(
-                'Primeiro acesso e troca de senha provisória (fluxo completo com auth).',
+                'Atualiza o SQLite local e, se existir sessão Supabase Auth, a senha na nuvem.',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
               onTap: () => _passwordSheet(context),
@@ -59,28 +69,12 @@ class SettingsPage extends StatelessWidget {
                 'Sair da conta',
                 style: TextStyle(color: AppColors.textPrimary),
               ),
-              onTap: () {
-                showDialog<void>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    backgroundColor: AppColors.barBackground,
-                    title: const Text(
-                      'Conta',
-                      style: TextStyle(color: AppColors.textPrimary),
-                    ),
-                    content: const Text(
-                      'Logout local — integrar com Supabase Auth quando o backend estiver ativo.',
-                      style: TextStyle(color: AppColors.textMuted),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('OK'),
-                      ),
-                    ],
-                  ),
-                );
-              },
+              subtitle: const Text(
+                'Encerra a sessão local e a Supabase (se houver). O app fecha; ao '
+                'abrir de novo, será pedido e-mail e senha do cadastro.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              onTap: () => _confirmLogoutAndExit(context),
             ),
             Consumer<AppSession>(
               builder: (context, session, _) => ListTile(
@@ -93,7 +87,7 @@ class SettingsPage extends StatelessWidget {
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
                 subtitle: Text(
-                  session.isAdminPersonal
+                  session.hasFullOrgAccess
                       ? 'Auditoria gravada no SQLite (ações e cadastros).'
                       : 'Disponível apenas para o perfil administrador.',
                   style: const TextStyle(
@@ -110,56 +104,156 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
+  static Future<void> _confirmLogoutAndExit(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: AppColors.barBackground,
+        title: const Text(
+          'Sair da conta?',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: const Text(
+          'A sessão será encerrada e o app fechado. Ao reabrir, use o e-mail e a senha '
+          'do personal ou do aluno cadastrado neste aparelho.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('Sair e fechar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      if (supabaseAppEnabled && SupabaseAuthService.currentSession != null) {
+        await SupabaseAuthService.signOut();
+      }
+    } catch (_) {}
+    if (!context.mounted) return;
+    await context.read<AppSession>().markLoggedOutRequiresRelogin();
+    if (!context.mounted) return;
+    SystemNavigator.pop();
+  }
+
   void _passwordSheet(BuildContext context) {
-    final c1 = TextEditingController();
-    final c2 = TextEditingController();
+    final current = TextEditingController();
+    final next = TextEditingController();
+    final confirm = TextEditingController();
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.barBackground,
-      builder: (ctx) => KeyboardBottomInsetPadding(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Nova senha',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+      builder: (ctx) {
+        return KeyboardBottomInsetPadding(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              20 + MediaQuery.viewInsetsOf(ctx).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Alterar senha',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: c1,
-                obscureText: true,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(labelText: 'Senha'),
-              ),
-              TextField(
-                controller: c2,
-                obscureText: true,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(labelText: 'Confirmar'),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Salvar (stub)'),
-              ),
-            ],
+                const SizedBox(height: 8),
+                const Text(
+                  'Senha atual = provisória ou a que usa hoje no aparelho. '
+                  'Com Supabase Auth ativo, a nova senha é enviada também à nuvem.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: current,
+                  obscureText: true,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Senha atual',
+                    labelStyle: TextStyle(color: AppColors.textMuted),
+                  ),
+                ),
+                TextField(
+                  controller: next,
+                  obscureText: true,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Nova senha',
+                    labelStyle: TextStyle(color: AppColors.textMuted),
+                  ),
+                ),
+                TextField(
+                  controller: confirm,
+                  obscureText: true,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar nova senha',
+                    labelStyle: TextStyle(color: AppColors.textMuted),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () async {
+                    if (next.text != confirm.text) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(
+                          content: Text('Confirmação não coincide.'),
+                        ),
+                      );
+                      return;
+                    }
+                    final repo = ctx.read<AppDataRepository>();
+                    try {
+                      if (supabaseAppEnabled &&
+                          SupabaseAuthService.currentSession != null) {
+                        await SupabaseAuthService.updatePassword(next.text);
+                      }
+                      await repo.changePasswordForCurrentSession(
+                        currentPassword: current.text,
+                        newPassword: next.text,
+                      );
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
+                      return;
+                    }
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Senha atualizada.')),
+                      );
+                    }
+                  },
+                  child: const Text('Salvar'),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Future<void> _logsSheet(BuildContext context) async {
     final session = context.read<AppSession>();
-    if (!session.isAdminPersonal) {
+    if (!session.hasFullOrgAccess) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -335,7 +429,7 @@ class SettingsPage extends StatelessWidget {
           backgroundColor: AppColors.barBackground,
           content: Row(
             children: [
-              CircularProgressIndicator(),
+              ModernLoadingIndicator(size: 40),
               SizedBox(width: 20),
               Expanded(
                 child: Text(
@@ -438,7 +532,7 @@ class SettingsPage extends StatelessWidget {
           backgroundColor: AppColors.barBackground,
           content: Row(
             children: [
-              CircularProgressIndicator(),
+              ModernLoadingIndicator(size: 40),
               SizedBox(width: 20),
               Expanded(
                 child: Text(
@@ -463,6 +557,8 @@ class SettingsPage extends StatelessWidget {
       }
     }
 
+    if (!context.mounted) return;
+    await context.read<AppDataRepository>().refreshSessionPersonalAdminFlag();
     if (!context.mounted) return;
     final text = report.toReportText();
 
@@ -817,11 +913,7 @@ class _SupabaseLocalCredentialsCardState
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 12),
         child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: ModernLoadingIndicator(size: 28),
         ),
       );
     }
@@ -921,6 +1013,7 @@ class _SessionProfileSection extends StatelessWidget {
           personalId: pick?.id,
           studentId: null,
         );
+        await repo.refreshSessionPersonalAdminFlag();
         return;
       case SessionRole.personalTrainer:
         final personals = await repo.watchPersonalsAlphabetical().first;
@@ -942,6 +1035,7 @@ class _SessionProfileSection extends StatelessWidget {
           personalId: id,
           studentId: null,
         );
+        await repo.refreshSessionPersonalAdminFlag();
         return;
       case SessionRole.student:
         final students = await repo.watchStudentsForSessionPicker().first;
@@ -962,6 +1056,7 @@ class _SessionProfileSection extends StatelessWidget {
           personalId: null,
           studentId: id,
         );
+        await repo.refreshSessionPersonalAdminFlag();
         return;
     }
   }
@@ -1059,6 +1154,11 @@ class _SessionProfileSection extends StatelessWidget {
                         personalId: id,
                         studentId: null,
                       );
+                      if (context.mounted) {
+                        await context
+                            .read<AppDataRepository>()
+                            .refreshSessionPersonalAdminFlag();
+                      }
                     },
                   );
                 },
@@ -1107,6 +1207,11 @@ class _SessionProfileSection extends StatelessWidget {
                         personalId: null,
                         studentId: id,
                       );
+                      if (context.mounted) {
+                        await context
+                            .read<AppDataRepository>()
+                            .refreshSessionPersonalAdminFlag();
+                      }
                     },
                   );
                 },
@@ -1115,6 +1220,610 @@ class _SessionProfileSection extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AdminRbacSection extends StatelessWidget {
+  const _AdminRbacSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<AppSession>();
+    if (!session.hasFullOrgAccess) return const SizedBox.shrink();
+    final repo = context.watch<AppDataRepository>();
+    return Card(
+      color: AppColors.barBackground.withValues(alpha: 0.94),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Perfis de acesso (admin)',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Ajusta access_tier no SQLite (e na nuvem no próximo sync). '
+              'Premium: opcional data de fim — após ela o app faz downgrade para standard ao abrir.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            StreamBuilder<List<StudentEntity>>(
+              stream: repo.watchStudentsAlphabetical(),
+              builder: (context, stSnap) {
+                final students = stSnap.data ?? [];
+                return StreamBuilder<List<PersonalEntity>>(
+                  stream: repo.watchPersonalsAlphabetical(),
+                  builder: (context, pSnap) {
+                    final personals = pSnap.data ?? [];
+                    return _AdminRbacForm(
+                      repo: repo,
+                      students: students,
+                      personals: personals,
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminRbacForm extends StatefulWidget {
+  const _AdminRbacForm({
+    required this.repo,
+    required this.students,
+    required this.personals,
+  });
+
+  final AppDataRepository repo;
+  final List<StudentEntity> students;
+  final List<PersonalEntity> personals;
+
+  @override
+  State<_AdminRbacForm> createState() => _AdminRbacFormState();
+}
+
+class _AdminRbacFormState extends State<_AdminRbacForm> {
+  String? _studentId;
+  String _studentTier = AccessTiers.studentFree;
+  DateTime? _studentPremiumUntil;
+  String? _personalId;
+  String _personalTier = AccessTiers.personalStarter;
+  final _capCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.students.isNotEmpty) {
+      _studentId = widget.students.first.id;
+      _syncStudentFields(widget.students.first);
+    }
+    if (widget.personals.isNotEmpty) {
+      _personalId = widget.personals.first.id;
+      _syncPersonalFields(widget.personals.first);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdminRbacForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.students.isEmpty) {
+      _studentId = null;
+    } else if (_studentId == null ||
+        !widget.students.any((s) => s.id == _studentId)) {
+      _studentId = widget.students.first.id;
+      _syncStudentFields(widget.students.first);
+    }
+    if (widget.personals.isEmpty) {
+      _personalId = null;
+    } else if (_personalId == null ||
+        !widget.personals.any((p) => p.id == _personalId)) {
+      _personalId = widget.personals.first.id;
+      _syncPersonalFields(widget.personals.first);
+    }
+  }
+
+  void _syncStudentFields(StudentEntity s) {
+    _studentTier = s.accessTier;
+    _studentPremiumUntil = s.premiumPlanExpiresAt;
+  }
+
+  void _syncPersonalFields(PersonalEntity p) {
+    _personalTier = p.accessTier;
+    _capCtrl.text = p.maxStudentsCap?.toString() ?? '';
+  }
+
+  @override
+  void dispose() {
+    _capCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPremiumDate() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _studentPremiumUntil ?? now.add(const Duration(days: 30)),
+      firstDate: now.subtract(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 365 * 5)),
+    );
+    if (d != null) {
+      setState(() => _studentPremiumUntil = DateTime(d.year, d.month, d.day, 23, 59, 59));
+    }
+  }
+
+  Future<void> _applyStudent() async {
+    final id = _studentId;
+    if (id == null) return;
+    try {
+      await widget.repo.adminSetStudentAccessTier(
+        studentId: id,
+        accessTier: _studentTier,
+        premiumPlanExpiresAt: _studentTier == AccessTiers.studentPremium
+            ? _studentPremiumUntil
+            : null,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Perfil do aluno atualizado.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  Future<void> _applyPersonal() async {
+    final id = _personalId;
+    if (id == null) return;
+    int? cap;
+    final t = _capCtrl.text.trim();
+    if (t.isNotEmpty) {
+      cap = int.tryParse(t);
+    }
+    try {
+      await widget.repo.adminSetPersonalAccessTier(
+        personalId: id,
+        accessTier: _personalTier,
+        maxStudentsCap: cap,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Perfil do personal atualizado.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Aluno',
+          style: TextStyle(
+            color: AppColors.accentGreen,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (widget.students.isEmpty)
+          const Text(
+            'Nenhum aluno.',
+            style: TextStyle(color: AppColors.textMuted),
+          )
+        else ...[
+          DropdownButtonFormField<String>(
+            initialValue: _studentId,
+            dropdownColor: AppColors.barBackground,
+            decoration: const InputDecoration(
+              labelText: 'Aluno',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+            ),
+            style: const TextStyle(color: AppColors.textPrimary),
+            items: widget.students
+                .map(
+                  (s) => DropdownMenuItem(value: s.id, child: Text(s.name)),
+                )
+                .toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              final s = widget.students.firstWhere((e) => e.id == v);
+              setState(() {
+                _studentId = v;
+                _syncStudentFields(s);
+              });
+            },
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _studentTier,
+            dropdownColor: AppColors.barBackground,
+            decoration: const InputDecoration(
+              labelText: 'access_tier',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+            ),
+            style: const TextStyle(color: AppColors.textPrimary),
+            items: const [
+              DropdownMenuItem(
+                value: AccessTiers.studentFree,
+                child: Text('aluno_free'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.studentBasic,
+                child: Text('aluno_basic'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.studentPremium,
+                child: Text('aluno_premium'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.studentStandard,
+                child: Text('aluno_standard'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.legacy,
+                child: Text('legacy'),
+              ),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _studentTier = v);
+            },
+          ),
+          if (_studentTier == AccessTiers.studentPremium) ...[
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Premium válido até',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                _studentPremiumUntil == null
+                    ? '(não definido — não expira pelo relógio local)'
+                    : MaterialLocalizations.of(context).formatFullDate(
+                        _studentPremiumUntil!,
+                      ),
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              trailing: TextButton(
+                onPressed: _pickPremiumDate,
+                child: const Text('Data'),
+              ),
+            ),
+          ],
+          FilledButton(
+            onPressed: _applyStudent,
+            child: const Text('Aplicar aluno'),
+          ),
+        ],
+        const SizedBox(height: 20),
+        const Text(
+          'Personal',
+          style: TextStyle(
+            color: AppColors.accentGreen,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (widget.personals.isEmpty)
+          const Text(
+            'Nenhum personal.',
+            style: TextStyle(color: AppColors.textMuted),
+          )
+        else ...[
+          DropdownButtonFormField<String>(
+            initialValue: _personalId,
+            dropdownColor: AppColors.barBackground,
+            decoration: const InputDecoration(
+              labelText: 'Personal',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+            ),
+            style: const TextStyle(color: AppColors.textPrimary),
+            items: widget.personals
+                .map(
+                  (p) => DropdownMenuItem(value: p.id, child: Text(p.name)),
+                )
+                .toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              final p = widget.personals.firstWhere((e) => e.id == v);
+              setState(() {
+                _personalId = v;
+                _syncPersonalFields(p);
+              });
+            },
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _personalTier,
+            dropdownColor: AppColors.barBackground,
+            decoration: const InputDecoration(
+              labelText: 'access_tier',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+            ),
+            style: const TextStyle(color: AppColors.textPrimary),
+            items: const [
+              DropdownMenuItem(
+                value: AccessTiers.personalStarter,
+                child: Text('personal_starter'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.personalPro,
+                child: Text('personal_pro'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.personalProPlus,
+                child: Text('personal_pro_plus'),
+              ),
+              DropdownMenuItem(
+                value: AccessTiers.legacy,
+                child: Text('legacy'),
+              ),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _personalTier = v);
+            },
+          ),
+          TextField(
+            controller: _capCtrl,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'max_students_cap (vazio = padrão do tier)',
+              labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _applyPersonal,
+            child: const Text('Aplicar personal'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SupabaseAuthSection extends StatelessWidget {
+  const _SupabaseAuthSection();
+
+  @override
+  Widget build(BuildContext context) {
+    if (!supabaseAppEnabled) return const SizedBox.shrink();
+    return Card(
+      color: AppColors.barBackground.withValues(alpha: 0.94),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Conta Supabase (JWT)',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Necessário para RLS com auth.uid() após aplicar '
+              'scripts/supabase_rls_strict_auth_uid.sql. Ligue auth_user_id nas tabelas personals/students.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            _SupabaseAuthForm(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SupabaseAuthForm extends StatefulWidget {
+  @override
+  State<_SupabaseAuthForm> createState() => _SupabaseAuthFormState();
+}
+
+class _SupabaseAuthFormState extends State<_SupabaseAuthForm> {
+  final _email = TextEditingController();
+  final _pass = TextEditingController();
+  var _busy = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _pass.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final u = SupabaseAuthService.currentUser;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          u == null
+              ? 'Estado: sem sessão Auth'
+              : 'Sessão: ${u.email ?? u.id}',
+          style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+        ),
+        if (u == null) ...[
+          const SizedBox(height: 6),
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () async {
+                    setState(() => _busy = true);
+                    try {
+                      await SupabaseAuthService.signInWithGoogle();
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
+            icon: const Icon(Icons.mail_outline_rounded),
+            label: const Text('Conectar com Google (Gmail)'),
+          ),
+          const SizedBox(height: 6),
+          OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () async {
+                    setState(() => _busy = true);
+                    try {
+                      await SupabaseAuthService.signInWithGitHub();
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
+            icon: const Icon(Icons.code_rounded),
+            label: const Text('Conectar com GitHub'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _email,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'E-mail',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+            ),
+            keyboardType: TextInputType.emailAddress,
+          ),
+          TextField(
+            controller: _pass,
+            obscureText: true,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'Senha',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _busy
+                ? null
+                : () async {
+                    setState(() => _busy = true);
+                    try {
+                      await SupabaseAuthService.signInWithEmail(
+                        email: _email.text.trim(),
+                        password: _pass.text,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Sessão Supabase iniciada.')),
+                        );
+                        setState(() {});
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
+            child: const Text('Entrar'),
+          ),
+        ] else
+          OutlinedButton(
+            onPressed: _busy
+                ? null
+                : () async {
+                    setState(() => _busy = true);
+                    try {
+                      await SupabaseAuthService.signOut();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Sessão encerrada.')),
+                        );
+                        setState(() {});
+                      }
+                    } finally {
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
+            child: const Text('Sair da conta Supabase'),
+          ),
+      ],
+    );
+  }
+}
+
+class _BiometricLockTile extends StatefulWidget {
+  const _BiometricLockTile();
+
+  @override
+  State<_BiometricLockTile> createState() => _BiometricLockTileState();
+}
+
+class _BiometricLockTileState extends State<_BiometricLockTile> {
+  bool? _on;
+
+  @override
+  void initState() {
+    super.initState();
+    BiometricLockPrefs.enabled.then((v) {
+      if (mounted) setState(() => _on = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _on;
+    return SwitchListTile(
+      secondary: const Icon(
+        Icons.fingerprint_rounded,
+        color: AppColors.accentGreen,
+      ),
+      title: const Text(
+        'Biometria ao voltar do segundo plano',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      subtitle: Text(
+        v == null
+            ? 'Carregando…'
+            : 'Face ID / impressão digital ao reabrir o app (não substitui senha).',
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
+      value: v ?? false,
+      onChanged: v == null
+          ? null
+          : (nv) async {
+              await BiometricLockPrefs.setEnabled(nv);
+              if (mounted) setState(() => _on = nv);
+            },
     );
   }
 }

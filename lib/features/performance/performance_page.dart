@@ -5,15 +5,21 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/access/permission_service.dart';
 import '../../core/ai/free_ai_training_report_service.dart';
+import '../../core/auth/app_session.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/modern_loading.dart';
 import '../../core/utils/day_workout_line_order_utils.dart';
+import 'muscle_group_pie_charts.dart';
+import 'muscle_group_pie_stats.dart';
 import 'performance_report_document.dart';
 import 'performance_report_goal_analysis.dart';
 import '../../core/ui/keyboard_bottom_inset.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
+import '../../domain/scoring.dart' as scoring;
 import '../planning/planning_student_selector.dart';
 
 /// Gráficos em carrossel horizontal por aluno.
@@ -37,62 +43,44 @@ class _PerformancePageState extends State<PerformancePage> {
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<AppDataRepository>();
+    final session = context.watch<AppSession>();
+    if (session.isStudent && session.studentId != null) {
+      final sid = session.studentId!;
+      if (_studentId != sid) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _studentId = sid);
+        });
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: StreamBuilder<List<StudentEntity>>(
-            stream: repo.watchStudentsAlphabetical(),
-            builder: (context, snap) {
-              final students = snap.data ?? [];
-              final waitingFirstStudents =
-                  snap.connectionState == ConnectionState.waiting &&
-                  !snap.hasData;
-
-              if (_studentId != null &&
-                  students.isNotEmpty &&
-                  !students.any((s) => s.id == _studentId)) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _studentId = null);
-                });
-              }
-              if (_studentId != null && students.isEmpty && snap.hasData) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _studentId = null);
-                });
-              }
-              if (_studentId != null &&
-                  students.isEmpty &&
-                  waitingFirstStudents) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                );
-              }
-
-              final dropdownValue =
-                  _studentId != null && students.any((s) => s.id == _studentId)
-                  ? _studentId
-                  : null;
-
-              return PlanningFuturisticStudentSelector(
-                key: ValueKey('aluno_${dropdownValue ?? 'none'}'),
-                students: students,
-                selectedId: dropdownValue,
-                enabled: students.isNotEmpty,
-                onChanged: (v) => setState(() => _studentId = v),
-              );
-            },
-          ),
+          child: session.isStudent && session.studentId != null
+              ? StreamBuilder<StudentEntity?>(
+                  stream: repo.watchStudentById(session.studentId!),
+                  builder: (context, stuSnap) {
+                    final hide = PermissionService(
+                      session: session,
+                      student: stuSnap.data,
+                    ).hideStudentSessionPicker;
+                    if (hide) return const SizedBox(height: 4);
+                    return StreamBuilder<List<StudentEntity>>(
+                      stream: repo.watchStudentsAlphabetical(),
+                      builder: (context, snap) {
+                        return _studentDropdown(snap, repo);
+                      },
+                    );
+                  },
+                )
+              : StreamBuilder<List<StudentEntity>>(
+                  stream: repo.watchStudentsAlphabetical(),
+                  builder: (context, snap) {
+                    return _studentDropdown(snap, repo);
+                  },
+                ),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -100,7 +88,7 @@ class _PerformancePageState extends State<PerformancePage> {
             controller: _chartPage,
             children: [
               _chartCard(
-                'Rendimento (últimos 7 treinos)',
+                'Rendimento (últimos 7 dias)',
                 _subtitleRendimento,
                 _studentId == null
                     ? _selectStudentPlaceholder(hint: 'o rendimento')
@@ -119,6 +107,30 @@ class _PerformancePageState extends State<PerformancePage> {
                 _studentId == null
                     ? _selectStudentPlaceholder(hint: 'o ranking por grupo')
                     : _WorkoutGroupsBest4WeeksChart(
+                        studentId: _studentId!,
+                        repo: repo,
+                      ),
+              ),
+              _chartCard(
+                'Volume por grupo (8 semanas)',
+                _subtitleMuscleVolumePie,
+                _studentId == null
+                    ? _selectStudentPlaceholder(
+                        hint: 'volume por grupo muscular',
+                      )
+                    : MuscleGroupVolumePieChart(
+                        studentId: _studentId!,
+                        repo: repo,
+                      ),
+              ),
+              _chartCard(
+                'Rendimento por grupo (8 semanas)',
+                _subtitleMuscleScorePie,
+                _studentId == null
+                    ? _selectStudentPlaceholder(
+                        hint: 'rendimento por grupo muscular',
+                      )
+                    : MuscleGroupScorePieChart(
                         studentId: _studentId!,
                         repo: repo,
                       ),
@@ -173,6 +185,53 @@ class _PerformancePageState extends State<PerformancePage> {
     );
   }
 
+  Widget _studentDropdown(
+    AsyncSnapshot<List<StudentEntity>> snap,
+    AppDataRepository repo,
+  ) {
+              final students = snap.data ?? [];
+              final waitingFirstStudents =
+                  snap.connectionState == ConnectionState.waiting &&
+                  !snap.hasData;
+
+              if (_studentId != null &&
+                  students.isNotEmpty &&
+                  !students.any((s) => s.id == _studentId)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _studentId = null);
+                });
+              }
+              if (_studentId != null && students.isEmpty && snap.hasData) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _studentId = null);
+                });
+              }
+              if (_studentId != null &&
+                  students.isEmpty &&
+                  waitingFirstStudents) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ModernLoadingIndicator(size: 28),
+                  ),
+                );
+              }
+
+              final dropdownValue =
+                  _studentId != null && students.any((s) => s.id == _studentId)
+                  ? _studentId
+                  : null;
+
+    return PlanningFuturisticStudentSelector(
+      key: ValueKey('aluno_${dropdownValue ?? 'none'}'),
+      students: students,
+      selectedId: dropdownValue,
+      enabled: students.isNotEmpty,
+      onChanged: (v) => setState(() => _studentId = v),
+    );
+  }
+
   static const _subtitleRendimento =
       'Score por minuto ativo = soma dos scores dos exercícios ÷ tempo de treino em minutos.';
 
@@ -181,6 +240,12 @@ class _PerformancePageState extends State<PerformancePage> {
 
   static const _subtitleGroups4Weeks =
       'Para cada grupo de treino usado no calendário, o melhor score por minuto entre as sessões concluídas nos últimos 28 dias. Barras ordenadas do maior para o menor (até 15 grupos).';
+
+  static const _subtitleMuscleVolumePie =
+      'Treinos concluídos nos últimos ${kMusclePieWindowDays ~/ 7} semanas: participação de cada grupo muscular no número total de exercícios registrados por treino.';
+
+  static const _subtitleMuscleScorePie =
+      'Mesma janela de 8 semanas: participação de cada grupo na soma dos scores das linhas (mesma base do relatório).';
 
   Widget _selectStudentPlaceholder({String hint = 'os gráficos'}) {
     return Center(
@@ -242,9 +307,19 @@ class _PerformancePageState extends State<PerformancePage> {
     required AppDataRepository repo,
     required String studentId,
   }) async {
+    final session = context.read<AppSession>();
     final student = await repo.getStudentById(studentId);
+    PersonalEntity? personal;
+    if (session.personalId != null) {
+      personal = await repo.getPersonalById(session.personalId!);
+    }
     if (!context.mounted) return;
     final studentName = student?.name ?? 'Aluno';
+    final useAi = PermissionService(
+      session: session,
+      student: student,
+      personal: personal,
+    ).canUseAiTrainingReports;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -254,6 +329,7 @@ class _PerformancePageState extends State<PerformancePage> {
           repo: repo,
           studentId: studentId,
           studentName: studentName,
+          useAiEnrichment: useAi,
         ),
       ),
     );
@@ -276,7 +352,7 @@ class _PerformancePageState extends State<PerformancePage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => KeyboardAvoidingDialog(
-        child: _AnamneseQuizDialog(
+        child: AnamneseQuizDialog(
           repo: repo,
           studentId: studentId,
           studentName: studentName,
@@ -306,20 +382,13 @@ class _RendimentoChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<({DateTime completedAt, double scorePerMinute})>>(
+    return FutureBuilder<List<({DateTime day, double scorePerMinute})>>(
       key: ValueKey(studentId),
-      future: repo.lastCompletedWorkoutRendimentoSeries(studentId: studentId),
+      future: repo.last7DaysRendimentoDailySeries(studentId: studentId),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
-            child: SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
-                color: AppColors.accentGreen,
-              ),
-            ),
+            child: ModernLoadingIndicator(size: 28),
           );
         }
         if (snap.hasError) {
@@ -413,7 +482,7 @@ class _RendimentoChart extends StatelessWidget {
                     return Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        dateFmt.format(points[i].completedAt),
+                        dateFmt.format(points[i].day),
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 10,
@@ -455,7 +524,7 @@ class _RendimentoChart extends StatelessWidget {
                     if (i < 0 || i >= points.length) return null;
                     final p = points[i];
                     return LineTooltipItem(
-                      '${dateFmt.format(p.completedAt)}\n'
+                      '${dateFmt.format(p.day)}\n'
                       '${_fmtY(p.scorePerMinute)} / min',
                       const TextStyle(
                         color: Colors.white,
@@ -496,14 +565,7 @@ class _StreakIncreasesChart extends StatelessWidget {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
-            child: SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
-                color: AppColors.accentPink,
-              ),
-            ),
+            child: ModernLoadingIndicator(size: 28),
           );
         }
         if (snap.hasError) {
@@ -678,14 +740,7 @@ class _WorkoutGroupsBest4WeeksChart extends StatelessWidget {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
-            child: SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
-                color: AppColors.splashMint,
-              ),
-            ),
+            child: ModernLoadingIndicator(size: 28),
           );
         }
         if (snap.hasError) {
@@ -1298,24 +1353,31 @@ const List<_AnamneseQuestion> _kAnamneseQuestions = [
   ),
 ];
 
-class _AnamneseQuizDialog extends StatefulWidget {
-  const _AnamneseQuizDialog({
+class AnamneseQuizDialog extends StatefulWidget {
+  const AnamneseQuizDialog({
+    super.key,
     required this.repo,
     required this.studentId,
     required this.studentName,
     required this.initialAnswers,
+    this.mandatory = false,
+    this.embedded = false,
   });
 
   final AppDataRepository repo;
   final String studentId;
   final String studentName;
   final Map<String, String> initialAnswers;
+  /// Sem botão cancelar; uso no bloqueio de primeiro acesso.
+  final bool mandatory;
+  /// Layout em página cheia (sem [Dialog]).
+  final bool embedded;
 
   @override
-  State<_AnamneseQuizDialog> createState() => _AnamneseQuizDialogState();
+  State<AnamneseQuizDialog> createState() => AnamneseQuizDialogState();
 }
 
-class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
+class AnamneseQuizDialogState extends State<AnamneseQuizDialog> {
   final Map<String, String> _answers = {};
   final Map<String, TextEditingController> _textControllers = {};
   var _index = 0;
@@ -1436,7 +1498,11 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
         answers: _answers,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      if (widget.embedded) {
+        // Página cheia: estado vem do [watchStudentById] no shell.
+      } else {
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1688,36 +1754,30 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
             24)
         .clamp(280.0, 2000.0);
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      alignment: Alignment.topCenter,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 520, maxHeight: maxDialogHeight),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0D1328),
-                  Color(0xFF1A1030),
-                  Color(0xFF0B1C2E),
-                ],
-              ),
-              border: Border.all(
-                color: AppColors.accentPink.withValues(alpha: 0.42),
-              ),
-            ),
-            child: SingleChildScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+    final panel = ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF0D1328),
+              Color(0xFF1A1030),
+              Color(0xFF0B1C2E),
+            ],
+          ),
+          border: Border.all(
+            color: AppColors.accentPink.withValues(alpha: 0.42),
+          ),
+        ),
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
                   Row(
                     children: [
                       const Icon(
@@ -1783,13 +1843,15 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      TextButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.of(context).pop(false),
-                        child: const Text('Cancelar quiz'),
-                      ),
-                      const Spacer(),
+                      if (!widget.mandatory)
+                        TextButton(
+                          onPressed: _saving
+                              ? null
+                              : () => Navigator.of(context).pop(false),
+                          child: const Text('Cancelar quiz'),
+                        ),
+                      if (!widget.mandatory) const Spacer(),
+                      if (widget.mandatory) const Spacer(),
                       if (_index > 0)
                         OutlinedButton(
                           onPressed: _saving
@@ -1801,13 +1863,7 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
                       ElevatedButton.icon(
                         onPressed: _saving ? null : _next,
                         icon: _saving
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
+                            ? ModernLoadingIndicator(size: 18)
                             : Icon(
                                 _index == total - 1
                                     ? Icons.check_rounded
@@ -1823,7 +1879,22 @@ class _AnamneseQuizDialogState extends State<_AnamneseQuizDialog> {
               ),
             ),
           ),
-        ),
+    );
+
+    if (widget.embedded) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxDialogHeight),
+        child: panel,
+      );
+    }
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      alignment: Alignment.topCenter,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 520, maxHeight: maxDialogHeight),
+        child: panel,
       ),
     );
   }
@@ -1852,11 +1923,13 @@ class _PerformanceReportSheet extends StatefulWidget {
     required this.repo,
     required this.studentId,
     required this.studentName,
+    this.useAiEnrichment = true,
   });
 
   final AppDataRepository repo;
   final String studentId;
   final String studentName;
+  final bool useAiEnrichment;
 
   @override
   State<_PerformanceReportSheet> createState() =>
@@ -1945,14 +2018,17 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
         final performed = DayWorkoutPerformedSetCodec.decode(
           line.performedSetsJson,
         );
-        final performedScore = DayWorkoutPerformedSetCodec.totalVolumeScore(
+        final performedScore = DayWorkoutPerformedSetCodec.totalExerciseScore(
           performed,
         );
-        final score =
-            line.exerciseScore ??
+        final score = line.exerciseScore ??
             (performedScore > 0
                 ? performedScore
-                : (line.sets * line.reps * (line.loadKg ?? 0)));
+                : scoring.prescribedExerciseLineScore(
+                    sets: line.sets,
+                    loadKg: line.loadKg ?? 0,
+                    reps: line.reps,
+                  ));
         workoutScore += score;
         lineScores[line.id] = score;
       }
@@ -2177,6 +2253,43 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
     doc.write(PerformanceReportSpanStyle.body, '\n');
     doc.writeln(
       PerformanceReportSpanStyle.sectionHeading,
+      '5b. Grupos musculares (distribuição no período)',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      'Pizza de volume: participação de cada grupo no número total de exercícios '
+      'registrados nos treinos concluídos (linhas no dia).',
+    );
+    doc.writeln(
+      PerformanceReportSpanStyle.body,
+      'Pizza de rendimento: participação de cada grupo na soma dos scores das linhas '
+      '(mesma base de cálculo das seções anteriores).',
+    );
+    final pieSlices = aggregateMuscleGroupPieSlices(
+      snapshots,
+      exerciseById,
+      muscleById,
+    );
+    if (pieSlices.isEmpty) {
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Sem dados agregados por grupo muscular neste período.',
+      );
+    } else {
+      doc.writeln(PerformanceReportSpanStyle.body, '- Volume (detalhe):');
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        formatPieSlicesForReport(pieSlices, byVolume: true),
+      );
+      doc.writeln(PerformanceReportSpanStyle.body, '- Rendimento (detalhe):');
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        formatPieSlicesForReport(pieSlices, byVolume: false),
+      );
+    }
+    doc.write(PerformanceReportSpanStyle.body, '\n');
+    doc.writeln(
+      PerformanceReportSpanStyle.sectionHeading,
       '6. Ordem de execução vs planejamento',
     );
     doc.writeln(
@@ -2320,24 +2433,22 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
         );
       }
 
-      doc.write(PerformanceReportSpanStyle.body, '\n');
-      doc.writeln(
-        PerformanceReportSpanStyle.sectionHeading,
-        'Respostas na última anamnese',
+      appendLatestAnamneseFullInventoryForAi(
+        doc,
+        answers: latestAnamnese.answers,
+        questionPromptsInOrder: _kAnamneseQuestions.map((q) => q.prompt).toList(),
       );
-      for (final q in _kAnamneseQuestions) {
-        final v = (latestAnamnese.answers[q.prompt] ?? '').trim();
-        if (v.isEmpty) continue;
-        doc.write(PerformanceReportSpanStyle.anamneseQuestion, 'Pergunta: ');
-        doc.writeln(PerformanceReportSpanStyle.anamneseQuestion, q.prompt);
-        doc.write(PerformanceReportSpanStyle.anamneseAnswer, 'Resposta: ');
-        doc.writeln(PerformanceReportSpanStyle.anamneseAnswer, v);
-        doc.write(PerformanceReportSpanStyle.body, '\n');
-      }
 
       final muscleNamesById = {
         for (final m in muscles) m.id: m.name,
       };
+      final completedWorkoutLocalDays = <DateTime>{};
+      for (final s in snapshots) {
+        final d = s.workout.dayDate;
+        completedWorkoutLocalDays.add(DateTime(d.year, d.month, d.day));
+      }
+      final completedWorkoutLocalDaysSorted =
+          completedWorkoutLocalDays.toList()..sort();
       appendTrainingVsAnamneseAnalysis(
         doc,
         latestAnswers: latestAnamnese.answers,
@@ -2350,6 +2461,8 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
         bestGroups: bestGroups,
         muscleNamesById: muscleNamesById,
         attention: attention,
+        completedWorkoutLocalDaysSortedUnique: completedWorkoutLocalDaysSorted,
+        periodCalendarDays: periodDays,
       );
     } else {
       doc.write(PerformanceReportSpanStyle.body, '\n');
@@ -2395,15 +2508,27 @@ Com base no relatório abaixo, escreva uma seção "Plano de ação recomendado 
 - 5 recomendações objetivas para o personal.
 - ajustes de progressão de carga/repetição.
 - foco nos exercícios e grupos de atenção.
+- use obrigatoriamente a secção "5b. Grupos musculares (distribuição no período)" para comentar desequilíbrios entre volume e rendimento por grupo (ex.: muito volume e pouco score, ou o contrário) e sugerir rebalanceamento semanal.
 - linguagem profissional e direta.
-- leve em conta objetivos, prazo e respostas da anamnese quando fizer sentido.
+
+Obrigatório — análise de adesão à anamnese e aos objetivos:
+- Leia integralmente a secção "7a. Inventário completo — última anamnese" (todas as perguntas e respostas, incluindo «não informado»).
+- Inclua um parágrafo curto "Adesão à anamnese" avaliando se o aluno parece estar a seguir o que declarou: principal objetivo, resultado desejado, motivação, prazo de acompanhamento, dias/semana disponíveis para treinar, parte(s) do corpo a desenvolver, condicionamento e limitações de saúde quando relevantes.
+- Compare explicitamente os dias/semana que o aluno disse poder treinar com a média de treinos concluídos no período e com a secção "7c. Adesão ao calendário" (dias distintos com treino, maior intervalo entre treinos).
+- Comente se existem folgas longas sem treinar que comprometem objetivos ou prazo declarados.
+- Cruze prioridades musculares declaradas com as secções 5, 5b e 7b (volume/rendimento por grupo): diga se o treino reflete o que o aluno quer desenvolver e o prazo que indicou.
 
 Relatório:
 $baseReport
 ''';
-    final aiSection = await FreeAiTrainingReportService.enrichReport(
-      prompt: aiPrompt,
-    );
+    final String? aiSection;
+    if (widget.useAiEnrichment) {
+      aiSection = await FreeAiTrainingReportService.enrichReport(
+        prompt: aiPrompt,
+      );
+    } else {
+      aiSection = null;
+    }
     if (aiSection == null || aiSection.trim().isEmpty) {
       doc.write(PerformanceReportSpanStyle.body, '\n');
       doc.writeln(
@@ -2420,7 +2545,7 @@ $baseReport
       );
       doc.writeln(
         PerformanceReportSpanStyle.body,
-        '- Inserir 1 bloco extra para grupos musculares com menor score médio.',
+        '- Comparar as pizzas da secção 5b (volume vs score por grupo) e corrigir desequilíbrios na semana.',
       );
       doc.writeln(
         PerformanceReportSpanStyle.body,
@@ -2429,6 +2554,11 @@ $baseReport
       doc.writeln(
         PerformanceReportSpanStyle.body,
         '- Revisar semanalmente o score/min e o gasto calórico estimado para ajuste fino.',
+      );
+      doc.writeln(
+        PerformanceReportSpanStyle.body,
+        '- Cruzar secções 7a–7c (anamnese completa, objetivos e adesão ao calendário) com a '
+        'frequência real e prioridades musculares treinadas.',
       );
       return doc;
     }
@@ -2530,10 +2660,8 @@ $baseReport
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: _loading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.splashMint,
-                        ),
+                    ? Center(
+                        child: ModernLoadingIndicator(size: 56),
                       )
                     : _error != null
                     ? Center(

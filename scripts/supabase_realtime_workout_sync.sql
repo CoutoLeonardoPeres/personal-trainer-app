@@ -1,0 +1,34 @@
+-- Realtime para manter treinos sincronizados entre aluno e personal/admin.
+-- Execute no SQL Editor do Supabase.
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_rel pr
+    join pg_class c on c.oid = pr.prrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_publication p on p.oid = pr.prpubid
+    where p.pubname = 'supabase_realtime'
+      and n.nspname = 'public'
+      and c.relname = 'day_workouts'
+  ) then
+    alter publication supabase_realtime add table public.day_workouts;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_rel pr
+    join pg_class c on c.oid = pr.prrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_publication p on p.oid = pr.prpubid
+    where p.pubname = 'supabase_realtime'
+      and n.nspname = 'public'
+      and c.relname = 'day_workout_exercises'
+  ) then
+    alter publication supabase_realtime add table public.day_workout_exercises;
+  end if;
+end $$;

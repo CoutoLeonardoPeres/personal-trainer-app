@@ -1707,6 +1707,29 @@ class $PersonalsTable extends Personals
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _accessTierMeta = const VerificationMeta(
+    'accessTier',
+  );
+  @override
+  late final GeneratedColumn<String> accessTier = GeneratedColumn<String>(
+    'access_tier',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('legacy'),
+  );
+  static const VerificationMeta _maxStudentsCapMeta = const VerificationMeta(
+    'maxStudentsCap',
+  );
+  @override
+  late final GeneratedColumn<int> maxStudentsCap = GeneratedColumn<int>(
+    'max_students_cap',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1749,6 +1772,8 @@ class $PersonalsTable extends Personals
     mustChangePassword,
     passwordHash,
     isAdmin,
+    accessTier,
+    maxStudentsCap,
     createdAt,
     updatedAt,
   ];
@@ -1890,6 +1915,21 @@ class $PersonalsTable extends Personals
         isAdmin.isAcceptableOrUnknown(data['is_admin']!, _isAdminMeta),
       );
     }
+    if (data.containsKey('access_tier')) {
+      context.handle(
+        _accessTierMeta,
+        accessTier.isAcceptableOrUnknown(data['access_tier']!, _accessTierMeta),
+      );
+    }
+    if (data.containsKey('max_students_cap')) {
+      context.handle(
+        _maxStudentsCapMeta,
+        maxStudentsCap.isAcceptableOrUnknown(
+          data['max_students_cap']!,
+          _maxStudentsCapMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1975,6 +2015,14 @@ class $PersonalsTable extends Personals
         DriftSqlType.bool,
         data['${effectivePrefix}is_admin'],
       )!,
+      accessTier: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}access_tier'],
+      )!,
+      maxStudentsCap: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}max_students_cap'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -2011,6 +2059,12 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
 
   /// Acesso total aos dados de todos os alunos (calendário, planejamento, cadastro).
   final bool isAdmin;
+
+  /// Plano / perfil comercial (RBAC). `legacy` = comportamento anterior ao controle fino.
+  final String accessTier;
+
+  /// Limite de alunos (personal starter/pro). Null = ilimitado (legacy / pro+).
+  final int? maxStudentsCap;
   final DateTime createdAt;
   final DateTime updatedAt;
   const PersonalEntity({
@@ -2030,6 +2084,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     required this.mustChangePassword,
     this.passwordHash,
     required this.isAdmin,
+    required this.accessTier,
+    this.maxStudentsCap,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -2062,6 +2118,10 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       map['password_hash'] = Variable<String>(passwordHash);
     }
     map['is_admin'] = Variable<bool>(isAdmin);
+    map['access_tier'] = Variable<String>(accessTier);
+    if (!nullToAbsent || maxStudentsCap != null) {
+      map['max_students_cap'] = Variable<int>(maxStudentsCap);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -2093,6 +2153,10 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ? const Value.absent()
           : Value(passwordHash),
       isAdmin: Value(isAdmin),
+      accessTier: Value(accessTier),
+      maxStudentsCap: maxStudentsCap == null && nullToAbsent
+          ? const Value.absent()
+          : Value(maxStudentsCap),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -2122,6 +2186,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       mustChangePassword: serializer.fromJson<bool>(json['mustChangePassword']),
       passwordHash: serializer.fromJson<String?>(json['passwordHash']),
       isAdmin: serializer.fromJson<bool>(json['isAdmin']),
+      accessTier: serializer.fromJson<String>(json['accessTier']),
+      maxStudentsCap: serializer.fromJson<int?>(json['maxStudentsCap']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -2146,6 +2212,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
       'passwordHash': serializer.toJson<String?>(passwordHash),
       'isAdmin': serializer.toJson<bool>(isAdmin),
+      'accessTier': serializer.toJson<String>(accessTier),
+      'maxStudentsCap': serializer.toJson<int?>(maxStudentsCap),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -2168,6 +2236,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     bool? mustChangePassword,
     Value<String?> passwordHash = const Value.absent(),
     bool? isAdmin,
+    String? accessTier,
+    Value<int?> maxStudentsCap = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => PersonalEntity(
@@ -2189,6 +2259,10 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
     passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
     isAdmin: isAdmin ?? this.isAdmin,
+    accessTier: accessTier ?? this.accessTier,
+    maxStudentsCap: maxStudentsCap.present
+        ? maxStudentsCap.value
+        : this.maxStudentsCap,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -2222,6 +2296,12 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ? data.passwordHash.value
           : this.passwordHash,
       isAdmin: data.isAdmin.present ? data.isAdmin.value : this.isAdmin,
+      accessTier: data.accessTier.present
+          ? data.accessTier.value
+          : this.accessTier,
+      maxStudentsCap: data.maxStudentsCap.present
+          ? data.maxStudentsCap.value
+          : this.maxStudentsCap,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -2246,6 +2326,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
           ..write('isAdmin: $isAdmin, ')
+          ..write('accessTier: $accessTier, ')
+          ..write('maxStudentsCap: $maxStudentsCap, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -2270,6 +2352,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     mustChangePassword,
     passwordHash,
     isAdmin,
+    accessTier,
+    maxStudentsCap,
     createdAt,
     updatedAt,
   );
@@ -2293,6 +2377,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           other.mustChangePassword == this.mustChangePassword &&
           other.passwordHash == this.passwordHash &&
           other.isAdmin == this.isAdmin &&
+          other.accessTier == this.accessTier &&
+          other.maxStudentsCap == this.maxStudentsCap &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -2314,6 +2400,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
   final Value<bool> mustChangePassword;
   final Value<String?> passwordHash;
   final Value<bool> isAdmin;
+  final Value<String> accessTier;
+  final Value<int?> maxStudentsCap;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -2334,6 +2422,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
     this.isAdmin = const Value.absent(),
+    this.accessTier = const Value.absent(),
+    this.maxStudentsCap = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2355,6 +2445,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
     this.isAdmin = const Value.absent(),
+    this.accessTier = const Value.absent(),
+    this.maxStudentsCap = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2384,6 +2476,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Expression<bool>? mustChangePassword,
     Expression<String>? passwordHash,
     Expression<bool>? isAdmin,
+    Expression<String>? accessTier,
+    Expression<int>? maxStudentsCap,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -2407,6 +2501,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
         'must_change_password': mustChangePassword,
       if (passwordHash != null) 'password_hash': passwordHash,
       if (isAdmin != null) 'is_admin': isAdmin,
+      if (accessTier != null) 'access_tier': accessTier,
+      if (maxStudentsCap != null) 'max_students_cap': maxStudentsCap,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -2430,6 +2526,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Value<bool>? mustChangePassword,
     Value<String?>? passwordHash,
     Value<bool>? isAdmin,
+    Value<String>? accessTier,
+    Value<int?>? maxStudentsCap,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -2451,6 +2549,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       passwordHash: passwordHash ?? this.passwordHash,
       isAdmin: isAdmin ?? this.isAdmin,
+      accessTier: accessTier ?? this.accessTier,
+      maxStudentsCap: maxStudentsCap ?? this.maxStudentsCap,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -2510,6 +2610,12 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     if (isAdmin.present) {
       map['is_admin'] = Variable<bool>(isAdmin.value);
     }
+    if (accessTier.present) {
+      map['access_tier'] = Variable<String>(accessTier.value);
+    }
+    if (maxStudentsCap.present) {
+      map['max_students_cap'] = Variable<int>(maxStudentsCap.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2541,6 +2647,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
           ..write('isAdmin: $isAdmin, ')
+          ..write('accessTier: $accessTier, ')
+          ..write('maxStudentsCap: $maxStudentsCap, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -2572,6 +2680,32 @@ class $StudentsTable extends Students
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isArchivedMeta = const VerificationMeta(
+    'isArchived',
+  );
+  @override
+  late final GeneratedColumn<bool> isArchived = GeneratedColumn<bool>(
+    'is_archived',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_archived" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _archivedAtMeta = const VerificationMeta(
+    'archivedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> archivedAt = GeneratedColumn<DateTime>(
+    'archived_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _emailMeta = const VerificationMeta('email');
   @override
@@ -2741,6 +2875,44 @@ class $StudentsTable extends Students
           'REFERENCES personals (id)',
         ),
       );
+  static const VerificationMeta _anamneseCompletedMeta = const VerificationMeta(
+    'anamneseCompleted',
+  );
+  @override
+  late final GeneratedColumn<bool> anamneseCompleted = GeneratedColumn<bool>(
+    'anamnese_completed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("anamnese_completed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _accessTierMeta = const VerificationMeta(
+    'accessTier',
+  );
+  @override
+  late final GeneratedColumn<String> accessTier = GeneratedColumn<String>(
+    'access_tier',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('legacy'),
+  );
+  static const VerificationMeta _premiumPlanExpiresAtMeta =
+      const VerificationMeta('premiumPlanExpiresAt');
+  @override
+  late final GeneratedColumn<DateTime> premiumPlanExpiresAt =
+      GeneratedColumn<DateTime>(
+        'premium_plan_expires_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -2769,6 +2941,8 @@ class $StudentsTable extends Students
   List<GeneratedColumn> get $columns => [
     id,
     name,
+    isArchived,
+    archivedAt,
     email,
     goal,
     cpf,
@@ -2785,6 +2959,9 @@ class $StudentsTable extends Students
     mustChangePassword,
     passwordHash,
     createdByPersonalId,
+    anamneseCompleted,
+    accessTier,
+    premiumPlanExpiresAt,
     createdAt,
     updatedAt,
   ];
@@ -2812,6 +2989,18 @@ class $StudentsTable extends Students
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('is_archived')) {
+      context.handle(
+        _isArchivedMeta,
+        isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
+      );
+    }
+    if (data.containsKey('archived_at')) {
+      context.handle(
+        _archivedAtMeta,
+        archivedAt.isAcceptableOrUnknown(data['archived_at']!, _archivedAtMeta),
+      );
     }
     if (data.containsKey('email')) {
       context.handle(
@@ -2924,6 +3113,30 @@ class $StudentsTable extends Students
         ),
       );
     }
+    if (data.containsKey('anamnese_completed')) {
+      context.handle(
+        _anamneseCompletedMeta,
+        anamneseCompleted.isAcceptableOrUnknown(
+          data['anamnese_completed']!,
+          _anamneseCompletedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('access_tier')) {
+      context.handle(
+        _accessTierMeta,
+        accessTier.isAcceptableOrUnknown(data['access_tier']!, _accessTierMeta),
+      );
+    }
+    if (data.containsKey('premium_plan_expires_at')) {
+      context.handle(
+        _premiumPlanExpiresAtMeta,
+        premiumPlanExpiresAt.isAcceptableOrUnknown(
+          data['premium_plan_expires_at']!,
+          _premiumPlanExpiresAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2953,6 +3166,14 @@ class $StudentsTable extends Students
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      isArchived: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_archived'],
+      )!,
+      archivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}archived_at'],
+      ),
       email: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}email'],
@@ -3017,6 +3238,18 @@ class $StudentsTable extends Students
         DriftSqlType.string,
         data['${effectivePrefix}created_by_personal_id'],
       ),
+      anamneseCompleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}anamnese_completed'],
+      )!,
+      accessTier: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}access_tier'],
+      )!,
+      premiumPlanExpiresAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}premium_plan_expires_at'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -3037,6 +3270,8 @@ class $StudentsTable extends Students
 class StudentEntity extends DataClass implements Insertable<StudentEntity> {
   final String id;
   final String name;
+  final bool isArchived;
+  final DateTime? archivedAt;
   final String? email;
   final String? goal;
   final String? cpf;
@@ -3057,11 +3292,22 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
 
   /// Personal que cadastrou o aluno — visibilidade dos dados (com admin e o próprio aluno).
   final String? createdByPersonalId;
+
+  /// Obrigatório para alunos com perfil comercial (free/basic/premium); `true` libera o app.
+  final bool anamneseCompleted;
+
+  /// Plano aluno (RBAC). `legacy` = sem restrições do novo modelo.
+  final String accessTier;
+
+  /// Fim do período premium (trial ou assinatura); após esta data o app faz downgrade local para standard.
+  final DateTime? premiumPlanExpiresAt;
   final DateTime createdAt;
   final DateTime updatedAt;
   const StudentEntity({
     required this.id,
     required this.name,
+    required this.isArchived,
+    this.archivedAt,
     this.email,
     this.goal,
     this.cpf,
@@ -3078,6 +3324,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     required this.mustChangePassword,
     this.passwordHash,
     this.createdByPersonalId,
+    required this.anamneseCompleted,
+    required this.accessTier,
+    this.premiumPlanExpiresAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -3086,6 +3335,10 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
+    map['is_archived'] = Variable<bool>(isArchived);
+    if (!nullToAbsent || archivedAt != null) {
+      map['archived_at'] = Variable<DateTime>(archivedAt);
+    }
     if (!nullToAbsent || email != null) {
       map['email'] = Variable<String>(email);
     }
@@ -3132,6 +3385,11 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     if (!nullToAbsent || createdByPersonalId != null) {
       map['created_by_personal_id'] = Variable<String>(createdByPersonalId);
     }
+    map['anamnese_completed'] = Variable<bool>(anamneseCompleted);
+    map['access_tier'] = Variable<String>(accessTier);
+    if (!nullToAbsent || premiumPlanExpiresAt != null) {
+      map['premium_plan_expires_at'] = Variable<DateTime>(premiumPlanExpiresAt);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -3141,6 +3399,10 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     return StudentsCompanion(
       id: Value(id),
       name: Value(name),
+      isArchived: Value(isArchived),
+      archivedAt: archivedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(archivedAt),
       email: email == null && nullToAbsent
           ? const Value.absent()
           : Value(email),
@@ -3179,6 +3441,11 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       createdByPersonalId: createdByPersonalId == null && nullToAbsent
           ? const Value.absent()
           : Value(createdByPersonalId),
+      anamneseCompleted: Value(anamneseCompleted),
+      accessTier: Value(accessTier),
+      premiumPlanExpiresAt: premiumPlanExpiresAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(premiumPlanExpiresAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -3192,6 +3459,8 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     return StudentEntity(
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
+      isArchived: serializer.fromJson<bool>(json['isArchived']),
+      archivedAt: serializer.fromJson<DateTime?>(json['archivedAt']),
       email: serializer.fromJson<String?>(json['email']),
       goal: serializer.fromJson<String?>(json['goal']),
       cpf: serializer.fromJson<String?>(json['cpf']),
@@ -3210,6 +3479,11 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       createdByPersonalId: serializer.fromJson<String?>(
         json['createdByPersonalId'],
       ),
+      anamneseCompleted: serializer.fromJson<bool>(json['anamneseCompleted']),
+      accessTier: serializer.fromJson<String>(json['accessTier']),
+      premiumPlanExpiresAt: serializer.fromJson<DateTime?>(
+        json['premiumPlanExpiresAt'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -3220,6 +3494,8 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
+      'isArchived': serializer.toJson<bool>(isArchived),
+      'archivedAt': serializer.toJson<DateTime?>(archivedAt),
       'email': serializer.toJson<String?>(email),
       'goal': serializer.toJson<String?>(goal),
       'cpf': serializer.toJson<String?>(cpf),
@@ -3236,6 +3512,11 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
       'passwordHash': serializer.toJson<String?>(passwordHash),
       'createdByPersonalId': serializer.toJson<String?>(createdByPersonalId),
+      'anamneseCompleted': serializer.toJson<bool>(anamneseCompleted),
+      'accessTier': serializer.toJson<String>(accessTier),
+      'premiumPlanExpiresAt': serializer.toJson<DateTime?>(
+        premiumPlanExpiresAt,
+      ),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -3244,6 +3525,8 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
   StudentEntity copyWith({
     String? id,
     String? name,
+    bool? isArchived,
+    Value<DateTime?> archivedAt = const Value.absent(),
     Value<String?> email = const Value.absent(),
     Value<String?> goal = const Value.absent(),
     Value<String?> cpf = const Value.absent(),
@@ -3260,11 +3543,16 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     bool? mustChangePassword,
     Value<String?> passwordHash = const Value.absent(),
     Value<String?> createdByPersonalId = const Value.absent(),
+    bool? anamneseCompleted,
+    String? accessTier,
+    Value<DateTime?> premiumPlanExpiresAt = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => StudentEntity(
     id: id ?? this.id,
     name: name ?? this.name,
+    isArchived: isArchived ?? this.isArchived,
+    archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
     email: email.present ? email.value : this.email,
     goal: goal.present ? goal.value : this.goal,
     cpf: cpf.present ? cpf.value : this.cpf,
@@ -3285,6 +3573,11 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     createdByPersonalId: createdByPersonalId.present
         ? createdByPersonalId.value
         : this.createdByPersonalId,
+    anamneseCompleted: anamneseCompleted ?? this.anamneseCompleted,
+    accessTier: accessTier ?? this.accessTier,
+    premiumPlanExpiresAt: premiumPlanExpiresAt.present
+        ? premiumPlanExpiresAt.value
+        : this.premiumPlanExpiresAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -3292,6 +3585,12 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     return StudentEntity(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
+      isArchived: data.isArchived.present
+          ? data.isArchived.value
+          : this.isArchived,
+      archivedAt: data.archivedAt.present
+          ? data.archivedAt.value
+          : this.archivedAt,
       email: data.email.present ? data.email.value : this.email,
       goal: data.goal.present ? data.goal.value : this.goal,
       cpf: data.cpf.present ? data.cpf.value : this.cpf,
@@ -3320,6 +3619,15 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       createdByPersonalId: data.createdByPersonalId.present
           ? data.createdByPersonalId.value
           : this.createdByPersonalId,
+      anamneseCompleted: data.anamneseCompleted.present
+          ? data.anamneseCompleted.value
+          : this.anamneseCompleted,
+      accessTier: data.accessTier.present
+          ? data.accessTier.value
+          : this.accessTier,
+      premiumPlanExpiresAt: data.premiumPlanExpiresAt.present
+          ? data.premiumPlanExpiresAt.value
+          : this.premiumPlanExpiresAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -3330,6 +3638,8 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     return (StringBuffer('StudentEntity(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('isArchived: $isArchived, ')
+          ..write('archivedAt: $archivedAt, ')
           ..write('email: $email, ')
           ..write('goal: $goal, ')
           ..write('cpf: $cpf, ')
@@ -3346,6 +3656,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
           ..write('createdByPersonalId: $createdByPersonalId, ')
+          ..write('anamneseCompleted: $anamneseCompleted, ')
+          ..write('accessTier: $accessTier, ')
+          ..write('premiumPlanExpiresAt: $premiumPlanExpiresAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -3353,9 +3666,11 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     name,
+    isArchived,
+    archivedAt,
     email,
     goal,
     cpf,
@@ -3372,15 +3687,20 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     mustChangePassword,
     passwordHash,
     createdByPersonalId,
+    anamneseCompleted,
+    accessTier,
+    premiumPlanExpiresAt,
     createdAt,
     updatedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is StudentEntity &&
           other.id == this.id &&
           other.name == this.name &&
+          other.isArchived == this.isArchived &&
+          other.archivedAt == this.archivedAt &&
           other.email == this.email &&
           other.goal == this.goal &&
           other.cpf == this.cpf &&
@@ -3397,6 +3717,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           other.mustChangePassword == this.mustChangePassword &&
           other.passwordHash == this.passwordHash &&
           other.createdByPersonalId == this.createdByPersonalId &&
+          other.anamneseCompleted == this.anamneseCompleted &&
+          other.accessTier == this.accessTier &&
+          other.premiumPlanExpiresAt == this.premiumPlanExpiresAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -3404,6 +3727,8 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
 class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   final Value<String> id;
   final Value<String> name;
+  final Value<bool> isArchived;
+  final Value<DateTime?> archivedAt;
   final Value<String?> email;
   final Value<String?> goal;
   final Value<String?> cpf;
@@ -3420,12 +3745,17 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   final Value<bool> mustChangePassword;
   final Value<String?> passwordHash;
   final Value<String?> createdByPersonalId;
+  final Value<bool> anamneseCompleted;
+  final Value<String> accessTier;
+  final Value<DateTime?> premiumPlanExpiresAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const StudentsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
+    this.isArchived = const Value.absent(),
+    this.archivedAt = const Value.absent(),
     this.email = const Value.absent(),
     this.goal = const Value.absent(),
     this.cpf = const Value.absent(),
@@ -3442,6 +3772,9 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
     this.createdByPersonalId = const Value.absent(),
+    this.anamneseCompleted = const Value.absent(),
+    this.accessTier = const Value.absent(),
+    this.premiumPlanExpiresAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3449,6 +3782,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   StudentsCompanion.insert({
     required String id,
     required String name,
+    this.isArchived = const Value.absent(),
+    this.archivedAt = const Value.absent(),
     this.email = const Value.absent(),
     this.goal = const Value.absent(),
     this.cpf = const Value.absent(),
@@ -3465,6 +3800,9 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     this.mustChangePassword = const Value.absent(),
     this.passwordHash = const Value.absent(),
     this.createdByPersonalId = const Value.absent(),
+    this.anamneseCompleted = const Value.absent(),
+    this.accessTier = const Value.absent(),
+    this.premiumPlanExpiresAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3473,6 +3811,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   static Insertable<StudentEntity> custom({
     Expression<String>? id,
     Expression<String>? name,
+    Expression<bool>? isArchived,
+    Expression<DateTime>? archivedAt,
     Expression<String>? email,
     Expression<String>? goal,
     Expression<String>? cpf,
@@ -3489,6 +3829,9 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     Expression<bool>? mustChangePassword,
     Expression<String>? passwordHash,
     Expression<String>? createdByPersonalId,
+    Expression<bool>? anamneseCompleted,
+    Expression<String>? accessTier,
+    Expression<DateTime>? premiumPlanExpiresAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -3496,6 +3839,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
+      if (isArchived != null) 'is_archived': isArchived,
+      if (archivedAt != null) 'archived_at': archivedAt,
       if (email != null) 'email': email,
       if (goal != null) 'goal': goal,
       if (cpf != null) 'cpf': cpf,
@@ -3514,6 +3859,10 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
       if (passwordHash != null) 'password_hash': passwordHash,
       if (createdByPersonalId != null)
         'created_by_personal_id': createdByPersonalId,
+      if (anamneseCompleted != null) 'anamnese_completed': anamneseCompleted,
+      if (accessTier != null) 'access_tier': accessTier,
+      if (premiumPlanExpiresAt != null)
+        'premium_plan_expires_at': premiumPlanExpiresAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -3523,6 +3872,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   StudentsCompanion copyWith({
     Value<String>? id,
     Value<String>? name,
+    Value<bool>? isArchived,
+    Value<DateTime?>? archivedAt,
     Value<String?>? email,
     Value<String?>? goal,
     Value<String?>? cpf,
@@ -3539,6 +3890,9 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     Value<bool>? mustChangePassword,
     Value<String?>? passwordHash,
     Value<String?>? createdByPersonalId,
+    Value<bool>? anamneseCompleted,
+    Value<String>? accessTier,
+    Value<DateTime?>? premiumPlanExpiresAt,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -3546,6 +3900,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     return StudentsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
+      isArchived: isArchived ?? this.isArchived,
+      archivedAt: archivedAt ?? this.archivedAt,
       email: email ?? this.email,
       goal: goal ?? this.goal,
       cpf: cpf ?? this.cpf,
@@ -3562,6 +3918,9 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       passwordHash: passwordHash ?? this.passwordHash,
       createdByPersonalId: createdByPersonalId ?? this.createdByPersonalId,
+      anamneseCompleted: anamneseCompleted ?? this.anamneseCompleted,
+      accessTier: accessTier ?? this.accessTier,
+      premiumPlanExpiresAt: premiumPlanExpiresAt ?? this.premiumPlanExpiresAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -3576,6 +3935,12 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
+    }
+    if (isArchived.present) {
+      map['is_archived'] = Variable<bool>(isArchived.value);
+    }
+    if (archivedAt.present) {
+      map['archived_at'] = Variable<DateTime>(archivedAt.value);
     }
     if (email.present) {
       map['email'] = Variable<String>(email.value);
@@ -3627,6 +3992,17 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
         createdByPersonalId.value,
       );
     }
+    if (anamneseCompleted.present) {
+      map['anamnese_completed'] = Variable<bool>(anamneseCompleted.value);
+    }
+    if (accessTier.present) {
+      map['access_tier'] = Variable<String>(accessTier.value);
+    }
+    if (premiumPlanExpiresAt.present) {
+      map['premium_plan_expires_at'] = Variable<DateTime>(
+        premiumPlanExpiresAt.value,
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3644,6 +4020,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     return (StringBuffer('StudentsCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('isArchived: $isArchived, ')
+          ..write('archivedAt: $archivedAt, ')
           ..write('email: $email, ')
           ..write('goal: $goal, ')
           ..write('cpf: $cpf, ')
@@ -3660,6 +4038,9 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
           ..write('mustChangePassword: $mustChangePassword, ')
           ..write('passwordHash: $passwordHash, ')
           ..write('createdByPersonalId: $createdByPersonalId, ')
+          ..write('anamneseCompleted: $anamneseCompleted, ')
+          ..write('accessTier: $accessTier, ')
+          ..write('premiumPlanExpiresAt: $premiumPlanExpiresAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -4313,6 +4694,17 @@ class $WorkoutGroupsTable extends WorkoutGroups
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4320,6 +4712,7 @@ class $WorkoutGroupsTable extends WorkoutGroups
     description,
     createdAt,
     updatedAt,
+    deletedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4369,6 +4762,12 @@ class $WorkoutGroupsTable extends WorkoutGroups
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -4398,6 +4797,10 @@ class $WorkoutGroupsTable extends WorkoutGroups
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -4414,12 +4817,17 @@ class WorkoutGroupEntity extends DataClass
   final String description;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Exclusão lógica: não aparece em cadastro/planejamento/agenda futura; permanece no BD
+  /// para nome em histórico (ex.: treino concluído no passado com [DayWorkouts.sourceWorkoutGroupId]).
+  final DateTime? deletedAt;
   const WorkoutGroupEntity({
     required this.id,
     required this.name,
     required this.description,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4429,6 +4837,9 @@ class WorkoutGroupEntity extends DataClass
     map['description'] = Variable<String>(description);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
     return map;
   }
 
@@ -4439,6 +4850,9 @@ class WorkoutGroupEntity extends DataClass
       description: Value(description),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -4453,6 +4867,7 @@ class WorkoutGroupEntity extends DataClass
       description: serializer.fromJson<String>(json['description']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
     );
   }
   @override
@@ -4464,6 +4879,7 @@ class WorkoutGroupEntity extends DataClass
       'description': serializer.toJson<String>(description),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
     };
   }
 
@@ -4473,12 +4889,14 @@ class WorkoutGroupEntity extends DataClass
     String? description,
     DateTime? createdAt,
     DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
   }) => WorkoutGroupEntity(
     id: id ?? this.id,
     name: name ?? this.name,
     description: description ?? this.description,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
   );
   WorkoutGroupEntity copyWithCompanion(WorkoutGroupsCompanion data) {
     return WorkoutGroupEntity(
@@ -4489,6 +4907,7 @@ class WorkoutGroupEntity extends DataClass
           : this.description,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -4499,13 +4918,15 @@ class WorkoutGroupEntity extends DataClass
           ..write('name: $name, ')
           ..write('description: $description, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, description, createdAt, updatedAt);
+  int get hashCode =>
+      Object.hash(id, name, description, createdAt, updatedAt, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4514,7 +4935,8 @@ class WorkoutGroupEntity extends DataClass
           other.name == this.name &&
           other.description == this.description &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt);
 }
 
 class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
@@ -4523,6 +4945,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
   final Value<String> description;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
   final Value<int> rowid;
   const WorkoutGroupsCompanion({
     this.id = const Value.absent(),
@@ -4530,6 +4953,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     this.description = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   WorkoutGroupsCompanion.insert({
@@ -4538,6 +4962,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     required String description,
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -4548,6 +4973,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     Expression<String>? description,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4556,6 +4982,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
       if (description != null) 'description': description,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4566,6 +4993,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     Value<String>? description,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
     Value<int>? rowid,
   }) {
     return WorkoutGroupsCompanion(
@@ -4574,6 +5002,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
       description: description ?? this.description,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4596,6 +5025,9 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4610,6 +5042,7 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
           ..write('description: $description, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -10255,6 +10688,8 @@ typedef $$PersonalsTableCreateCompanionBuilder =
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
       Value<bool> isAdmin,
+      Value<String> accessTier,
+      Value<int?> maxStudentsCap,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -10277,6 +10712,8 @@ typedef $$PersonalsTableUpdateCompanionBuilder =
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
       Value<bool> isAdmin,
+      Value<String> accessTier,
+      Value<int?> maxStudentsCap,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -10393,6 +10830,16 @@ class $$PersonalsTableFilterComposer
 
   ColumnFilters<bool> get isAdmin => $composableBuilder(
     column: $table.isAdmin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get accessTier => $composableBuilder(
+    column: $table.accessTier,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get maxStudentsCap => $composableBuilder(
+    column: $table.maxStudentsCap,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10521,6 +10968,16 @@ class $$PersonalsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get accessTier => $composableBuilder(
+    column: $table.accessTier,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get maxStudentsCap => $composableBuilder(
+    column: $table.maxStudentsCap,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -10601,6 +11058,16 @@ class $$PersonalsTableAnnotationComposer
   GeneratedColumn<bool> get isAdmin =>
       $composableBuilder(column: $table.isAdmin, builder: (column) => column);
 
+  GeneratedColumn<String> get accessTier => $composableBuilder(
+    column: $table.accessTier,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get maxStudentsCap => $composableBuilder(
+    column: $table.maxStudentsCap,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -10677,6 +11144,8 @@ class $$PersonalsTableTableManager
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
                 Value<bool> isAdmin = const Value.absent(),
+                Value<String> accessTier = const Value.absent(),
+                Value<int?> maxStudentsCap = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -10697,6 +11166,8 @@ class $$PersonalsTableTableManager
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
                 isAdmin: isAdmin,
+                accessTier: accessTier,
+                maxStudentsCap: maxStudentsCap,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -10719,6 +11190,8 @@ class $$PersonalsTableTableManager
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
                 Value<bool> isAdmin = const Value.absent(),
+                Value<String> accessTier = const Value.absent(),
+                Value<int?> maxStudentsCap = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -10739,6 +11212,8 @@ class $$PersonalsTableTableManager
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
                 isAdmin: isAdmin,
+                accessTier: accessTier,
+                maxStudentsCap: maxStudentsCap,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -10805,6 +11280,8 @@ typedef $$StudentsTableCreateCompanionBuilder =
     StudentsCompanion Function({
       required String id,
       required String name,
+      Value<bool> isArchived,
+      Value<DateTime?> archivedAt,
       Value<String?> email,
       Value<String?> goal,
       Value<String?> cpf,
@@ -10821,6 +11298,9 @@ typedef $$StudentsTableCreateCompanionBuilder =
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
       Value<String?> createdByPersonalId,
+      Value<bool> anamneseCompleted,
+      Value<String> accessTier,
+      Value<DateTime?> premiumPlanExpiresAt,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -10829,6 +11309,8 @@ typedef $$StudentsTableUpdateCompanionBuilder =
     StudentsCompanion Function({
       Value<String> id,
       Value<String> name,
+      Value<bool> isArchived,
+      Value<DateTime?> archivedAt,
       Value<String?> email,
       Value<String?> goal,
       Value<String?> cpf,
@@ -10845,6 +11327,9 @@ typedef $$StudentsTableUpdateCompanionBuilder =
       Value<bool> mustChangePassword,
       Value<String?> passwordHash,
       Value<String?> createdByPersonalId,
+      Value<bool> anamneseCompleted,
+      Value<String> accessTier,
+      Value<DateTime?> premiumPlanExpiresAt,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -10956,6 +11441,16 @@ class $$StudentsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get archivedAt => $composableBuilder(
+    column: $table.archivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get email => $composableBuilder(
     column: $table.email,
     builder: (column) => ColumnFilters(column),
@@ -11028,6 +11523,21 @@ class $$StudentsTableFilterComposer
 
   ColumnFilters<String> get passwordHash => $composableBuilder(
     column: $table.passwordHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get anamneseCompleted => $composableBuilder(
+    column: $table.anamneseCompleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get accessTier => $composableBuilder(
+    column: $table.accessTier,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get premiumPlanExpiresAt => $composableBuilder(
+    column: $table.premiumPlanExpiresAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11159,6 +11669,16 @@ class $$StudentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get archivedAt => $composableBuilder(
+    column: $table.archivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get email => $composableBuilder(
     column: $table.email,
     builder: (column) => ColumnOrderings(column),
@@ -11234,6 +11754,21 @@ class $$StudentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get anamneseCompleted => $composableBuilder(
+    column: $table.anamneseCompleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get accessTier => $composableBuilder(
+    column: $table.accessTier,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get premiumPlanExpiresAt => $composableBuilder(
+    column: $table.premiumPlanExpiresAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -11282,6 +11817,16 @@ class $$StudentsTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get archivedAt => $composableBuilder(
+    column: $table.archivedAt,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get email =>
       $composableBuilder(column: $table.email, builder: (column) => column);
@@ -11335,6 +11880,21 @@ class $$StudentsTableAnnotationComposer
 
   GeneratedColumn<String> get passwordHash => $composableBuilder(
     column: $table.passwordHash,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get anamneseCompleted => $composableBuilder(
+    column: $table.anamneseCompleted,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get accessTier => $composableBuilder(
+    column: $table.accessTier,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get premiumPlanExpiresAt => $composableBuilder(
+    column: $table.premiumPlanExpiresAt,
     builder: (column) => column,
   );
 
@@ -11479,6 +12039,8 @@ class $$StudentsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> archivedAt = const Value.absent(),
                 Value<String?> email = const Value.absent(),
                 Value<String?> goal = const Value.absent(),
                 Value<String?> cpf = const Value.absent(),
@@ -11495,12 +12057,17 @@ class $$StudentsTableTableManager
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
                 Value<String?> createdByPersonalId = const Value.absent(),
+                Value<bool> anamneseCompleted = const Value.absent(),
+                Value<String> accessTier = const Value.absent(),
+                Value<DateTime?> premiumPlanExpiresAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => StudentsCompanion(
                 id: id,
                 name: name,
+                isArchived: isArchived,
+                archivedAt: archivedAt,
                 email: email,
                 goal: goal,
                 cpf: cpf,
@@ -11517,6 +12084,9 @@ class $$StudentsTableTableManager
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
                 createdByPersonalId: createdByPersonalId,
+                anamneseCompleted: anamneseCompleted,
+                accessTier: accessTier,
+                premiumPlanExpiresAt: premiumPlanExpiresAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -11525,6 +12095,8 @@ class $$StudentsTableTableManager
               ({
                 required String id,
                 required String name,
+                Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> archivedAt = const Value.absent(),
                 Value<String?> email = const Value.absent(),
                 Value<String?> goal = const Value.absent(),
                 Value<String?> cpf = const Value.absent(),
@@ -11541,12 +12113,17 @@ class $$StudentsTableTableManager
                 Value<bool> mustChangePassword = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
                 Value<String?> createdByPersonalId = const Value.absent(),
+                Value<bool> anamneseCompleted = const Value.absent(),
+                Value<String> accessTier = const Value.absent(),
+                Value<DateTime?> premiumPlanExpiresAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => StudentsCompanion.insert(
                 id: id,
                 name: name,
+                isArchived: isArchived,
+                archivedAt: archivedAt,
                 email: email,
                 goal: goal,
                 cpf: cpf,
@@ -11563,6 +12140,9 @@ class $$StudentsTableTableManager
                 mustChangePassword: mustChangePassword,
                 passwordHash: passwordHash,
                 createdByPersonalId: createdByPersonalId,
+                anamneseCompleted: anamneseCompleted,
+                accessTier: accessTier,
+                premiumPlanExpiresAt: premiumPlanExpiresAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -12621,6 +13201,7 @@ typedef $$WorkoutGroupsTableCreateCompanionBuilder =
       required String description,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 typedef $$WorkoutGroupsTableUpdateCompanionBuilder =
@@ -12630,6 +13211,7 @@ typedef $$WorkoutGroupsTableUpdateCompanionBuilder =
       Value<String> description,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 
@@ -12705,6 +13287,11 @@ class $$WorkoutGroupsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> workoutGroupExercisesRefs(
     Expression<bool> Function($$WorkoutGroupExercisesTableFilterComposer f) f,
   ) {
@@ -12765,6 +13352,11 @@ class $$WorkoutGroupsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$WorkoutGroupsTableAnnotationComposer
@@ -12792,6 +13384,9 @@ class $$WorkoutGroupsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   Expression<T> workoutGroupExercisesRefs<T extends Object>(
     Expression<T> Function($$WorkoutGroupExercisesTableAnnotationComposer a) f,
@@ -12853,6 +13448,7 @@ class $$WorkoutGroupsTableTableManager
                 Value<String> description = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkoutGroupsCompanion(
                 id: id,
@@ -12860,6 +13456,7 @@ class $$WorkoutGroupsTableTableManager
                 description: description,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -12869,6 +13466,7 @@ class $$WorkoutGroupsTableTableManager
                 required String description,
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkoutGroupsCompanion.insert(
                 id: id,
@@ -12876,6 +13474,7 @@ class $$WorkoutGroupsTableTableManager
                 description: description,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

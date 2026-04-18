@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-// Estrutura obrigatória: igual à do plugin `live_activities` (LiveActivitiesPlugin.swift).
+// Estrutura alinhada ao plugin `live_activities` (ActivityAttributes + ContentState com refreshToken).
 struct LiveActivitiesAppAttributes: ActivityAttributes, Identifiable {
     public typealias LiveDeliveryData = ContentState
 
@@ -28,6 +28,23 @@ extension LiveActivitiesAppAttributes {
 
 /// Mesmo identificador que em Dart [kIosWorkoutLiveActivitiesAppGroup].
 private let kAppGroupId = "group.com.personaltrainer.appPersonal.workoutlive"
+
+/// Um único `UserDefaults(suiteName:)` por processo da extensão. Recriar o suite a cada
+/// `body` / tick do `TimelineView` faz o sistema ligar-se ao `cfprefsd` em loop e surgem
+/// avisos do tipo «CFPrefsPlistSource… detaching from cfprefsd» no consola do Xcode.
+private enum AppGroupUserDefaults {
+    private static var cached: UserDefaults?
+    private static let lock = NSLock()
+
+    static var shared: UserDefaults? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let c = cached { return c }
+        let u = UserDefaults(suiteName: kAppGroupId)
+        cached = u
+        return u
+    }
+}
 
 private func registerNextSetURL(dayWorkoutId: String) -> URL {
     var c = URLComponents()
@@ -169,7 +186,7 @@ private struct LockScreenWorkoutView: View {
     var compact: Bool = true
 
     var body: some View {
-        let ud = UserDefaults(suiteName: kAppGroupId)
+        let ud = AppGroupUserDefaults.shared
         let prefix = activityId.uuidString
         let wid = ud?.string(forKey: "\(prefix)_dayWorkoutId") ?? ""
         let dest = registerNextSetURL(dayWorkoutId: wid)
@@ -224,7 +241,7 @@ private struct LockScreenWorkoutView: View {
     /// Temporizadores com `Text(timerInterval:)` (atualização pelo sistema). TimelineView só para mudar chip regressiva → pós-intervalo.
     @ViewBuilder
     private func tickingPhaseAndTimerColumn(timerSize: CGFloat, frozenSize: CGFloat) -> some View {
-        let ud = UserDefaults(suiteName: kAppGroupId)
+        let ud = AppGroupUserDefaults.shared
         let p = activityId.uuidString
         let re = ud?.double(forKey: "\(p)_restEndMs") ?? 0
 

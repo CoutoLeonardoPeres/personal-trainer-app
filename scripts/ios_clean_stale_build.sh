@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Limpa artefatos que geram "Stale file ... path_provider_foundation_privacy.bundle
-# ... outside of the allowed root paths" (Flutter build/ + Xcode DerivedData).
+# Limpa artefatos que geram "Stale file ... outside of the allowed root paths"
+# (ex.: path_provider_foundation_privacy.bundle, flutter_app_group_directory.framework/Headers).
+# Causa típica: misturar Flutter `build/ios/` com DerivedData do Xcode ou sandbox de scripts.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

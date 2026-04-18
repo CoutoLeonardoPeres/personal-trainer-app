@@ -37,7 +37,8 @@ class FreeAiTrainingReportService {
           {
             'role': 'system',
             'content':
-                'Você é um analista de performance em treinamento físico e escreve em português do Brasil.'
+                'Você é um analista de performance em treinamento físico e escreve em português do Brasil. '
+                'Quando o relatório incluir anamnese (secções 7a, 7b, 7c), integre essas respostas de forma explícita na análise de adesão e no plano de ação.'
           },
           {'role': 'user', 'content': prompt},
         ],

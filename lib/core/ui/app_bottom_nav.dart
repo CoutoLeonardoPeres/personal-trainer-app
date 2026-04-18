@@ -11,10 +11,13 @@ class AppBottomNav extends StatelessWidget {
     super.key,
     required this.selected,
     required this.onSelect,
+    this.tabsInOrder,
   });
 
   final MainNavTab selected;
   final ValueChanged<MainNavTab> onSelect;
+  /// Abas visíveis (ordem na barra). Null = todas.
+  final List<MainNavTab>? tabsInOrder;
 
   static const double barHeight = 39.0 * 1.15 * 1.15;
 
@@ -28,6 +31,19 @@ class AppBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final order = tabsInOrder ??
+        MainNavTab.values
+            .where((t) => _items.any((i) => i.tab == t))
+            .toList();
+    final visible = <({MainNavTab tab, IconData icon, String label})>[];
+    for (final t in order) {
+      for (final item in _items) {
+        if (item.tab == t) {
+          visible.add(item);
+          break;
+        }
+      }
+    }
     return Container(
       height: barHeight + bottomInset,
       decoration: BoxDecoration(
@@ -51,7 +67,7 @@ class AppBottomNav extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            for (final item in _items)
+            for (final item in visible)
               _NavItem(
                 icon: item.icon,
                 label: item.label,

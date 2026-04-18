@@ -1,8 +1,9 @@
 // Application-level settings for the Runner target.
 //
-// This may be replaced with something auto-generated from metadata (e.g., pubspec.yaml) in the
-// future. If not, the values below would default to using the project name when this becomes a
-// 'flutter create' template.
+// Versão de marketing e build: mesma fonte que iOS/Android (`pubspec.yaml` → Flutter-Generated).
+#include "../../Flutter/ephemeral/Flutter-Generated.xcconfig"
+MARKETING_VERSION = $(FLUTTER_BUILD_NAME)
+CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)
 
 // The application's name. By default this is also the title of the Flutter window.
 PRODUCT_NAME = app_personal

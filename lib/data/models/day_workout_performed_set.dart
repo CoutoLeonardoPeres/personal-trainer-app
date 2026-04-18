@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../domain/scoring.dart' as scoring;
+
 /// Uma série registrada na linha do treino do dia (carga + repetições feitas).
 class DayWorkoutPerformedSet {
   const DayWorkoutPerformedSet({
@@ -104,11 +106,23 @@ abstract final class DayWorkoutPerformedSetCodec {
     return minMs;
   }
 
-  /// Score do exercício: soma de (carga × repetições) por série (carga nula = 0).
+  /// Volume bruto: soma (carga × reps) por série (p.ex. calorias / tonelagem).
   static double totalVolumeScore(List<DayWorkoutPerformedSet> list) {
     var sum = 0.0;
     for (final s in list) {
       sum += (s.loadKg ?? 0) * s.reps;
+    }
+    return sum;
+  }
+
+  /// Score do exercício na UI: soma de (carga × reps ÷ 10) por série.
+  static double totalExerciseScore(List<DayWorkoutPerformedSet> list) {
+    var sum = 0.0;
+    for (final s in list) {
+      sum += scoring.perSetScoreContribution(
+        loadKg: s.loadKg ?? 0,
+        reps: s.reps,
+      );
     }
     return sum;
   }

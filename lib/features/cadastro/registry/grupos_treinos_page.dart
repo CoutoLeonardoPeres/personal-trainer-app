@@ -28,82 +28,6 @@ bool _wgLineIncomplete(WorkoutGroupExerciseEntity line) {
   return false;
 }
 
-Future<bool?> _showFuturisticPropagateGroupDialog(
-  BuildContext context, {
-  required String title,
-  required String body,
-  required String cancelLabel,
-  required String confirmLabel,
-}) {
-  return showDialog<bool>(
-    context: context,
-    barrierDismissible: true,
-    barrierColor: Colors.black.withValues(alpha: 0.72),
-    builder: (ctx) => _FuturisticPropagateGroupDialog(
-      title: title,
-      body: body,
-      cancelLabel: cancelLabel,
-      confirmLabel: confirmLabel,
-    ),
-  );
-}
-
-Future<void> _offerPropagateWorkoutGroup(
-  BuildContext context,
-  AppDataRepository repo,
-  String workoutGroupId,
-) async {
-  final go = await _showFuturisticPropagateGroupDialog(
-    context,
-    title: 'Atualizar treinos planejados?',
-    body:
-        'Deseja alinhar séries, repetições, ordem e carga a partir de hoje?\n\n'
-        '• Planejamento semanal: semanas a partir desta.\n'
-        '• Calendário: treinos não concluídos e não cancelados (inclui em andamento).\n\n'
-        'Não altera semanas passadas nem treinos concluídos ou cancelados.',
-    cancelLabel: 'Agora não',
-    confirmLabel: 'Atualizar',
-  );
-  if (go != true || !context.mounted) return;
-  final r = await repo.propagateWorkoutGroupTemplateFromNow(workoutGroupId);
-  if (!context.mounted) return;
-  final w = r.weekItemsUpdated;
-  final d = r.dayExercisesUpdated;
-  final msg = (w == 0 && d == 0)
-      ? 'Nenhum treino elegível para atualizar (sem vínculos futuros com este grupo).'
-      : 'Planejamento: $w item(ns). Calendário: $d exercício(s) atualizados.';
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-}
-
-/// Confirma e aplica o modelo do grupo a treinos planejados/agendados (tela de exercícios do grupo).
-Future<void> _confirmSaveAndApplyGroupTemplate(
-  BuildContext context,
-  AppDataRepository repo,
-  String workoutGroupId,
-) async {
-  final go = await _showFuturisticPropagateGroupDialog(
-    context,
-    title: 'Aplicar este grupo aos treinos?',
-    body:
-        'Esta alteração no grupo de treino impactará todos os treinos não concluídos '
-        'de todos os alunos que tenham este treino agendado ou planejado a partir de hoje, '
-        'incluindo a tela de planejamento semanal e o calendário.\n\n'
-        'Treinos concluídos ou cancelados não serão alterados.',
-    cancelLabel: 'Cancelar',
-    confirmLabel: 'Confirmar e aplicar',
-  );
-  if (go != true || !context.mounted) return;
-  final r = await repo.propagateWorkoutGroupTemplateFromNow(workoutGroupId);
-  if (!context.mounted) return;
-  final w = r.weekItemsUpdated;
-  final d = r.dayExercisesUpdated;
-  final msg = (w == 0 && d == 0)
-      ? 'Nenhum treino elegível para atualizar (sem vínculos futuros com este grupo).'
-      : 'Planejamento: $w item(ns). Calendário: $d exercício(s) atualizados.';
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  Navigator.of(context).pop();
-}
-
 class GruposTreinosPage extends StatelessWidget {
   const GruposTreinosPage({super.key});
 
@@ -208,7 +132,16 @@ class GruposTreinosPage extends StatelessWidget {
               );
               if (ctx.mounted) Navigator.pop(ctx);
               if (context.mounted) {
-                await _offerPropagateWorkoutGroup(context, repo, gid);
+                final r = await repo.propagateWorkoutGroupTemplateFromNow(gid);
+                if (!context.mounted) return;
+                final w = r.weekItemsUpdated;
+                final d = r.dayExercisesUpdated;
+                final msg = (w == 0 && d == 0)
+                    ? 'Grupo guardado. Nenhum treino elegível para alinhar com este modelo.'
+                    : 'Grupo guardado. Planejamento: $w item(ns). Calendário: $d exercício(s) atualizado(s).';
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(msg)));
               }
             },
           ),
@@ -251,17 +184,167 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
     super.dispose();
   }
 
-  Future<void> _tryAddExercise(BuildContext context, String exerciseId) async {
-    final ok = await widget.repo.addExerciseToWorkoutGroup(
+  Future<void> _propagateAfterGroupMutation() async {
+    try {
+      await widget.repo.propagateWorkoutGroupTemplateFromNow(widget.group.id);
+    } catch (_) {}
+  }
+
+  Future<void> _showGroupSavedFinishDialog(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.barBackground,
+        title: const Text(
+          'Grupo guardado',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+          ),
+        ),
+        content: Text(
+          'O grupo de treino foi salvo.\n\n'
+          'As alterações são aplicadas ao planejamento semanal e aos treinos '
+          'programados ou agendados no calendário (a partir de hoje), desde que '
+          'ainda possam seguir automaticamente este modelo.\n\n'
+          'No calendário, treinos já iniciados, já concluídos ou cancelados '
+          'não são alterados.\n\n'
+          'Se tiver ajustado manualmente prescrições no planejamento ou no '
+          'calendário para treinos que continuam elegíveis para sincronização, '
+          'o modelo do grupo pode voltar a alinhar esses valores.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.82),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendi'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showExerciseInsertedDialog(
+    BuildContext context, {
+    required String exerciseName,
+    required int totalOccurrencesInGroup,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.barBackground,
+        title: Text(
+          totalOccurrencesInGroup <= 1
+              ? 'Exercício adicionado'
+              : 'Exercício adicionado novamente',
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+          ),
+        ),
+        content: Text(
+          totalOccurrencesInGroup <= 1
+              ? '«$exerciseName» foi incluído neste grupo de treino.'
+              : '«$exerciseName» foi incluído de novo. '
+                    'Agora há $totalOccurrencesInGroup ocorrências deste exercício no grupo.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.82),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Devolve `true` se o utilizador confirmar repetir o exercício.
+  Future<bool> _confirmRepeatExerciseDialog(
+    BuildContext context, {
+    required String exerciseName,
+    required int alreadyCount,
+  }) async {
+    final nextTotal = alreadyCount + 1;
+    final r = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.barBackground,
+        title: const Text(
+          'Repetir exercício',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+          ),
+        ),
+        content: Text(
+          '«$exerciseName» já está neste grupo $alreadyCount vez(es). '
+          'Ao confirmar, passará a $nextTotal vez(es).\n\n'
+          'Deseja mesmo adicionar outra ocorrência?',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.82),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sim, repetir'),
+          ),
+        ],
+      ),
+    );
+    return r == true;
+  }
+
+  Future<void> _tryAddExercise(
+    BuildContext context,
+    String exerciseId,
+    String exerciseName,
+    List<WorkoutGroupExerciseEntity> currentLines,
+  ) async {
+    final already =
+        currentLines.where((l) => l.exerciseId == exerciseId).length;
+    if (already >= 1) {
+      final ok = await _confirmRepeatExerciseDialog(
+        context,
+        exerciseName: exerciseName,
+        alreadyCount: already,
+      );
+      if (!ok || !context.mounted) return;
+    }
+
+    final inserted = await widget.repo.addExerciseToWorkoutGroup(
       workoutGroupId: widget.group.id,
       exerciseId: exerciseId,
     );
+    if (!inserted || !context.mounted) return;
+    await _propagateAfterGroupMutation();
     if (!context.mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Este exercício já está neste grupo.')),
-      );
-    }
+
+    final after =
+        already + 1; // nova linha = ocorrências após insert bem-sucedido
+    await _showExerciseInsertedDialog(
+      context,
+      exerciseName: exerciseName,
+      totalOccurrencesInGroup: after,
+    );
   }
 
   Future<void> _reorderComboBlocks(
@@ -288,6 +371,7 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       workoutGroupId: widget.group.id,
       orderedLineIds: ids,
     );
+    await _propagateAfterGroupMutation();
   }
 
   Future<ExerciseEntity?> _pickExerciseToCombine(
@@ -305,49 +389,114 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
         builder: (ctx, scroll) {
           return StatefulBuilder(
             builder: (ctx, setModal) {
-              final filtered =
-                  filterExercisesByNameQuery(searchC.text, candidates);
-              return ListView(
-                controller: scroll,
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                children: [
-                  AppCadastroSearchField(
-                    controller: searchC,
-                    label: 'Pesquisar por nome',
-                    hint: 'Digite para filtrar',
-                    onChanged: (_) => setModal(() {}),
-                  ),
-                  const SizedBox(height: 12),
-                  if (filtered.isEmpty)
+              final qRaw = searchC.text.trim();
+              final byGroup = <String, List<ExerciseEntity>>{};
+              for (final e in candidates) {
+                byGroup.putIfAbsent(e.muscleGroupId, () => []).add(e);
+              }
+              for (final entry in byGroup.entries) {
+                entry.value.sort(
+                  (a, b) =>
+                      a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+                );
+              }
+
+              final visible =
+                  <({MuscleGroupEntity g, List<ExerciseEntity> ex})>[];
+              for (final g in groups) {
+                final raw = byGroup[g.id] ?? const <ExerciseEntity>[];
+                final exercises = qRaw.isEmpty
+                    ? raw
+                    : filterExercisesByNameQuery(qRaw, raw);
+                if (qRaw.isNotEmpty && exercises.isEmpty) continue;
+                visible.add((g: g, ex: exercises));
+              }
+
+              if (qRaw.isNotEmpty && visible.isEmpty) {
+                return ListView(
+                  controller: scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  children: [
+                    AppCadastroSearchField(
+                      controller: searchC,
+                      label: 'Pesquisar por nome',
+                      hint: 'Digite para filtrar',
+                      onChanged: (_) => setModal(() {}),
+                    ),
+                    const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        searchC.text.trim().isEmpty
-                            ? 'Nenhum exercício disponível para combinar.'
-                            : 'Nenhum resultado.',
+                        'Nenhum exercício contém "$qRaw" no nome.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 13,
                         ),
                       ),
-                    )
-                  else
-                    for (final e in filtered)
-                      ListTile(
-                        title: Text(
-                          e.name,
-                          style: const TextStyle(color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          _addExerciseRowSubtitle(groups, e),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.45),
-                            fontSize: 12,
-                          ),
-                        ),
-                        onTap: () => Navigator.pop(ctx, e),
-                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: AppCadastroSearchField(
+                      controller: searchC,
+                      label: 'Pesquisar por nome',
+                      hint: 'Digite para filtrar',
+                      onChanged: (_) => setModal(() {}),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scroll,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      itemCount: visible.length,
+                      itemBuilder: (context, gi) {
+                        final entry = visible[gi];
+                        final g = entry.g;
+                        final exercises = entry.ex;
+                        return ExerciseMuscleGroupSection(
+                          group: g,
+                          exerciseCount: exercises.length,
+                          initiallyExpanded:
+                              qRaw.isNotEmpty && exercises.isNotEmpty,
+                          expansionResetKey: qRaw.isEmpty ? null : qRaw,
+                          children: [
+                            if (exercises.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Text(
+                                  'Nenhum exercício neste grupo.',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.45),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            else
+                              for (final e in exercises)
+                                ExerciseRegistryListRow(
+                                  title: e.name,
+                                  subtitle: _addExerciseRowSubtitle(groups, e),
+                                  scale: 0.62,
+                                  onTap: () => Navigator.pop(ctx, e),
+                                  trailing: exerciseRegistryVideoTrailingButtons(
+                                    ctx,
+                                    e,
+                                    e.name,
+                                    iconSize: 22 * _iconScale,
+                                  ),
+                                ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
                 ],
               );
             },
@@ -398,12 +547,10 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
     if (!context.mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Não foi possível combinar (exercício já está no grupo ou é o mesmo).',
-          ),
-        ),
+        const SnackBar(content: Text('Não foi possível combinar.')),
       );
+    } else {
+      await _propagateAfterGroupMutation();
     }
   }
 
@@ -433,6 +580,7 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
   List<Widget> _buildAddExerciseRows(
     List<MuscleGroupEntity> groups,
     List<ExerciseEntity> flatAvailable,
+    List<WorkoutGroupExerciseEntity> lines,
   ) {
     final filtered = filterExercisesByNameQuery(_searchC.text, flatAvailable);
     return [
@@ -440,8 +588,15 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
         ExerciseRegistryListRow(
           title: e.name,
           subtitle: _addExerciseRowSubtitle(groups, e),
-          onTap: () => _tryAddExercise(context, e.id),
+          onTap: () => _tryAddExercise(context, e.id, e.name, lines),
+          scale: 0.62,
           trailing: [
+            ...exerciseRegistryVideoTrailingButtons(
+              context,
+              e,
+              e.name,
+              iconSize: 22 * _iconScale,
+            ),
             IconButton(
               tooltip: 'Adicionar ao grupo',
               padding: EdgeInsets.zero,
@@ -451,11 +606,64 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                 color: kExerciseRegistryRowIconTint,
                 size: 22 * _iconScale,
               ),
-              onPressed: () => _tryAddExercise(context, e.id),
+              onPressed: () => _tryAddExercise(context, e.id, e.name, lines),
             ),
           ],
         ),
     ];
+  }
+
+  List<Widget> _buildAddExerciseRowsByMuscleGroup({
+    required List<MuscleGroupEntity> groups,
+    required Map<String, List<ExerciseEntity>> byGroupAvailable,
+    required List<WorkoutGroupExerciseEntity> lines,
+  }) {
+    final tiles = <Widget>[];
+    for (final g in groups) {
+      final list = byGroupAvailable[g.id] ?? const <ExerciseEntity>[];
+      if (list.isEmpty) continue;
+      tiles.add(
+        ExerciseMuscleGroupSection(
+          group: g,
+          exerciseCount: list.length,
+          expansionResetKey:
+              'wg_add_${widget.group.id}_${_searchC.text.trim()}',
+          initiallyExpanded: false,
+          children: [
+            for (final e in list)
+              ExerciseRegistryListRow(
+                title: e.name,
+                subtitle: exerciseVideoSubtitle(e),
+                onTap: () => _tryAddExercise(context, e.id, e.name, lines),
+                scale: 0.62,
+                trailing: [
+                  ...exerciseRegistryVideoTrailingButtons(
+                    context,
+                    e,
+                    e.name,
+                    iconSize: 22 * _iconScale,
+                  ),
+                  IconButton(
+                    tooltip: 'Adicionar ao grupo',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 40,
+                      height: 40,
+                    ),
+                    icon: Icon(
+                      Icons.add_circle_rounded,
+                      color: kExerciseRegistryRowIconTint,
+                      size: 22 * _iconScale,
+                    ),
+                    onPressed: () => _tryAddExercise(context, e.id, e.name, lines),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      );
+    }
+    return tiles;
   }
 
   @override
@@ -464,7 +672,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       stream: widget.repo.watchGroupExercises(widget.group.id),
       builder: (context, snapLines) {
         final lines = snapLines.data ?? [];
-        final inGroup = {for (final l in lines) l.exerciseId};
         return StreamBuilder<List<MuscleGroupEntity>>(
           stream: widget.repo.watchMuscleGroupsAlphabetical(),
           builder: (context, snapG) {
@@ -477,7 +684,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
 
                 final byGroupAvailable = <String, List<ExerciseEntity>>{};
                 for (final e in all) {
-                  if (inGroup.contains(e.id)) continue;
                   byGroupAvailable
                       .putIfAbsent(e.muscleGroupId, () => [])
                       .add(e);
@@ -488,10 +694,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                         a.name.toLowerCase().compareTo(b.name.toLowerCase()),
                   );
                 }
-                final totalAvailable = byGroupAvailable.values.fold<int>(
-                  0,
-                  (a, list) => a + list.length,
-                );
                 final flatAvailable = _flatAvailableExercises(byGroupAvailable);
                 final totalFiltered = filterExercisesByNameQuery(
                   _searchC.text,
@@ -540,7 +742,11 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                               buildDefaultDragHandles: false,
                               itemCount: blocks.length,
                               onReorder: (oldIndex, newIndex) =>
-                                  _reorderComboBlocks(lines, oldIndex, newIndex),
+                                  _reorderComboBlocks(
+                                    lines,
+                                    oldIndex,
+                                    newIndex,
+                                  ),
                               itemBuilder: (context, bi) {
                                 final block = blocks[bi];
                                 final needs = block.any(_wgLineIncomplete);
@@ -555,25 +761,48 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                       title: name,
                                       urgent: needs,
                                       slidableKey: line.id,
+                                      scale: 0.62,
+                                      borderColor: AppColors.accentGreen
+                                          .withValues(alpha: 0.55),
+                                      subtitleColor: Colors.white.withValues(
+                                        alpha: 0.62,
+                                      ),
+                                      backgroundGradient: [
+                                        AppColors.accentGreen.withValues(
+                                          alpha: 0.16,
+                                        ),
+                                        AppColors.splashMint.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        Colors.black.withValues(alpha: 0.22),
+                                      ],
                                       subtitle:
                                           'Séries: ${line.lastSets ?? '—'}  Reps: ${reps.isEmpty ? '—' : reps}  '
                                           'Descanso: ${line.restBetweenSetsSec}s  '
                                           'Carga: ${line.lastLoadKg != null ? '${line.lastLoadKg} kg' : '—'}',
                                       onTap: () =>
                                           _lineDialog(context, line, name),
-                                      onSlidableCombine: () => _combineAfterAnchor(
-                                        context,
-                                        line,
-                                        flatAvailable,
-                                        groups,
-                                      ),
+                                      onSlidableCombine: () =>
+                                          _combineAfterAnchor(
+                                            context,
+                                            line,
+                                            flatAvailable,
+                                            groups,
+                                          ),
                                       onSlidableDelete: () async {
                                         await widget.repo
                                             .removeWorkoutGroupExerciseLine(
                                               line.id,
                                             );
+                                        await _propagateAfterGroupMutation();
                                       },
                                       trailing: [
+                                        ...exerciseRegistryVideoTrailingButtons(
+                                          context,
+                                          ex,
+                                          name,
+                                          iconSize: 22 * _iconScale,
+                                        ),
                                         if (blocks.length > 1)
                                           ReorderableDragStartListener(
                                             index: bi,
@@ -617,48 +846,71 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                     title: 'Combinação: $names',
                                     urgent: needs,
                                     slidableKey: 'combo_$cid',
+                                    scale: 0.62,
+                                    borderColor: AppColors.accentGreen
+                                        .withValues(alpha: 0.55),
+                                    subtitleColor: Colors.white.withValues(
+                                      alpha: 0.62,
+                                    ),
+                                    backgroundGradient: [
+                                      AppColors.accentGreen.withValues(
+                                        alpha: 0.16,
+                                      ),
+                                      AppColors.splashMint.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      Colors.black.withValues(alpha: 0.22),
+                                    ],
                                     subtitle: sub,
                                     onTap: () async {
-                                      final choice = await showModalBottomSheet<
-                                          WorkoutGroupExerciseEntity>(
-                                        context: context,
-                                        backgroundColor: AppColors.barBackground,
-                                        builder: (ctx) => SafeArea(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              const Padding(
-                                                padding: EdgeInsets.all(16),
-                                                child: Text(
-                                                  'Editar exercício do bloco',
-                                                  style: TextStyle(
-                                                    color: AppColors.textPrimary,
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 16,
-                                                  ),
-                                                ),
-                                              ),
-                                              for (final line in block)
-                                                ListTile(
-                                                  title: Text(
-                                                    idToExercise[line
-                                                                .exerciseId]
-                                                            ?.name ??
-                                                        'Exercício',
-                                                    style: const TextStyle(
-                                                      color:
-                                                          AppColors.textPrimary,
+                                      final choice =
+                                          await showModalBottomSheet<
+                                            WorkoutGroupExerciseEntity
+                                          >(
+                                            context: context,
+                                            backgroundColor:
+                                                AppColors.barBackground,
+                                            builder: (ctx) => SafeArea(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  const Padding(
+                                                    padding: EdgeInsets.all(16),
+                                                    child: Text(
+                                                      'Editar exercício do bloco',
+                                                      style: TextStyle(
+                                                        color: AppColors
+                                                            .textPrimary,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 16,
+                                                      ),
                                                     ),
                                                   ),
-                                                  onTap: () =>
-                                                      Navigator.pop(ctx, line),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
+                                                  for (final line in block)
+                                                    ListTile(
+                                                      title: Text(
+                                                        idToExercise[line
+                                                                    .exerciseId]
+                                                                ?.name ??
+                                                            'Exercício',
+                                                        style: const TextStyle(
+                                                          color: AppColors
+                                                              .textPrimary,
+                                                        ),
+                                                      ),
+                                                      onTap: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            line,
+                                                          ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
                                       if (!context.mounted || choice == null) {
                                         return;
                                       }
@@ -690,9 +942,47 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                               workoutGroupId: widget.group.id,
                                               comboId: cid0,
                                             );
+                                        await _propagateAfterGroupMutation();
                                       }
                                     },
                                     trailing: [
+                                      if (block.any(
+                                        (l) => exerciseEntityHasAnyVideoUrl(
+                                          idToExercise[l.exerciseId],
+                                        ),
+                                      ))
+                                        IconButton(
+                                          tooltip: 'Vídeos do bloco',
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints.tightFor(
+                                            width: 40,
+                                            height: 40,
+                                          ),
+                                          icon: Icon(
+                                            Icons.ondemand_video_rounded,
+                                            color: kExerciseRegistryRowIconTint,
+                                            size: 24 * _iconScale,
+                                          ),
+                                          onPressed: () =>
+                                              showExerciseBlockVideoLinksBottomSheet(
+                                            context,
+                                            title: 'Vídeos do bloco',
+                                            lines: [
+                                              for (final line in block)
+                                                (
+                                                  name:
+                                                      idToExercise[line
+                                                              .exerciseId]
+                                                          ?.name ??
+                                                      'Exercício',
+                                                  exercise: idToExercise[
+                                                    line.exerciseId
+                                                  ],
+                                                ),
+                                            ],
+                                          ),
+                                        ),
                                       if (blocks.length > 1)
                                         ReorderableDragStartListener(
                                           index: bi,
@@ -702,8 +992,9 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                             child: Center(
                                               child: Icon(
                                                 Icons.drag_indicator_rounded,
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.58),
+                                                color: Colors.white.withValues(
+                                                  alpha: 0.58,
+                                                ),
                                                 size: 26 * _iconScale,
                                               ),
                                             ),
@@ -743,10 +1034,10 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                 ),
                               ),
                             )
-                          : totalAvailable == 0
+                          : all.isEmpty
                           ? const Center(
                               child: Text(
-                                'Todos os exercícios já estão neste grupo.',
+                                'Nenhum exercício cadastrado.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: AppColors.textMuted,
@@ -767,10 +1058,17 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                             )
                           : ListView(
                               padding: const EdgeInsets.only(bottom: 12),
-                              children: _buildAddExerciseRows(
-                                groups,
-                                flatAvailable,
-                              ),
+                              children: _searchC.text.trim().isEmpty
+                                  ? _buildAddExerciseRowsByMuscleGroup(
+                                      groups: groups,
+                                      byGroupAvailable: byGroupAvailable,
+                                      lines: lines,
+                                    )
+                                  : _buildAddExerciseRows(
+                                      groups,
+                                      flatAvailable,
+                                      lines,
+                                    ),
                             ),
                     ),
                     Padding(
@@ -779,13 +1077,13 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           AppPrimaryButton(
-                            label: 'Salvar e aplicar',
-                            icon: Icons.cloud_done_rounded,
-                            onPressed: () => _confirmSaveAndApplyGroupTemplate(
-                              context,
-                              widget.repo,
-                              widget.group.id,
-                            ),
+                            label: 'Concluir',
+                            icon: Icons.check_rounded,
+                            onPressed: () async {
+                              await _showGroupSavedFinishDialog(context);
+                              if (!context.mounted) return;
+                              Navigator.of(context).pop();
+                            },
                           ),
                         ],
                       ),
@@ -829,324 +1127,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       restBetweenSetsSec: res.restBetweenSetsSec,
       trainingMethodId: res.trainingMethodId,
     );
-  }
-}
-
-/// Confirmação futurista para propagar modelo do grupo ao planejamento/calendário.
-class _FuturisticPropagateGroupDialog extends StatelessWidget {
-  const _FuturisticPropagateGroupDialog({
-    required this.title,
-    required this.body,
-    required this.cancelLabel,
-    required this.confirmLabel,
-  });
-
-  final String title;
-  final String body;
-  final String cancelLabel;
-  final String confirmLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.barBackground,
-                  AppColors.backgroundDeep,
-                  const Color(0xFF050508),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: AppColors.cadastroCardBorder.withValues(alpha: 0.52),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.accentGreen.withValues(alpha: 0.14),
-                  blurRadius: 26,
-                  spreadRadius: -2,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  height: 3,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.headerGradientPink.withValues(alpha: 0.95),
-                        AppColors.cadastroCardBorder.withValues(alpha: 0.9),
-                        AppColors.headerGradientMint.withValues(alpha: 0.85),
-                      ],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 12, 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.cadastroCardBorder.withValues(
-                              alpha: 0.55,
-                            ),
-                          ),
-                          gradient: RadialGradient(
-                            colors: [
-                              AppColors.accentGreen.withValues(alpha: 0.2),
-                              AppColors.cadastroCardBorder.withValues(
-                                alpha: 0.08,
-                              ),
-                              Colors.transparent,
-                            ],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.accentGreen.withValues(
-                                alpha: 0.12,
-                              ),
-                              blurRadius: 14,
-                            ),
-                          ],
-                        ),
-                        child: const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: Icon(
-                            Icons.hub_rounded,
-                            color: AppColors.accentGreen,
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'PROPAGAR MODELO',
-                              style: TextStyle(
-                                color: AppColors.accentGreen.withValues(
-                                  alpha: 0.82,
-                                ),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              title,
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                                height: 1.2,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        icon: Icon(
-                          Icons.close_rounded,
-                          color: Colors.white.withValues(alpha: 0.55),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: (MediaQuery.sizeOf(context).height * 0.42).clamp(
-                      140.0,
-                      320.0,
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                    child: Text(
-                      body,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.68),
-                        fontSize: 14,
-                        height: 1.45,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _PropagateDialogSecondaryCta(
-                        label: cancelLabel,
-                        onPressed: () => Navigator.pop(context, false),
-                      ),
-                      const SizedBox(height: 12),
-                      _PropagateDialogPrimaryCta(
-                        label: confirmLabel,
-                        onPressed: () => Navigator.pop(context, true),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PropagateDialogSecondaryCta extends StatelessWidget {
-  const _PropagateDialogSecondaryCta({
-    required this.label,
-    required this.onPressed,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: const Color(0xFF12121A).withValues(alpha: 0.95),
-            border: Border.all(
-              color: AppColors.cadastroCardBorder.withValues(alpha: 0.5),
-              width: 1.35,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.cadastroCardBorder.withValues(alpha: 0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.close_rounded,
-                color: AppColors.splashMint.withValues(alpha: 0.9),
-                size: 22,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: AppColors.splashMint.withValues(alpha: 0.95),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PropagateDialogPrimaryCta extends StatelessWidget {
-  const _PropagateDialogPrimaryCta({
-    required this.label,
-    required this.onPressed,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.headerGradientMint,
-                AppColors.accentGreen.withValues(alpha: 0.9),
-                AppColors.headerGradientPink.withValues(alpha: 0.72),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.headerGradientMint.withValues(alpha: 0.32),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
-              ),
-            ],
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.28),
-              width: 1,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.cloud_done_rounded,
-                color: const Color(0xFF0A0A12),
-                size: 24,
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF0A0A12),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                    letterSpacing: 0.15,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    await _propagateAfterGroupMutation();
   }
 }

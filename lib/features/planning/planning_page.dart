@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/modern_loading.dart';
 import '../../core/ui/app_modal_sheet.dart';
 import '../../core/utils/combo_line_grouping_utils.dart';
 import '../../core/utils/reps_text_utils.dart';
 import '../../core/widgets/app_form_fields.dart';
 import '../../core/widgets/exercise_prescription_edit_dialog.dart';
+import '../../core/widgets/exercise_registry_list_row.dart';
 import '../../core/widgets/swipeable_registry_card.dart';
 import '../../data/exercise_name_similarity.dart';
 import '../../data/local/app_database.dart';
@@ -27,6 +29,7 @@ class _PlanningPageState extends State<PlanningPage> {
   late PageController _weekController;
   late int _weekIndex;
   String? _studentId;
+  final Set<String> _expandedGroupKeys = <String>{};
 
   static final _epochMonday = _mondayOf(DateTime(2020, 1, 6));
 
@@ -103,11 +106,7 @@ class _PlanningPageState extends State<PlanningPage> {
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                    child: ModernLoadingIndicator(size: 28),
                   ),
                 );
               }
@@ -207,40 +206,62 @@ class _PlanningPageState extends State<PlanningPage> {
                                       'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
                                     );
                                   }
-                                  return StreamBuilder<List<WorkoutGroupEntity>>(
-                                    stream: repo.watchWorkoutGroupsAlphabetical(),
+                                  return StreamBuilder<
+                                    List<WorkoutGroupEntity>
+                                  >(
+                                    stream: repo
+                                        .watchWorkoutGroupsAlphabetical(),
                                     builder: (context, gSnap) {
-                                      final groupById = <String, WorkoutGroupEntity>{
-                                        for (final g
-                                            in gSnap.data ??
-                                                <WorkoutGroupEntity>[])
-                                          g.id: g,
-                                      };
-                                      final grouped =
-                                          _partitionWeekRowsByGroup(rows);
-                                      final keys = grouped.keys.toList()
-                                        ..sort(
-                                          (a, b) => _compareGroupKeys(
-                                            a,
-                                            b,
-                                            groupById,
-                                          ),
-                                        );
-                                      return Column(
-                                        children: [
-                                          for (final key in keys)
-                                            _weekGroupCard(
-                                              context,
-                                              repo,
-                                              pageMonday,
-                                              allWeekRows: rows,
-                                              groupId: key,
-                                              group: key == null
-                                                  ? null
-                                                  : groupById[key],
-                                              rows: grouped[key]!,
-                                            ),
-                                        ],
+                                      final groupById =
+                                          <String, WorkoutGroupEntity>{
+                                            for (final g
+                                                in gSnap.data ??
+                                                    <WorkoutGroupEntity>[])
+                                              g.id: g,
+                                          };
+                                      return StreamBuilder<
+                                        List<ExerciseEntity>
+                                      >(
+                                        stream: repo
+                                            .watchExercisesAlphabetical(),
+                                        builder: (context, exSnap) {
+                                          final idToExercise =
+                                              <String, ExerciseEntity>{
+                                                for (final e
+                                                    in exSnap.data ??
+                                                        <ExerciseEntity>[])
+                                                  e.id: e,
+                                              };
+                                          final grouped =
+                                              _partitionWeekRowsByGroup(
+                                            rows,
+                                          );
+                                          final keys = grouped.keys.toList()
+                                            ..sort(
+                                              (a, b) => _compareGroupKeys(
+                                                a,
+                                                b,
+                                                groupById,
+                                              ),
+                                            );
+                                          return Column(
+                                            children: [
+                                              for (final key in keys)
+                                                _weekGroupCard(
+                                                  context,
+                                                  repo,
+                                                  pageMonday,
+                                                  allWeekRows: rows,
+                                                  groupId: key,
+                                                  group: key == null
+                                                      ? null
+                                                      : groupById[key],
+                                                  rows: grouped[key]!,
+                                                  idToExercise: idToExercise,
+                                                ),
+                                            ],
+                                          );
+                                        },
                                       );
                                     },
                                   );
@@ -370,6 +391,139 @@ class _PlanningPageState extends State<PlanningPage> {
     );
   }
 
+  Future<bool> _confirmFuturisticDelete(
+    BuildContext context, {
+    required String title,
+    required String message,
+    String confirmLabel = 'Remover',
+    String cancelLabel = 'Cancelar',
+  }) async {
+    final res = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'confirm',
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (ctx, _, _) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+              decoration: BoxDecoration(
+                color: AppColors.barBackground.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: AppColors.danger.withValues(alpha: 0.45),
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.danger.withValues(alpha: 0.18),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      message,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        height: 1.35,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white.withValues(
+                                alpha: 0.82,
+                              ),
+                              side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.22),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text(cancelLabel),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.danger.withValues(
+                                alpha: 0.22,
+                              ),
+                              foregroundColor: AppColors.danger,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: BorderSide(
+                                  color: AppColors.danger.withValues(
+                                    alpha: 0.55,
+                                  ),
+                                  width: 1.2,
+                                ),
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(
+                              confirmLabel,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+    return res ?? false;
+  }
+
   Map<String?, List<WeekScheduleRow>> _partitionWeekRowsByGroup(
     List<WeekScheduleRow> rows,
   ) {
@@ -400,15 +554,26 @@ class _PlanningPageState extends State<PlanningPage> {
   Future<void> _deleteGroupWeekItems(
     BuildContext context,
     AppDataRepository repo,
-    List<WeekScheduleRow> groupRows,
-  ) async {
+    List<WeekScheduleRow> groupRows, {
+    required String keepExpandedKey,
+  }) async {
     if (groupRows.isEmpty) return;
     final n = groupRows.length;
-    final ok = await confirmDeleteDialog(
+    final itemName = n == 1
+        ? groupRows.first.exerciseName
+        : '$n itens deste bloco';
+    final ok = await _confirmFuturisticDelete(
       context,
-      itemName: n == 1 ? groupRows.first.exerciseName : '$n itens deste bloco',
+      title: 'Remover da semana?',
+      message:
+          'Isso removerá $itemName do planejamento desta semana.\n\n'
+          'Esta ação não apaga seu histórico de treinos concluídos.',
+      confirmLabel: 'Remover',
     );
     if (ok != true || !context.mounted) return;
+
+    // Mantém o bloco expandido após a atualização do stream.
+    setState(() => _expandedGroupKeys.add(keepExpandedKey));
     for (final r in groupRows) {
       await repo.deleteWeekScheduleItem(r.item.id);
     }
@@ -449,22 +614,8 @@ class _PlanningPageState extends State<PlanningPage> {
     required WeekScheduleRow anchor,
     required List<WeekScheduleRow> allWeekRows,
   }) async {
-    final inWeek = {for (final r in allWeekRows) r.item.exerciseId};
     final exercises = await repo.watchExercisesAlphabetical().first;
-    final candidates =
-        exercises.where((e) => !inWeek.contains(e.id)).toList();
-    if (candidates.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Todos os exercícios já estão na semana. Não há outro para combinar.',
-            ),
-          ),
-        );
-      }
-      return;
-    }
+    final candidates = exercises;
     final groups = await repo.watchMuscleGroupsAlphabetical().first;
     if (!context.mounted) return;
     final searchC = TextEditingController();
@@ -477,8 +628,10 @@ class _PlanningPageState extends State<PlanningPage> {
         builder: (ctx, scroll) {
           return StatefulBuilder(
             builder: (ctx, setModal) {
-              final filtered =
-                  filterExercisesByNameQuery(searchC.text, candidates);
+              final filtered = filterExercisesByNameQuery(
+                searchC.text,
+                candidates,
+              );
               String sub(ExerciseEntity e) {
                 for (final g in groups) {
                   if (g.id == e.muscleGroupId) return g.name;
@@ -551,11 +704,7 @@ class _PlanningPageState extends State<PlanningPage> {
     if (!context.mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Não foi possível combinar (exercício já está na semana).',
-          ),
-        ),
+        const SnackBar(content: Text('Não foi possível combinar.')),
       );
     }
   }
@@ -568,7 +717,10 @@ class _PlanningPageState extends State<PlanningPage> {
     required String? groupId,
     required WorkoutGroupEntity? group,
     required List<WeekScheduleRow> rows,
+    required Map<String, ExerciseEntity> idToExercise,
   }) {
+    final expKey = groupId ?? 'avulsos';
+    final expKeyFull = '${pageMonday.toIso8601String()}::$expKey';
     final rowBlocks = weekScheduleRowsAsComboBlocks(rows);
     final title = group?.name ?? 'Exercícios avulsos';
     final needs = rows.where((r) => r.needsAttention).length;
@@ -610,7 +762,17 @@ class _PlanningPageState extends State<PlanningPage> {
               highlightColor: AppColors.accentGreen.withValues(alpha: 0.08),
             ),
             child: ExpansionTile(
-              initiallyExpanded: false,
+              key: ValueKey('plan_group_$expKeyFull'),
+              initiallyExpanded: _expandedGroupKeys.contains(expKeyFull),
+              onExpansionChanged: (v) {
+                setState(() {
+                  if (v) {
+                    _expandedGroupKeys.add(expKeyFull);
+                  } else {
+                    _expandedGroupKeys.remove(expKeyFull);
+                  }
+                });
+              },
               tilePadding: const EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 2,
@@ -663,18 +825,39 @@ class _PlanningPageState extends State<PlanningPage> {
               iconColor: borderBlue.withValues(alpha: 0.95),
               collapsedIconColor: borderBlue.withValues(alpha: 0.95),
               children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _deleteGroupWeekItems(context, repo, rows),
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      size: 18,
-                      color: AppColors.danger,
-                    ),
-                    label: const Text(
-                      'Remover da semana',
-                      style: TextStyle(color: AppColors.danger),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.danger.withValues(
+                          alpha: 0.18,
+                        ),
+                        foregroundColor: AppColors.danger,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(
+                            color: AppColors.danger.withValues(alpha: 0.55),
+                            width: 1.2,
+                          ),
+                        ),
+                      ),
+                      onPressed: () => _deleteGroupWeekItems(
+                        context,
+                        repo,
+                        rows,
+                        keepExpandedKey: expKeyFull,
+                      ),
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      label: const Text(
+                        'Remover da semana',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
                   ),
                 ),
@@ -710,6 +893,7 @@ class _PlanningPageState extends State<PlanningPage> {
                         allWeekRows: allWeekRows,
                         dragIndex: index,
                         allowReorder: rowBlocks.length > 1,
+                        idToExercise: idToExercise,
                       ),
                     );
                   },
@@ -730,6 +914,7 @@ class _PlanningPageState extends State<PlanningPage> {
     required List<WeekScheduleRow> allWeekRows,
     int? dragIndex,
     bool allowReorder = false,
+    required Map<String, ExerciseEntity> idToExercise,
   }) {
     if (block.length == 1) {
       return _scheduledExerciseCard(
@@ -740,6 +925,7 @@ class _PlanningPageState extends State<PlanningPage> {
         allWeekRows: allWeekRows,
         dragIndex: dragIndex,
         allowReorder: allowReorder,
+        idToExercise: idToExercise,
       );
     }
     final names = block.map((r) => r.exerciseName).join(' · ');
@@ -798,9 +984,13 @@ class _PlanningPageState extends State<PlanningPage> {
         await _editScheduleItemDialog(context, repo, choice);
       },
       onDelete: () async {
-        final ok = await confirmDeleteDialog(
+        final ok = await _confirmFuturisticDelete(
           context,
-          itemName: names,
+          title: 'Remover da semana?',
+          message:
+              'Isso removerá este bloco do planejamento desta semana.\n\n'
+              'Exercícios: $names',
+          confirmLabel: 'Remover',
         );
         if (ok == true && context.mounted && cid.isNotEmpty) {
           await repo.removeWeekScheduleComboBlock(
@@ -818,6 +1008,32 @@ class _PlanningPageState extends State<PlanningPage> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (block.any(
+            (r) => exerciseEntityHasAnyVideoUrl(
+              idToExercise[r.item.exerciseId],
+            ),
+          ))
+            IconButton(
+              tooltip: 'Vídeos do bloco',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              icon: Icon(
+                Icons.ondemand_video_rounded,
+                color: kExerciseRegistryRowIconTint,
+                size: 22,
+              ),
+              onPressed: () => showExerciseBlockVideoLinksBottomSheet(
+                context,
+                title: 'Vídeos do bloco',
+                lines: [
+                  for (final r in block)
+                    (
+                      name: r.exerciseName,
+                      exercise: idToExercise[r.item.exerciseId],
+                    ),
+                ],
+              ),
+            ),
           needs
               ? Icon(
                   Icons.warning_amber_rounded,
@@ -853,6 +1069,7 @@ class _PlanningPageState extends State<PlanningPage> {
     required List<WeekScheduleRow> allWeekRows,
     int? dragIndex,
     bool allowReorder = false,
+    required Map<String, ExerciseEntity> idToExercise,
   }) {
     final i = row.item;
     final repsDisp = weekScheduleRepsDisplay(i);
@@ -869,11 +1086,18 @@ class _PlanningPageState extends State<PlanningPage> {
       showEditOnSwipe: false,
       onCardTap: () => _editScheduleItemDialog(context, repo, row),
       onDelete: () async {
-        final ok = await confirmDeleteDialog(
+        final ok = await _confirmFuturisticDelete(
           context,
-          itemName: row.exerciseName,
+          title: 'Remover da semana?',
+          message:
+              'Isso removerá este exercício do planejamento desta semana.\n\n'
+              'Exercício: ${row.exerciseName}',
+          confirmLabel: 'Remover',
         );
         if (ok == true && context.mounted) {
+          final parentKey = row.item.sourceWorkoutGroupId ?? 'avulsos';
+          final keepKey = '${weekMonday.toIso8601String()}::$parentKey';
+          setState(() => _expandedGroupKeys.add(keepKey));
           await repo.deleteWeekScheduleItem(i.id);
         }
       },
@@ -886,6 +1110,11 @@ class _PlanningPageState extends State<PlanningPage> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          ...exerciseRegistryVideoTrailingButtons(
+            context,
+            idToExercise[row.item.exerciseId],
+            row.exerciseName,
+          ),
           row.needsAttention
               ? Icon(
                   Icons.warning_amber_rounded,
@@ -928,9 +1157,7 @@ class _PlanningPageState extends State<PlanningPage> {
     final border = completed
         ? AppColors.accentGreen
         : AppColors.cadastroCardBorder;
-    final light = completed
-        ? AppColors.splashMint
-        : AppColors.accentGreen;
+    final light = completed ? AppColors.splashMint : AppColors.accentGreen;
     final subColor = completed
         ? AppColors.accentGreen.withValues(alpha: 0.82)
         : AppColors.textMuted;

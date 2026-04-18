@@ -1,0 +1,59 @@
+-- Recalcula public.day_workout_exercises.exercise_score para todas as linhas de
+-- treinos **concluídos** com data do treino **até hoje** (calendário em
+-- America/Sao_Paulo — ajuste o time zone se gravar day_date doutro modo).
+--
+-- Fórmula (volume ÷ 10, alinhado ao app):
+--   exercise_score = (Σ em todas as séries: load_kg × reps) / 10
+-- só entram séries com reps >= 1; carga em falta trata-se como 0.
+--
+-- Base: performed_sets_json (text → jsonb). Linhas sem séries registadas
+-- ficam com exercise_score = 0.
+--
+-- Executar no SQL Editor do Supabase (UPDATE em day_workout_exercises).
+-- JSON inválido em performed_sets_json faz o script falhar nessa linha.
+
+begin;
+
+with bounds as (
+  select (current_timestamp at time zone 'America/Sao_Paulo')::date as today_sp
+),
+targets as (
+  select
+    dwe.id,
+    case
+      when dwe.performed_sets_json is null or btrim(dwe.performed_sets_json) = ''
+        then '[]'::jsonb
+      else dwe.performed_sets_json::jsonb
+    end as j
+  from public.day_workout_exercises dwe
+  inner join public.day_workouts dw on dw.id = dwe.day_workout_id
+  cross join bounds b
+  where dw.status = 'completed'
+    and (dw.day_date at time zone 'America/Sao_Paulo')::date <= b.today_sp
+),
+scored as (
+  select
+    t.id,
+    (
+      coalesce(
+        (
+          select sum(
+            coalesce((elem->>'loadKg')::double precision, 0) *
+            greatest(coalesce((elem->>'reps')::integer, 0), 0)
+          )
+          from jsonb_array_elements(t.j) as elem
+          where coalesce((elem->>'reps')::integer, 0) >= 1
+        ),
+        0
+      )::double precision / 10.0
+    ) as exercise_score
+  from targets t
+)
+update public.day_workout_exercises dwe
+set
+  exercise_score = s.exercise_score,
+  updated_at = now()
+from scored s
+where dwe.id = s.id;
+
+commit;

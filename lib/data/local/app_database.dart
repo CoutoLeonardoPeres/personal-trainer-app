@@ -108,6 +108,14 @@ class Personals extends Table {
 
   /// Acesso total aos dados de todos os alunos (calendário, planejamento, cadastro).
   BoolColumn get isAdmin => boolean().withDefault(const Constant(false))();
+
+  /// Plano / perfil comercial (RBAC). `legacy` = comportamento anterior ao controle fino.
+  TextColumn get accessTier =>
+      text().withDefault(const Constant('legacy'))();
+
+  /// Limite de alunos (personal starter/pro). Null = ilimitado (legacy / pro+).
+  IntColumn get maxStudentsCap => integer().nullable()();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -119,6 +127,8 @@ class Personals extends Table {
 class Students extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
+  BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get archivedAt => dateTime().nullable()();
   TextColumn get email => text().nullable()();
   TextColumn get goal => text().nullable()();
   TextColumn get cpf => text().nullable()();
@@ -141,6 +151,18 @@ class Students extends Table {
   /// Personal que cadastrou o aluno — visibilidade dos dados (com admin e o próprio aluno).
   TextColumn get createdByPersonalId =>
       text().nullable().references(Personals, #id)();
+
+  /// Obrigatório para alunos com perfil comercial (free/basic/premium); `true` libera o app.
+  BoolColumn get anamneseCompleted =>
+      boolean().withDefault(const Constant(true))();
+
+  /// Plano aluno (RBAC). `legacy` = sem restrições do novo modelo.
+  TextColumn get accessTier =>
+      text().withDefault(const Constant('legacy'))();
+
+  /// Fim do período premium (trial ou assinatura); após esta data o app faz downgrade local para standard.
+  DateTimeColumn get premiumPlanExpiresAt => dateTime().nullable()();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -176,6 +198,10 @@ class WorkoutGroups extends Table {
   TextColumn get description => text()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// Exclusão lógica: não aparece em cadastro/planejamento/agenda futura; permanece no BD
+  /// para nome em histórico (ex.: treino concluído no passado com [DayWorkouts.sourceWorkoutGroupId]).
+  DateTimeColumn get deletedAt => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -359,7 +385,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 21;
+  int get schemaVersion => 27;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -522,6 +548,37 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(workoutGroupExercises, workoutGroupExercises.comboId);
         await m.addColumn(weekScheduleItems, weekScheduleItems.comboId);
         await m.addColumn(dayWorkoutExercises, dayWorkoutExercises.comboId);
+      }
+      if (from < 22) {
+        await m.addColumn(students, students.anamneseCompleted);
+        await m.addColumn(students, students.accessTier);
+        await m.addColumn(personals, personals.accessTier);
+        await m.addColumn(personals, personals.maxStudentsCap);
+        await customStatement(
+          'UPDATE students SET anamnese_completed = 1 WHERE anamnese_completed IS NULL;',
+        );
+        await customStatement(
+          "UPDATE students SET access_tier = 'legacy' WHERE access_tier IS NULL OR access_tier = '';",
+        );
+        await customStatement(
+          "UPDATE personals SET access_tier = 'legacy' WHERE access_tier IS NULL OR access_tier = '';",
+        );
+      }
+      if (from < 23) {
+        await m.addColumn(students, students.premiumPlanExpiresAt);
+      }
+      if (from < 24) {
+        await _recomputeWorkoutAndExerciseScoresV24();
+      }
+      if (from < 25) {
+        await m.addColumn(students, students.isArchived);
+        await m.addColumn(students, students.archivedAt);
+      }
+      if (from < 26) {
+        await _recomputeWorkoutScoresCompletedExerciseFormulaV26();
+      }
+      if (from < 27) {
+        await m.addColumn(workoutGroups, workoutGroups.deletedAt);
       }
     },
     beforeOpen: (details) async {
@@ -798,8 +855,8 @@ class AppDatabase extends _$AppDatabase {
   Future<void> repointExerciseReferencesToKeeperId(String dupId, String keeperId) =>
       _repointExerciseReferencesToKeeper(dupId, keeperId);
 
-  /// Recalcula [day_workouts.workout_score] para treinos **concluídos** com data do dia ≤ hoje:
-  /// (soma volume realizado ÷ min ativo) × 10.
+  /// Recalcula [day_workouts.workout_score] para treinos **concluídos** com data do dia ≤ hoje
+  /// (fórmula legada v16: Σ score de todas as linhas × 10 ÷ min; corrigido em v26).
   Future<void> _backfillCompletedWorkoutScoresV16() async {
     final now = DateTime.now();
     final tomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
@@ -811,16 +868,95 @@ class AppDatabase extends _$AppDatabase {
       final lines = await (select(dayWorkoutExercises)
             ..where((e) => e.dayWorkoutId.equals(w.id)))
           .get();
-      var sum = 0.0;
+      var sumEx = 0.0;
       for (final line in lines) {
-        sum += DayWorkoutPerformedSetCodec.totalVolumeScore(
-          DayWorkoutPerformedSetCodec.decode(line.performedSetsJson),
-        );
+        final performed =
+            DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+        sumEx += performed.isNotEmpty
+            ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+            : scoring.prescribedExerciseLineScore(
+                sets: line.sets,
+                loadKg: line.loadKg ?? 0,
+                reps: line.reps,
+              );
       }
       final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
-      final ws = scoring.workoutScoreStoredAtInstant(
-        performedVolumeSum: sum,
+      final minutes = sec / 60.0;
+      final ws = minutes > 0 ? sumEx * 10.0 / minutes : 0.0;
+      await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(
+        DayWorkoutsCompanion(workoutScore: Value(ws)),
+      );
+    }
+  }
+
+  /// Escala v24: série = carga×reps÷10; `exercise_score` por linha; treino legado = Σ todas ×10 ÷ min (v26 corrige).
+  Future<void> _recomputeWorkoutAndExerciseScoresV24() async {
+    final allLines = await select(dayWorkoutExercises).get();
+    final sumByWorkout = <String, double>{};
+    for (final line in allLines) {
+      final performed =
+          DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+      final exScore = performed.isNotEmpty
+          ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+          : scoring.prescribedExerciseLineScore(
+              sets: line.sets,
+              loadKg: line.loadKg ?? 0,
+              reps: line.reps,
+            );
+      sumByWorkout[line.dayWorkoutId] =
+          (sumByWorkout[line.dayWorkoutId] ?? 0) + exScore;
+      await (update(dayWorkoutExercises)..where((x) => x.id.equals(line.id)))
+          .write(
+        DayWorkoutExercisesCompanion(exerciseScore: Value(exScore)),
+      );
+    }
+    await customStatement(
+      "UPDATE day_workouts SET workout_score = NULL WHERE status IS NOT NULL AND status != 'completed'",
+    );
+    final completed = await (select(dayWorkouts)
+          ..where((w) => w.status.equals('completed')))
+        .get();
+    for (final w in completed) {
+      final sumEx = sumByWorkout[w.id] ?? 0;
+      final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
+      final minutes = sec / 60.0;
+      final ws = minutes > 0 ? sumEx * 10.0 / minutes : 0.0;
+      await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(
+        DayWorkoutsCompanion(workoutScore: Value(ws)),
+      );
+    }
+  }
+
+  /// v26: [workout_score] = (Σ score só linhas concluídas) × 10 ÷ min × nº concluídas.
+  Future<void> _recomputeWorkoutScoresCompletedExerciseFormulaV26() async {
+    final completed = await (select(dayWorkouts)
+          ..where((w) => w.status.equals('completed')))
+        .get();
+    for (final w in completed) {
+      final lines = await (select(dayWorkoutExercises)
+            ..where((e) => e.dayWorkoutId.equals(w.id)))
+          .get();
+      var sumDone = 0.0;
+      var nDone = 0;
+      for (final line in lines) {
+        if (line.sets <= 0) continue;
+        final performed =
+            DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+        if (performed.length < line.sets) continue;
+        nDone++;
+        sumDone += performed.isNotEmpty
+            ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+            : scoring.prescribedExerciseLineScore(
+                sets: line.sets,
+                loadKg: line.loadKg ?? 0,
+                reps: line.reps,
+              );
+      }
+      final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
+      final ws = scoring.workoutFinalScoreFromExerciseScores(
+        exerciseScoresSum: sumDone,
         activeDurationSeconds: sec,
+        completedExerciseCount: nDone,
       );
       await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(
         DayWorkoutsCompanion(workoutScore: Value(ws)),

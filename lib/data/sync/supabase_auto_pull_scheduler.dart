@@ -72,6 +72,7 @@ abstract final class SupabaseAutoPullScheduler {
     try {
       final svc = SupabasePullSyncService(db, sync, session: session);
       final report = await svc.pullAllFromRemote();
+      await session.hydratePersonalAdminFlag(db);
       if (report.connectionOk && report.tables.every((t) => t.ok)) {
         if (kDebugMode) {
           debugPrint(

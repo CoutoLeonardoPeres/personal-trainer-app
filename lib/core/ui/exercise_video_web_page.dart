@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../theme/app_colors.dart';
 import '../widgets/gradient_app_bar.dart';
@@ -14,7 +17,8 @@ enum ExerciseVideoPresentation {
 }
 
 /// Reproduz o link do exercício dentro do app (WebView).
-/// Para YouTube, preferimos URL "watch" (não "embed") para evitar erro 153 em alguns WebViews iOS.
+/// YouTube usa sempre a página **watch** (não `/embed/`): o embed costuma falhar no WebView
+/// com **erro 153** (“Video unavailable”) em iOS/Android.
 class ExerciseVideoWebPage extends StatefulWidget {
   const ExerciseVideoWebPage({
     super.key,
@@ -27,7 +31,7 @@ class ExerciseVideoWebPage extends StatefulWidget {
   final String title;
   final ExerciseVideoPresentation presentation;
 
-  /// Abre o vídeo numa **janela modal** no próprio app (WebView embutido).
+  /// Abre o vídeo num **popup suspenso** ao centro (~60% da altura da tela, WebView embutido).
   static Future<void> showInAppWindow(
     BuildContext context, {
     required String initialUrl,
@@ -40,31 +44,79 @@ class ExerciseVideoWebPage extends StatefulWidget {
       return;
     }
     if (!context.mounted) return;
-    await showModalBottomSheet<void>(
+    await showGeneralDialog<void>(
       context: context,
       useRootNavigator: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.72),
-      enableDrag: true,
-      showDragHandle: false,
-      useSafeArea: true,
-      isDismissible: true,
-      builder: (sheetContext) {
-        final size = MediaQuery.sizeOf(sheetContext);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: SizedBox(
-              width: size.width - 20,
-              height: size.height * 0.9,
-              child: ExerciseVideoWebPage(
-                initialUrl: initialUrl,
-                title: title,
-                presentation: ExerciseVideoPresentation.dialog,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final size = MediaQuery.sizeOf(dialogContext);
+        final panelW = (size.width * 0.92).clamp(280.0, 720.0);
+        final panelH = size.height * 0.6;
+        return SafeArea(
+          minimum: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Material(
+            color: Colors.transparent,
+            child: Center(
+              child: Container(
+                width: panelW,
+                height: panelH,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.splashMint.withValues(alpha: 0.9),
+                      AppColors.cadastroCardBorder.withValues(alpha: 0.88),
+                      AppColors.headerGradientPink.withValues(alpha: 0.5),
+                    ],
+                    stops: const [0.0, 0.42, 1.0],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.splashMint.withValues(alpha: 0.2),
+                      blurRadius: 20,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 5),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      blurRadius: 26,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(2.5),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(19.5),
+                  child: Material(
+                    color: AppColors.background,
+                    clipBehavior: Clip.antiAlias,
+                    child: ExerciseVideoWebPage(
+                      initialUrl: initialUrl,
+                      title: title,
+                      presentation: ExerciseVideoPresentation.dialog,
+                    ),
+                  ),
+                ),
               ),
             ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.94, end: 1).animate(curved),
+            child: child,
           ),
         );
       },
@@ -129,7 +181,18 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
       return;
     }
 
-    _controller = WebViewController()
+    late final PlatformWebViewControllerCreationParams creationParams;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      creationParams = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+      );
+    } else {
+      creationParams = const PlatformWebViewControllerCreationParams();
+    }
+
+    final controller = WebViewController.fromPlatformCreationParams(
+      creationParams,
+    )
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.background)
       ..setNavigationDelegate(
@@ -143,8 +206,15 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
             });
           },
         ),
-      )
-      ..loadRequest(target);
+      );
+
+    if (controller.platform is AndroidWebViewController) {
+      (controller.platform as AndroidWebViewController)
+          .setMediaPlaybackRequiresUserGesture(false);
+    }
+
+    controller.loadRequest(target);
+    _controller = controller;
   }
 
   Widget _buildBody() {
@@ -163,7 +233,9 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
             ),
           )
         else if (_controller != null)
-          WebViewWidget(controller: _controller!),
+          ClipRect(
+            child: WebViewWidget(controller: _controller!),
+          ),
         if (_loading && _error == null && _controller != null)
           const Align(
             alignment: Alignment.topCenter,
@@ -189,14 +261,62 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
                 child: Row(
                   children: [
-                    IconButton(
-                      tooltip: 'Fechar',
-                      icon: const Icon(Icons.close_rounded, color: AppColors.textPrimary),
-                      onPressed: () => Navigator.of(context).pop(),
+                    Tooltip(
+                      message: 'Fechar',
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () =>
+                              Navigator.of(context, rootNavigator: true).pop(),
+                          customBorder: const CircleBorder(),
+                          child: Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.splashMint.withValues(alpha: 0.98),
+                                  AppColors.accentGreen.withValues(alpha: 0.82),
+                                ],
+                              ),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.45),
+                                width: 1.75,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.splashMint.withValues(
+                                    alpha: 0.55,
+                                  ),
+                                  blurRadius: 12,
+                                  spreadRadius: 0,
+                                  offset: const Offset(0, 2),
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.35),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF0A1620),
+                              size: 26,
+                              weight: 700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         widget.title,
@@ -209,7 +329,6 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 48),
                   ],
                 ),
               ),
@@ -234,7 +353,8 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
         automaticallyImplyLeading: false,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () =>
+              Navigator.of(context, rootNavigator: true).pop(),
         ),
       ),
       body: _buildBody(),

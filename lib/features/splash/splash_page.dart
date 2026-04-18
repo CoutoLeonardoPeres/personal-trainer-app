@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import '../../core/auth/app_session.dart';
 import '../../core/diagnostic/launch_diagnostic.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/modern_loading.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
+import '../auth/local_login_page.dart';
 import '../shell/main_shell.dart';
 
 class SplashPage extends StatefulWidget {
@@ -53,13 +55,22 @@ class _SplashPageState extends State<SplashPage> {
       bootTrace('Splash._boot', 'bootstrapIfNeeded…');
       await session.bootstrapIfNeeded(db);
       await session.repairSessionIfInconsistent(db);
+      if (!session.requiresLocalRelogin) {
+        await repo.refreshSessionPersonalAdminFlag();
+      }
       bootTrace('Splash._boot', 'delay 600ms');
       await Future<void>.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
-      bootTrace('Splash._boot', 'pushReplacementNamed MainShell');
-      logLaunch('Splash._boot navigate MainShell');
       final nav = Navigator.of(context, rootNavigator: true);
-      nav.pushReplacementNamed(MainShell.routeName);
+      if (session.requiresLocalRelogin) {
+        bootTrace('Splash._boot', 'pushReplacementNamed LocalLoginPage');
+        logLaunch('Splash._boot navigate LocalLoginPage');
+        nav.pushReplacementNamed(LocalLoginPage.routeName);
+      } else {
+        bootTrace('Splash._boot', 'pushReplacementNamed MainShell');
+        logLaunch('Splash._boot navigate MainShell');
+        nav.pushReplacementNamed(MainShell.routeName);
+      }
       bootTrace('Splash._boot', 'navegação enviada');
     } catch (e, st) {
       bootTrace('Splash._boot FAILED', e);
@@ -147,14 +158,7 @@ class _SplashPageState extends State<SplashPage> {
                   ),
                   const SizedBox(height: 36),
                   if (_bootError == null)
-                    const SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(
-                        color: AppColors.splashMint,
-                        strokeWidth: 3.2,
-                      ),
-                    )
+                    const ModernLoadingIndicator(size: 48)
                   else ...[
                     Text(
                       'Falha ao iniciar o Personal Gym',

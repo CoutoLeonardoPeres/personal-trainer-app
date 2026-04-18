@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/access/permission_service.dart';
 import '../../core/auth/app_session.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
@@ -108,6 +109,18 @@ class SupabaseManualSyncService {
   final AppDatabase _db;
   final SupabaseSyncController _sync;
 
+  Future<bool> _studentMayPushCatalog(AppSession? session) async {
+    final s = session;
+    if (s == null || !s.isStudent) return false;
+    final sid = s.studentId;
+    if (sid == null) return false;
+    final row = await (_db.select(_db.students)..where((x) => x.id.equals(sid)))
+        .getSingleOrNull();
+    if (row == null) return false;
+    final perms = PermissionService(session: s, student: row);
+    return perms.studentCadastroMuscleExerciseGymGroup;
+  }
+
   static const int _chunkSize = 350;
 
   /// Mensagem extra quando a API responde 401 / JWT inválido (chave ou URL erradas).
@@ -161,7 +174,7 @@ class SupabaseManualSyncService {
 
   static bool _pushFullCloud(AppSession? s) {
     final x = s;
-    return x == null || x.isAdminPersonal;
+    return x == null || x.hasFullOrgAccess;
   }
 
   static bool _pushAsStudent(AppSession? s) => s != null && s.isStudent;
@@ -211,17 +224,19 @@ class SupabaseManualSyncService {
 
       final full = _pushFullCloud(session);
       final asStudent = _pushAsStudent(session);
+      final studentMayCatalog = await _studentMayPushCatalog(session);
+      final restrictCatalogTables = asStudent && !studentMayCatalog;
       final allowedStudents = await _allowedStudentIdsForPush(session);
 
-      final muscleRows = asStudent
+      final muscleRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.muscleGroups).get())
               .map(supabaseMuscleGroup)
               .toList();
-      final exerciseRows = asStudent
+      final exerciseRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.exercises).get()).map(supabaseExercise).toList();
-      final gymRows = asStudent
+      final gymRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.gyms).get()).map(supabaseGym).toList();
 
@@ -268,18 +283,18 @@ class SupabaseManualSyncService {
             .toList();
       }
 
-      final methodRows = asStudent
+      final methodRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.trainingMethods).get())
               .map(supabaseTrainingMethod)
               .toList();
 
-      var groupRows = asStudent
+      var groupRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.workoutGroups).get())
               .map(supabaseWorkoutGroup)
               .toList();
-      var groupExRows = asStudent
+      var groupExRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.workoutGroupExercises).get())
               .map(supabaseWorkoutGroupExercise)
@@ -396,11 +411,74 @@ class SupabaseManualSyncService {
         likelyAlreadyAlignedCount: 0,
       );
     }
+    // LWW (backup): não sobrescrever nuvem se ela estiver mais recente.
+    List<Map<String, dynamic>> toSend = rows;
+    if (rows.isNotEmpty &&
+        tableName != 'student_gyms' &&
+        tableName != 'audit_logs') {
+      try {
+        final ids = rows
+            .map((m) => m['id'] as String?)
+            .whereType<String>()
+            .toList(growable: false);
+        final remoteTimes = <String, DateTime?>{};
+        const chunk = 120;
+        for (var i = 0; i < ids.length; i += chunk) {
+          final part = ids.sublist(i, min(i + chunk, ids.length));
+          final res = await client
+              .from(tableName)
+              .select('id, updated_at')
+              .inFilter('id', part);
+          final list = res as List<dynamic>;
+          for (final e in list) {
+            final m = Map<String, dynamic>.from(e as Map);
+            final id = m['id'] as String?;
+            if (id == null) continue;
+            final v = m['updated_at'];
+            DateTime? t;
+            if (v is String && v.isNotEmpty) {
+              try {
+                t = DateTime.parse(v).toUtc();
+              } catch (_) {}
+            }
+            remoteTimes[id] = t;
+          }
+        }
+        DateTime? parseLocalTs(dynamic v) {
+          if (v == null) return null;
+          if (v is String && v.isNotEmpty) {
+            try {
+              return DateTime.parse(v).toUtc();
+            } catch (_) {
+              return null;
+            }
+          }
+          return null;
+        }
+
+        bool localIsNewer(DateTime? local, DateTime? remote) {
+          if (local == null) return false;
+          if (remote == null) return true;
+          return local.isAfter(remote.subtract(const Duration(seconds: 1)));
+        }
+
+        toSend = rows.where((m) {
+          final id = m['id'] as String?;
+          if (id == null) return false;
+          final local = parseLocalTs(m['updated_at']);
+          final remote = remoteTimes[id];
+          return localIsNewer(local, remote);
+        }).toList();
+      } catch (e) {
+        // Se não conseguir ler `updated_at` remoto, mantém comportamento anterior (best effort).
+      }
+    }
+
     var sent = 0;
     try {
-      for (var i = 0; i < rows.length; i += _chunkSize) {
-        final end = min(i + _chunkSize, rows.length);
-        final chunk = rows.sublist(i, end);
+      for (var i = 0; i < toSend.length; i += _chunkSize) {
+        final end = min(i + _chunkSize, toSend.length);
+        final chunk = toSend.sublist(i, end);
         await client.from(tableName).upsert(chunk);
         sent += chunk.length;
         await Future<void>.delayed(Duration.zero);

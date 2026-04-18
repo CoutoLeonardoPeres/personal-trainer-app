@@ -6,6 +6,9 @@ ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 # Xcode 15+: evita que fases de build tratem artefatos em `build/ios/...` como "stale" /
 # fora dos root paths permitidos (ex.: share_plus.framework após trocar pods ou limpar mal).
 install! 'cocoapods', :disable_input_output_paths => true
+# Xcode 15+: `ENABLE_USER_SCRIPT_SANDBOXING` (default YES) + paths em build/ios/... pode gerar
+# "Stale file '.../build/ios/Release-iphoneos/flutter_app_group_directory/.../Headers' is located
+# outside of the allowed root paths" — desativamos no post_install (Pods + Runner).
 
 # Se aparecer: Stale file '.../build/ios/Debug-iphoneos/path_provider_foundation/
 # path_provider_foundation_privacy.bundle' is located outside of the allowed root paths
@@ -85,6 +88,7 @@ post_install do |installer|
 
     # Xcode 16+: módulos Swift explícitos às vezes falham ao resolver `@import Flutter` em plugins.
     target.build_configurations.each do |config|
+      config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
       config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
       # Evita "module 'Flutter' not found" ao compilar app_links-Swift.h / @import app_links no Runner.
@@ -155,6 +159,16 @@ post_install do |installer|
     end
     engine_debug = flutter_root && File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios', 'Flutter.xcframework')
     engine_release = flutter_root && File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios-release', 'Flutter.xcframework')
+
+    # Versão única = pubspec.yaml → ios/Flutter/Generated.xcconfig (FLUTTER_BUILD_*).
+    # Aplica a Runner, RunnerTests, extensões e qualquer target no .xcodeproj para Archive pelo Xcode.
+    project.native_targets.each do |t|
+      t.build_configurations.each do |config|
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+        config.build_settings['MARKETING_VERSION'] = '$(FLUTTER_BUILD_NAME)'
+        config.build_settings['CURRENT_PROJECT_VERSION'] = '$(FLUTTER_BUILD_NUMBER)'
+      end
+    end
 
     project.native_targets.each do |t|
       next unless t.name == 'Runner'

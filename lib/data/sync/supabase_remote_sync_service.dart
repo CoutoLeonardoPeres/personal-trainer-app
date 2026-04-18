@@ -9,6 +9,7 @@ import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import 'remote_sync_service.dart';
 import 'supabase_catalog_cloud_reconcile.dart';
+import 'supabase_pull_sync_service.dart';
 import 'supabase_table_mappers.dart';
 
 class _QueuedAudit {
@@ -18,6 +19,7 @@ class _QueuedAudit {
     required this.entityType,
     this.entityId,
     this.payload,
+    this.attempt = 0,
   });
 
   final String auditLogId;
@@ -25,6 +27,16 @@ class _QueuedAudit {
   final String entityType;
   final String? entityId;
   final Map<String, Object?>? payload;
+  final int attempt;
+
+  _QueuedAudit copyWith({int? attempt}) => _QueuedAudit(
+    auditLogId: auditLogId,
+    action: action,
+    entityType: entityType,
+    entityId: entityId,
+    payload: payload,
+    attempt: attempt ?? this.attempt,
+  );
 }
 
 /// Espelha o SQLite no Supabase **logo após** cada gravação local que regista auditoria
@@ -44,6 +56,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
   final AppDatabase _db;
   final SupabaseSyncController _controller;
 
+  final List<_QueuedAudit> _priorityQueue = [];
   final List<_QueuedAudit> _queue = [];
   final Set<String> _queuedAuditIds = <String>{};
   bool _workerRunning = false;
@@ -53,6 +66,35 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
   /// um frame inteiro — fila continua não bloqueante e o primeiro envio sai logo a seguir
   /// à gravação local.
   static const Duration _yieldBetweenJobs = Duration.zero;
+  static const int _maxImmediateRetries = 6;
+
+  static Duration _retryDelayForAttempt(int attempt) {
+    // Backoff curto para manter sensação de "tempo real" sem entrar em loop agressivo.
+    final ms = switch (attempt) {
+      <= 1 => 600,
+      2 => 1200,
+      3 => 2000,
+      4 => 3200,
+      5 => 5000,
+      _ => 8000,
+    };
+    return Duration(milliseconds: ms);
+  }
+
+  static bool _isHighPriorityAudit({
+    required String entityType,
+    required String action,
+  }) {
+    if (entityType == 'day_workout' || entityType == 'day_workout_exercise') {
+      return true;
+    }
+    // Catálogo: processar antes da fila longa (planejamento / semanas) para o indicador
+    // de tráfego e o reconcile de exercícios reagirem de imediato.
+    if (entityType == 'exercise' || entityType == 'muscle_group') {
+      return true;
+    }
+    return action == 'complete' && entityType == 'week_schedule_item';
+  }
 
   @override
   Future<void> enqueueAudit({
@@ -62,16 +104,23 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     String? entityId,
     Map<String, Object?>? payload,
   }) async {
-    if (!_queuedAuditIds.add(auditLogId)) return;
-    _queue.add(
-      _QueuedAudit(
-        auditLogId: auditLogId,
-        action: action,
-        entityType: entityType,
-        entityId: entityId,
-        payload: payload,
-      ),
+    final q = _QueuedAudit(
+      auditLogId: auditLogId,
+      action: action,
+      entityType: entityType,
+      entityId: entityId,
+      payload: payload,
     );
+    _enqueueInternal(q);
+  }
+
+  void _enqueueInternal(_QueuedAudit q) {
+    if (!_queuedAuditIds.add(q.auditLogId)) return;
+    if (_isHighPriorityAudit(entityType: q.entityType, action: q.action)) {
+      _priorityQueue.add(q);
+    } else {
+      _queue.add(q);
+    }
     unawaited(_pumpQueue());
   }
 
@@ -79,20 +128,43 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     if (_workerRunning) return;
     _workerRunning = true;
     try {
-      while (_queue.isNotEmpty) {
-        final job = _queue.removeAt(0);
+      while (_priorityQueue.isNotEmpty || _queue.isNotEmpty) {
+        final job = _priorityQueue.isNotEmpty
+            ? _priorityQueue.removeAt(0)
+            : _queue.removeAt(0);
+        var ok = false;
         try {
-          await _syncOneJob(job);
+          ok = await _syncOneJob(job);
         } finally {
           _queuedAuditIds.remove(job.auditLogId);
         }
-        if (_queue.isNotEmpty) {
+        if (!ok) {
+          final nextAttempt = job.attempt + 1;
+          if (nextAttempt <= _maxImmediateRetries) {
+            final retry = job.copyWith(attempt: nextAttempt);
+            final delay = _retryDelayForAttempt(nextAttempt);
+            debugPrint(
+              'SupabaseRemoteSyncService: retry '
+              '${retry.entityType}/${retry.entityId ?? retry.auditLogId} '
+              'attempt=$nextAttempt in ${delay.inMilliseconds}ms',
+            );
+            await Future<void>.delayed(delay);
+            _enqueueInternal(retry);
+          } else {
+            debugPrint(
+              'SupabaseRemoteSyncService: retry limit reached '
+              'for ${job.entityType}/${job.entityId ?? job.auditLogId}; '
+              'will rely on pending audit recovery.',
+            );
+          }
+        }
+        if (_priorityQueue.isNotEmpty || _queue.isNotEmpty) {
           await Future<void>.delayed(_yieldBetweenJobs);
         }
       }
     } finally {
       _workerRunning = false;
-      if (_queue.isNotEmpty) {
+      if (_priorityQueue.isNotEmpty || _queue.isNotEmpty) {
         unawaited(_pumpQueue());
       }
     }
@@ -103,12 +175,12 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     if (_recovering || !supabaseAppEnabled) return;
     _recovering = true;
     try {
-      final rows = await (_db.select(_db.auditLogs)
-            ..orderBy([
-              (t) => OrderingTerm.desc(t.at),
-              (t) => OrderingTerm.desc(t.id),
-            ]))
-          .get();
+      final rows =
+          await (_db.select(_db.auditLogs)..orderBy([
+                (t) => OrderingTerm.desc(t.at),
+                (t) => OrderingTerm.desc(t.id),
+              ]))
+              .get();
 
       final seenEntityKeys = <String>{};
       final recovered = <AuditLogEntity>[];
@@ -133,14 +205,14 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     }
   }
 
-  Future<void> _syncOneJob(_QueuedAudit job) async {
-    if (!supabaseAppEnabled) return;
+  Future<bool> _syncOneJob(_QueuedAudit job) async {
+    if (!supabaseAppEnabled) return true;
 
     final client = Supabase.instance.client;
-    final auditRow = await (_db.select(_db.auditLogs)
-          ..where((a) => a.id.equals(job.auditLogId)))
-        .getSingleOrNull();
-    if (auditRow == null) return;
+    final auditRow = await (_db.select(
+      _db.auditLogs,
+    )..where((a) => a.id.equals(job.auditLogId))).getSingleOrNull();
+    if (auditRow == null) return true;
 
     _controller.beginUpload();
     try {
@@ -167,36 +239,153 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
 
       await _mirrorAfterAudit(
         client,
+        auditLogId: job.auditLogId,
         action: job.action,
         entityType: job.entityType,
         entityId: job.entityId,
         payload: job.payload,
       );
+      // ACK do job: este audit já foi espelhado com sucesso.
+      await _discardAuditLog(job.auditLogId);
       _controller.noteConnected();
       _controller.noteBackgroundPushSuccess();
+      return true;
     } catch (e, st) {
       debugPrint('SupabaseRemoteSyncService: $e\n$st');
       _controller.noteDisconnected();
       _controller.noteBackgroundPushError(e);
+      return false;
     } finally {
       _controller.endUpload();
     }
   }
 
+  String _isoUpdatedAt(DateTime d) => d.toUtc().toIso8601String();
+
+  Future<bool> _lwwUpdateById({
+    required SupabaseClient client,
+    required String table,
+    required String id,
+    required Map<String, dynamic> map,
+    required DateTime localUpdatedAt,
+  }) async {
+    // LWW: só atualiza se a nuvem for mais antiga.
+    final res = await client
+        .from(table)
+        .update(map)
+        .eq('id', id)
+        .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
+        .select('id');
+    final list = res as List<dynamic>;
+    return list.isNotEmpty;
+  }
+
+  Future<bool> _tryInsert({
+    required SupabaseClient client,
+    required String table,
+    required Map<String, dynamic> map,
+  }) async {
+    await client.from(table).insert(map);
+    return true;
+  }
+
+  bool _looksLikeDuplicateKey(Object e) {
+    final s = e.toString();
+    return s.contains('23505') ||
+        s.contains('duplicate key') ||
+        s.contains('duplicate') ||
+        s.contains('already exists');
+  }
+
+  Future<void> _discardAuditLog(String auditLogId) async {
+    await (_db.delete(
+      _db.auditLogs,
+    )..where((a) => a.id.equals(auditLogId))).go();
+  }
+
+  Future<void> _pullAfterConflict({
+    required String entityType,
+    required String entityId,
+  }) async {
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    switch (entityType) {
+      case 'student':
+        await pull.pullStudentById(entityId);
+      case 'personal':
+        await pull.pullPersonalById(entityId);
+      case 'muscle_group':
+        await pull.pullMuscleGroupById(entityId);
+      case 'exercise':
+        await pull.pullExerciseById(entityId);
+      case 'gym':
+        await pull.pullGymById(entityId);
+      case 'training_method':
+        await pull.pullTrainingMethodById(entityId);
+      case 'workout_group':
+        await pull.pullWorkoutGroupById(entityId);
+      case 'workout_group_exercise':
+        await pull.pullWorkoutGroupExerciseById(entityId);
+      case 'week_schedule_block':
+      case 'week_schedule':
+        await pull.pullWeekScheduleBlockById(entityId);
+      case 'week_schedule_item':
+        await pull.pullWeekScheduleItemById(entityId);
+      case 'day_workout':
+        await pull.pullDayWorkoutById(entityId);
+      case 'day_workout_exercise':
+        await pull.pullDayWorkoutExerciseById(entityId);
+      default:
+        await pull.pullAllFromRemote();
+        break;
+    }
+  }
+
+  Future<bool> _lwwUpsertOrConflictPull({
+    required String auditLogId,
+    required SupabaseClient client,
+    required String table,
+    required String entityTypeForPull,
+    required String id,
+    required Map<String, dynamic> map,
+    required DateTime localUpdatedAt,
+  }) async {
+    final ok = await _lwwUpdateById(
+      client: client,
+      table: table,
+      id: id,
+      map: map,
+      localUpdatedAt: localUpdatedAt,
+    );
+    if (ok) return true;
+    try {
+      await _tryInsert(client: client, table: table, map: map);
+      return true;
+    } catch (e) {
+      if (_looksLikeDuplicateKey(e)) {
+        await _discardAuditLog(auditLogId);
+        await _pullAfterConflict(entityType: entityTypeForPull, entityId: id);
+        return false;
+      }
+      rethrow;
+    }
+  }
+
   static bool _isExerciseNormalizedNameConflict(Object e) {
     final s = e.toString();
-    return s.contains('23505') && s.contains('exercises_unique_normalized_name');
+    return s.contains('23505') &&
+        s.contains('exercises_unique_normalized_name');
   }
 
   Future<({MuscleGroupEntity mg, ExerciseEntity ex})?> _bundledExerciseForPush(
     String exerciseId,
   ) async {
-    final e = await (_db.select(_db.exercises)..where((t) => t.id.equals(exerciseId)))
-        .getSingleOrNull();
+    final e = await (_db.select(
+      _db.exercises,
+    )..where((t) => t.id.equals(exerciseId))).getSingleOrNull();
     if (e == null) return null;
-    final m = await (_db.select(_db.muscleGroups)
-          ..where((t) => t.id.equals(e.muscleGroupId)))
-        .getSingleOrNull();
+    final m = await (_db.select(
+      _db.muscleGroups,
+    )..where((t) => t.id.equals(e.muscleGroupId))).getSingleOrNull();
     if (m == null) {
       debugPrint(
         'SupabaseRemoteSyncService: exercício ${e.id} referencia muscle_group '
@@ -250,8 +439,9 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     SupabaseClient client,
     String exerciseId,
   ) async {
-    final ex = await (_db.select(_db.exercises)..where((t) => t.id.equals(exerciseId)))
-        .getSingleOrNull();
+    final ex = await (_db.select(
+      _db.exercises,
+    )..where((t) => t.id.equals(exerciseId))).getSingleOrNull();
     if (ex == null) {
       debugPrint(
         'SupabaseRemoteSyncService: exercise id=$exerciseId ausente no SQLite; '
@@ -262,8 +452,96 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     await _mirrorExerciseWithDependencies(client, ex);
   }
 
+  Future<void> _replaceStudentGymsOnCloud(
+    SupabaseClient client,
+    String studentId,
+  ) async {
+    await client.from('student_gyms').delete().eq('student_id', studentId);
+    final links = await (_db.select(
+      _db.studentGyms,
+    )..where((t) => t.studentId.equals(studentId))).get();
+    for (var i = 0; i < links.length; i++) {
+      final l = links[i];
+      await client.from('student_gyms').insert({
+        'student_id': l.studentId,
+        'gym_id': l.gymId,
+      });
+      if (i % 4 == 3) await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  @override
+  Future<void> mirrorStudentRowNow(String studentId) async {
+    if (!supabaseAppEnabled) return;
+    final client = Supabase.instance.client;
+    _controller.beginUpload();
+    try {
+      final row = await (_db.select(
+        _db.students,
+      )..where((t) => t.id.equals(studentId))).getSingleOrNull();
+      if (row != null) {
+        await _lwwUpsertOrConflictPull(
+          auditLogId: '_direct_',
+          client: client,
+          table: 'students',
+          entityTypeForPull: 'student',
+          id: studentId,
+          map: supabaseStudent(row),
+          localUpdatedAt: row.updatedAt,
+        );
+      }
+      _controller.noteConnected();
+      _controller.noteBackgroundPushSuccess();
+    } catch (e, st) {
+      debugPrint('SupabaseRemoteSyncService mirrorStudentRowNow: $e\n$st');
+      _controller.noteDisconnected();
+      _controller.noteBackgroundPushError(e);
+    } finally {
+      _controller.endUpload();
+    }
+  }
+
+  @override
+  Future<void> mirrorPersonalRowNow(String personalId) async {
+    if (!supabaseAppEnabled) return;
+    final client = Supabase.instance.client;
+    _controller.beginUpload();
+    try {
+      final row = await (_db.select(
+        _db.personals,
+      )..where((t) => t.id.equals(personalId))).getSingleOrNull();
+      if (row != null) {
+        await _lwwUpsertOrConflictPull(
+          auditLogId: '_direct_',
+          client: client,
+          table: 'personals',
+          entityTypeForPull: 'personal',
+          id: personalId,
+          map: supabasePersonal(row),
+          localUpdatedAt: row.updatedAt,
+        );
+      }
+      _controller.noteConnected();
+      _controller.noteBackgroundPushSuccess();
+    } catch (e, st) {
+      debugPrint('SupabaseRemoteSyncService mirrorPersonalRowNow: $e\n$st');
+      _controller.noteDisconnected();
+      _controller.noteBackgroundPushError(e);
+    } finally {
+      _controller.endUpload();
+    }
+  }
+
+  @override
+  Future<void> refreshDayWorkoutFromCloud(String dayWorkoutId) async {
+    if (!supabaseAppEnabled) return;
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    await pull.pullDayWorkoutById(dayWorkoutId);
+  }
+
   Future<void> _mirrorAfterAudit(
     SupabaseClient client, {
+    required String auditLogId,
     required String action,
     required String entityType,
     String? entityId,
@@ -279,87 +557,208 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         if (isDelete) {
           await client.from('muscle_groups').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.muscleGroups)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await client.from('muscle_groups').upsert(supabaseMuscleGroup(row));
-          }
+          final row = await (_db.select(
+            _db.muscleGroups,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'muscle_groups',
+            entityTypeForPull: 'muscle_group',
+            id: eid,
+            map: supabaseMuscleGroup(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'exercise':
         if (isDelete) {
           await client.from('exercises').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.exercises)..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) await _mirrorExerciseWithDependencies(client, row);
+          final row = await (_db.select(
+            _db.exercises,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          // Garante a dependência (muscle_group) antes; ambos sob LWW.
+          final mg = await (_db.select(
+            _db.muscleGroups,
+          )..where((t) => t.id.equals(row.muscleGroupId))).getSingleOrNull();
+          if (mg != null) {
+            await _lwwUpsertOrConflictPull(
+              auditLogId: auditLogId,
+              client: client,
+              table: 'muscle_groups',
+              entityTypeForPull: 'muscle_group',
+              id: mg.id,
+              map: supabaseMuscleGroup(mg),
+              localUpdatedAt: mg.updatedAt,
+            );
+          }
+          // Exercício em si
+          try {
+            await _lwwUpsertOrConflictPull(
+              auditLogId: auditLogId,
+              client: client,
+              table: 'exercises',
+              entityTypeForPull: 'exercise',
+              id: eid,
+              map: supabaseExercise(row),
+              localUpdatedAt: row.updatedAt,
+            );
+          } catch (e) {
+            // Mantém reconciliação de catálogo existente para conflitos 23505 por nome normalizado.
+            if (_isExerciseNormalizedNameConflict(e)) {
+              await reconcileLocalCatalogWithCloud(_db, client);
+              // Releitura + tentativa novamente (best effort)
+              final again = await (_db.select(
+                _db.exercises,
+              )..where((t) => t.id.equals(eid))).getSingleOrNull();
+              if (again != null) {
+                await _lwwUpsertOrConflictPull(
+                  auditLogId: auditLogId,
+                  client: client,
+                  table: 'exercises',
+                  entityTypeForPull: 'exercise',
+                  id: eid,
+                  map: supabaseExercise(again),
+                  localUpdatedAt: again.updatedAt,
+                );
+              }
+              return;
+            }
+            rethrow;
+          }
         }
       case 'gym':
         if (isDelete) {
           await client.from('gyms').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.gyms)..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) await client.from('gyms').upsert(supabaseGym(row));
+          final row = await (_db.select(
+            _db.gyms,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'gyms',
+            entityTypeForPull: 'gym',
+            id: eid,
+            map: supabaseGym(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'personal':
         if (isDelete) {
           await client.from('personals').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.personals)..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) await client.from('personals').upsert(supabasePersonal(row));
+          final row = await (_db.select(
+            _db.personals,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'personals',
+            entityTypeForPull: 'personal',
+            id: eid,
+            map: supabasePersonal(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'student':
         if (isDelete) {
           await client.from('students').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.students)..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await client.from('students').upsert(supabaseStudent(row));
-            await client.from('student_gyms').delete().eq('student_id', eid);
-            final links = await (_db.select(_db.studentGyms)
-                  ..where((t) => t.studentId.equals(eid)))
-                .get();
-            for (var i = 0; i < links.length; i++) {
-              final l = links[i];
-              await client.from('student_gyms').insert({
-                'student_id': l.studentId,
-                'gym_id': l.gymId,
-              });
-              if (i % 4 == 3) await Future<void>.delayed(Duration.zero);
-            }
+          final row = await (_db.select(
+            _db.students,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          final ok = await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'students',
+            entityTypeForPull: 'student',
+            id: eid,
+            map: supabaseStudent(row),
+            localUpdatedAt: row.updatedAt,
+          );
+          if (!ok) return;
+          // Vínculos academias: apenas para create/update, e também sob LWW do próprio aluno.
+          if (action == 'create' || action == 'update') {
+            await _replaceStudentGymsOnCloud(client, eid);
           }
         }
       case 'training_method':
         if (isDelete) {
           await client.from('training_methods').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.trainingMethods)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await client.from('training_methods').upsert(supabaseTrainingMethod(row));
-          }
+          final row = await (_db.select(
+            _db.trainingMethods,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'training_methods',
+            entityTypeForPull: 'training_method',
+            id: eid,
+            map: supabaseTrainingMethod(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'workout_group':
         if (isDelete) {
-          await client.from('workout_groups').delete().eq('id', eid);
-        } else {
-          final row = await (_db.select(_db.workoutGroups)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
+          final row = await (_db.select(
+            _db.workoutGroups,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
           if (row != null) {
-            await client.from('workout_groups').upsert(supabaseWorkoutGroup(row));
+            await _lwwUpsertOrConflictPull(
+              auditLogId: auditLogId,
+              client: client,
+              table: 'workout_groups',
+              entityTypeForPull: 'workout_group',
+              id: eid,
+              map: supabaseWorkoutGroup(row),
+              localUpdatedAt: row.updatedAt,
+            );
+            await client
+                .from('workout_group_exercises')
+                .delete()
+                .eq('workout_group_id', eid);
+          } else {
+            await client.from('workout_groups').delete().eq('id', eid);
           }
-          final lines = await (_db.select(_db.workoutGroupExercises)
-                ..where((t) => t.workoutGroupId.equals(eid)))
-              .get();
+        } else {
+          final row = await (_db.select(
+            _db.workoutGroups,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row != null) {
+            final ok = await _lwwUpsertOrConflictPull(
+              auditLogId: auditLogId,
+              client: client,
+              table: 'workout_groups',
+              entityTypeForPull: 'workout_group',
+              id: eid,
+              map: supabaseWorkoutGroup(row),
+              localUpdatedAt: row.updatedAt,
+            );
+            if (!ok) return;
+          }
+          final lines = await (_db.select(
+            _db.workoutGroupExercises,
+          )..where((t) => t.workoutGroupId.equals(eid))).get();
           for (var i = 0; i < lines.length; i++) {
             final l = lines[i];
             await _ensureExerciseDependenciesMirrored(client, l.exerciseId);
-            await client.from('workout_group_exercises').upsert(supabaseWorkoutGroupExercise(l));
+            await _lwwUpsertOrConflictPull(
+              auditLogId: auditLogId,
+              client: client,
+              table: 'workout_group_exercises',
+              entityTypeForPull: 'workout_group_exercise',
+              id: l.id,
+              map: supabaseWorkoutGroupExercise(l),
+              localUpdatedAt: l.updatedAt,
+            );
             if (i % 8 == 7) await Future<void>.delayed(Duration.zero);
           }
         }
@@ -367,38 +766,60 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         if (isDelete) {
           await client.from('workout_group_exercises').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.workoutGroupExercises)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
-            await client.from('workout_group_exercises').upsert(supabaseWorkoutGroupExercise(row));
-          }
+          final row = await (_db.select(
+            _db.workoutGroupExercises,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'workout_group_exercises',
+            entityTypeForPull: 'workout_group_exercise',
+            id: eid,
+            map: supabaseWorkoutGroupExercise(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'week_schedule_block':
         if (isDelete) {
           await client.from('week_schedule_blocks').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.weekScheduleBlocks)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await client.from('week_schedule_blocks').upsert(supabaseWeekBlock(row));
-          }
+          final row = await (_db.select(
+            _db.weekScheduleBlocks,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'week_schedule_blocks',
+            entityTypeForPull: 'week_schedule_block',
+            id: eid,
+            map: supabaseWeekBlock(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'week_schedule':
-        await _mirrorWeekScheduleBlock(client, eid);
+        // Espelha bloco + itens sob LWW.
+        await _mirrorWeekScheduleBlock(client, eid, auditLogId: auditLogId);
       case 'week_schedule_item':
         if (isDelete) {
           await client.from('week_schedule_items').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.weekScheduleItems)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
-            await client.from('week_schedule_items').upsert(supabaseWeekItem(row));
-          }
+          final row = await (_db.select(
+            _db.weekScheduleItems,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'week_schedule_items',
+            entityTypeForPull: 'week_schedule_item',
+            id: eid,
+            map: supabaseWeekItem(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       case 'day_workout':
         if (isDelete) {
@@ -408,54 +829,124 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
               .eq('day_workout_id', eid);
           await client.from('day_workouts').delete().eq('id', eid);
         } else {
-          await _mirrorDayWorkoutBundle(client, eid);
+          await _mirrorDayWorkoutBundle(client, eid, auditLogId: auditLogId);
         }
       case 'day_workout_exercise':
         if (isDelete) {
           await client.from('day_workout_exercises').delete().eq('id', eid);
         } else {
-          final row = await (_db.select(_db.dayWorkoutExercises)
-                ..where((t) => t.id.equals(eid)))
-              .getSingleOrNull();
-          if (row != null) {
-            await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
-            await client.from('day_workout_exercises').upsert(supabaseDayWorkoutExercise(row));
-          }
+          final row = await (_db.select(
+            _db.dayWorkoutExercises,
+          )..where((t) => t.id.equals(eid))).getSingleOrNull();
+          if (row == null) return;
+          await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
+          await _lwwUpsertOrConflictPull(
+            auditLogId: auditLogId,
+            client: client,
+            table: 'day_workout_exercises',
+            entityTypeForPull: 'day_workout_exercise',
+            id: eid,
+            map: supabaseDayWorkoutExercise(row),
+            localUpdatedAt: row.updatedAt,
+          );
         }
       default:
         break;
     }
   }
 
-  Future<void> _mirrorWeekScheduleBlock(SupabaseClient client, String blockId) async {
-    final block = await (_db.select(_db.weekScheduleBlocks)
-          ..where((b) => b.id.equals(blockId)))
-        .getSingleOrNull();
+  Future<void> _mirrorWeekScheduleBlock(
+    SupabaseClient client,
+    String blockId, {
+    String? auditLogId,
+  }) async {
+    final block = await (_db.select(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.id.equals(blockId))).getSingleOrNull();
     if (block == null) return;
-    await client.from('week_schedule_blocks').upsert(supabaseWeekBlock(block));
-    final items = await (_db.select(_db.weekScheduleItems)
-          ..where((i) => i.blockId.equals(blockId)))
-        .get();
+    if (auditLogId != null) {
+      final ok = await _lwwUpsertOrConflictPull(
+        auditLogId: auditLogId,
+        client: client,
+        table: 'week_schedule_blocks',
+        entityTypeForPull: 'week_schedule_block',
+        id: blockId,
+        map: supabaseWeekBlock(block),
+        localUpdatedAt: block.updatedAt,
+      );
+      if (!ok) return;
+    } else {
+      await client
+          .from('week_schedule_blocks')
+          .upsert(supabaseWeekBlock(block));
+    }
+    final items = await (_db.select(
+      _db.weekScheduleItems,
+    )..where((i) => i.blockId.equals(blockId))).get();
     for (var i = 0; i < items.length; i++) {
       final it = items[i];
       await _ensureExerciseDependenciesMirrored(client, it.exerciseId);
-      await client.from('week_schedule_items').upsert(supabaseWeekItem(it));
+      if (auditLogId != null) {
+        await _lwwUpsertOrConflictPull(
+          auditLogId: auditLogId,
+          client: client,
+          table: 'week_schedule_items',
+          entityTypeForPull: 'week_schedule_item',
+          id: it.id,
+          map: supabaseWeekItem(it),
+          localUpdatedAt: it.updatedAt,
+        );
+      } else {
+        await client.from('week_schedule_items').upsert(supabaseWeekItem(it));
+      }
       if (i % 10 == 9) await Future<void>.delayed(Duration.zero);
     }
   }
 
-  Future<void> _mirrorDayWorkoutBundle(SupabaseClient client, String workoutId) async {
-    final w = await (_db.select(_db.dayWorkouts)..where((d) => d.id.equals(workoutId)))
-        .getSingleOrNull();
+  Future<void> _mirrorDayWorkoutBundle(
+    SupabaseClient client,
+    String workoutId, {
+    String? auditLogId,
+  }) async {
+    final w = await (_db.select(
+      _db.dayWorkouts,
+    )..where((d) => d.id.equals(workoutId))).getSingleOrNull();
     if (w == null) return;
-    await client.from('day_workouts').upsert(supabaseDayWorkout(w));
-    final lines = await (_db.select(_db.dayWorkoutExercises)
-          ..where((e) => e.dayWorkoutId.equals(workoutId)))
-        .get();
+    if (auditLogId != null) {
+      final ok = await _lwwUpsertOrConflictPull(
+        auditLogId: auditLogId,
+        client: client,
+        table: 'day_workouts',
+        entityTypeForPull: 'day_workout',
+        id: workoutId,
+        map: supabaseDayWorkout(w),
+        localUpdatedAt: w.updatedAt,
+      );
+      if (!ok) return;
+    } else {
+      await client.from('day_workouts').upsert(supabaseDayWorkout(w));
+    }
+    final lines = await (_db.select(
+      _db.dayWorkoutExercises,
+    )..where((e) => e.dayWorkoutId.equals(workoutId))).get();
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
       await _ensureExerciseDependenciesMirrored(client, line.exerciseId);
-      await client.from('day_workout_exercises').upsert(supabaseDayWorkoutExercise(line));
+      if (auditLogId != null) {
+        await _lwwUpsertOrConflictPull(
+          auditLogId: auditLogId,
+          client: client,
+          table: 'day_workout_exercises',
+          entityTypeForPull: 'day_workout_exercise',
+          id: line.id,
+          map: supabaseDayWorkoutExercise(line),
+          localUpdatedAt: line.updatedAt,
+        );
+      } else {
+        await client
+            .from('day_workout_exercises')
+            .upsert(supabaseDayWorkoutExercise(line));
+      }
       if (i % 8 == 7) await Future<void>.delayed(Duration.zero);
     }
   }

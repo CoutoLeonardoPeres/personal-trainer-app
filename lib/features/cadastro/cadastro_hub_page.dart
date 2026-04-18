@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/access/permission_service.dart';
+import '../../core/auth/app_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/ui/futuristic_background.dart';
+import '../../data/repositories/app_data_repository.dart';
 import 'registry/academias_page.dart';
 import 'registry/alunos_page.dart';
 import 'registry/exercicios_page.dart';
@@ -16,50 +20,121 @@ class CadastroHubPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <({String title, String subtitle, IconData icon, Widget page})>[
-      (
-        title: 'Grupos musculares',
-        subtitle: 'Base para classificar exercícios',
-        icon: Icons.accessibility_new_rounded,
-        page: const GruposMuscularesPage(),
-      ),
-      (
-        title: 'Exercícios',
-        subtitle: 'Nome, grupo, vídeos e alternativas',
-        icon: Icons.sports_gymnastics_rounded,
-        page: const ExerciciosPage(),
-      ),
-      (
-        title: 'Academias',
-        subtitle: 'Endereço completo e CNPJ',
-        icon: Icons.apartment_rounded,
-        page: const AcademiasPage(),
-      ),
-      (
-        title: 'Alunos',
-        subtitle: 'Dados, endereço e multiselect de academias',
-        icon: Icons.people_outline_rounded,
-        page: const AlunosPage(),
-      ),
-      (
-        title: 'Personais',
-        subtitle: 'Registro profissional e contato',
-        icon: Icons.badge_outlined,
-        page: const PersonaisPage(),
-      ),
-      (
-        title: 'Métodos de treino',
-        subtitle: 'Método e descrição',
-        icon: Icons.menu_book_outlined,
-        page: const MetodosTreinoPage(),
-      ),
-      (
-        title: 'Grupos de treinos',
-        subtitle: 'Composição com exercícios cadastrados',
-        icon: Icons.layers_rounded,
-        page: const GruposTreinosPage(),
-      ),
-    ];
+    final session = context.watch<AppSession>();
+    final repo = context.watch<AppDataRepository>();
+
+    if (session.isStudent && session.studentId != null) {
+      return StreamBuilder(
+        stream: repo.watchStudentById(session.studentId!),
+        builder: (context, snap) {
+          final st = snap.data;
+          final perms = PermissionService(session: session, student: st);
+          return _CadastroList(permissions: perms);
+        },
+      );
+    }
+
+    if (session.isPersonalTrainer && session.personalId != null) {
+      return StreamBuilder(
+        stream: repo.watchPersonalById(session.personalId!),
+        builder: (context, snap) {
+          final perms = PermissionService(
+            session: session,
+            personal: snap.data,
+          );
+          return _CadastroList(permissions: perms);
+        },
+      );
+    }
+
+    return _CadastroList(
+      permissions: PermissionService(session: session),
+    );
+  }
+}
+
+class _CadastroList extends StatelessWidget {
+  const _CadastroList({required this.permissions});
+
+  final PermissionService permissions;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({String title, String subtitle, IconData icon, Widget page})>[];
+
+    void add(
+      String title,
+      String subtitle,
+      IconData icon,
+      Widget page,
+      bool show,
+    ) {
+      if (!show) return;
+      items.add((title: title, subtitle: subtitle, icon: icon, page: page));
+    }
+
+    add(
+      'Grupos musculares',
+      'Base para classificar exercícios',
+      Icons.accessibility_new_rounded,
+      const GruposMuscularesPage(),
+      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+    );
+    add(
+      'Exercícios',
+      'Nome, grupo, vídeos e alternativas',
+      Icons.sports_gymnastics_rounded,
+      const ExerciciosPage(),
+      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+    );
+    add(
+      'Academias',
+      'Endereço completo e CNPJ',
+      Icons.apartment_rounded,
+      const AcademiasPage(),
+      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+    );
+    add(
+      'Alunos',
+      'Dados, endereço e multiselect de academias',
+      Icons.people_outline_rounded,
+      const AlunosPage(),
+      permissions.canSeeCadastroAlunosPersonais,
+    );
+    add(
+      'Personais',
+      'Registro profissional e contato',
+      Icons.badge_outlined,
+      const PersonaisPage(),
+      permissions.canSeeCadastroAlunosPersonais,
+    );
+    add(
+      'Métodos de treino',
+      'Método e descrição',
+      Icons.menu_book_outlined,
+      const MetodosTreinoPage(),
+      permissions.canSeeCadastroMetodosTreino,
+    );
+    add(
+      'Grupos de treinos',
+      'Composição com exercícios cadastrados',
+      Icons.layers_rounded,
+      const GruposTreinosPage(),
+      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+    );
+
+    if (items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Nenhum cadastro disponível para o seu perfil.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
+          ),
+        ),
+      );
+    }
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

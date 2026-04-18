@@ -147,8 +147,12 @@ create table if not exists public.workout_groups (
   name text not null,
   description text not null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz null
 );
+
+alter table public.workout_groups
+  add column if not exists deleted_at timestamptz null;
 
 create table if not exists public.workout_group_exercises (
   id text primary key,
@@ -301,6 +305,36 @@ alter table public.day_workout_exercises
 alter table public.workout_group_exercises add column if not exists combo_id text null;
 alter table public.week_schedule_items add column if not exists combo_id text null;
 alter table public.day_workout_exercises add column if not exists combo_id text null;
+
+-- RBAC + ligação Supabase Auth (paridade scripts/supabase_rbac_columns_rls.sql e supabase_rls_strict_auth_uid.sql)
+alter table public.personals
+  add column if not exists access_tier text not null default 'legacy';
+alter table public.personals
+  add column if not exists max_students_cap integer null;
+alter table public.students
+  add column if not exists anamnese_completed boolean not null default true;
+alter table public.students
+  add column if not exists access_tier text not null default 'legacy';
+alter table public.personals
+  add column if not exists auth_user_id uuid unique references auth.users (id) on delete set null;
+alter table public.students
+  add column if not exists auth_user_id uuid unique references auth.users (id) on delete set null;
+alter table public.students
+  add column if not exists premium_plan_expires_at timestamptz null;
+-- Paridade com o app (aluno «inativo» / arquivado — listas ativas filtram por is_archived).
+alter table public.students
+  add column if not exists is_archived boolean not null default false;
+alter table public.students
+  add column if not exists archived_at timestamptz null;
+-- Opcional (uma vez): corrigir linhas antigas em que o nome tem prefixo de inativo mas is_archived ficou false.
+update public.students s
+set
+  is_archived = true,
+  archived_at = coalesce(s.archived_at, s.updated_at)
+where s.is_archived = false
+  and (s.name like '(Inativo)%' or s.name like '(Excluído)%');
+create index if not exists idx_personals_auth_user_id on public.personals (auth_user_id);
+create index if not exists idx_students_auth_user_id on public.students (auth_user_id);
 
 -- Descanso entre séries (segundos): cria se faltar; se existir com tipo/default errados, alinha.
 do $$
@@ -594,6 +628,7 @@ order by s.student_id, s.created_at desc;
 -- RLS (DEV) + POLÍTICAS PERMISSIVAS
 -- -----------------------------
 -- ATENÇÃO: em produção, substitua por políticas restritivas por usuário/tenant.
+-- Políticas com auth.uid() + anamnese: scripts/supabase_rls_strict_auth_uid.sql
 
 alter table public.muscle_groups enable row level security;
 alter table public.exercises enable row level security;
