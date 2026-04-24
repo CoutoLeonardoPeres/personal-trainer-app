@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,7 +7,11 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/access/access_tiers.dart';
 import '../../core/auth/app_session.dart';
+import '../../core/net/supabase_dns_preflight_stub.dart'
+  if (dart.library.io) '../../core/net/supabase_dns_preflight_io.dart'
+  as supabase_dns_preflight;
 import '../../core/preferences/biometric_lock_prefs.dart';
+import '../../core/version/app_version_marker.dart';
 import '../../core/supabase/supabase_auth_service.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_constants.dart';
@@ -33,6 +39,8 @@ class SettingsPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            const _AppVersionSection(),
+            const SizedBox(height: 8),
             const _SessionProfileSection(),
             const SizedBox(height: 8),
             const _AdminRbacSection(),
@@ -521,6 +529,21 @@ class SettingsPage extends StatelessWidget {
     final sync = context.read<SupabaseSyncController>();
     final session = context.read<AppSession>();
 
+    final netOk = await supabase_dns_preflight.preflightSupabaseDnsLookup();
+    if (!netOk) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sem ligação de rede ou DNS não respondeu (supabase.co). '
+              'Verifique Wi‑Fi ou dados móveis e tente de novo.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     if (!context.mounted) return;
     showDialog<void>(
       context: context,
@@ -549,11 +572,23 @@ class SettingsPage extends StatelessWidget {
     final SupabasePullReport report;
     try {
       final svc = SupabasePullSyncService(db, sync, session: session);
-      report = await svc.pullAllFromRemote();
+      report = await svc.pullAllFromRemote().timeout(
+        const Duration(minutes: 15),
+        onTimeout: () => SupabasePullReport(
+          connectionOk: false,
+          connectionMessage:
+              'Tempo limite (15 min). Dados grandes ou rede lenta — tente Wi‑Fi '
+              'e volte a usar Importar da nuvem.',
+          tables: const [],
+          startedAt: DateTime.now(),
+          finishedAt: DateTime.now(),
+        ),
+      );
     } finally {
       if (context.mounted) {
-        final nav = Navigator.of(context, rootNavigator: true);
-        if (nav.canPop()) nav.pop();
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (_) {}
       }
     }
 
@@ -601,6 +636,37 @@ class SettingsPage extends StatelessWidget {
             child: const Text('Fechar'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AppVersionSection extends StatelessWidget {
+  const _AppVersionSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final marker = appVersionMarkerLabel();
+    return ListTile(
+      leading: const Icon(Icons.verified_outlined, color: AppColors.accentGreen),
+      title: const Text(
+        'Versão do app',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      subtitle: Text(
+        marker,
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
+      trailing: IconButton(
+        tooltip: 'Copiar versão',
+        onPressed: () async {
+          await Clipboard.setData(ClipboardData(text: marker));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Versão copiada.')),
+          );
+        },
+        icon: const Icon(Icons.copy_rounded, color: AppColors.textMuted),
       ),
     );
   }

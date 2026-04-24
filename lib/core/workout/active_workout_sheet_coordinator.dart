@@ -67,6 +67,14 @@ final class ActiveWorkoutSheetCoordinator {
     String workoutId,
     Future<void> Function() pushSheet,
   ) {
+    // Já está aberta para o mesmo treino: não reabrir (evita piscar).
+    if (_popCurrent != null && _activeWorkoutId == workoutId) {
+      return Future.value();
+    }
+    // Já há pedido pendente do mesmo treino no burst atual.
+    if (_pendingWorkoutId == workoutId && _consumeLoopFuture != null) {
+      return _consumeLoopFuture!;
+    }
     _pendingWorkoutId = workoutId;
     _pendingPush = pushSheet;
     return _ensureConsumeLoop();
@@ -88,6 +96,9 @@ final class ActiveWorkoutSheetCoordinator {
         _pendingWorkoutId = null;
         _pendingPush = null;
 
+        if (_popCurrent != null && _activeWorkoutId == id) {
+          continue;
+        }
         if (_popCurrent != null || _activeWorkoutId != null) {
           dismissCurrent();
           await Future<void>.delayed(Duration.zero);

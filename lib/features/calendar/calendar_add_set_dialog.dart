@@ -22,7 +22,10 @@ Future<void> showCalendarAddSetDialog({
 
   /// Treino `started`: carga (kg) e repetições obrigatórias.
   bool requireAllMetricFields = false,
+  VoidCallback? onSetSaved,
 }) {
+  // Evita pull da nuvem a competir com o commit da série (loading infinito no modal).
+  repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 40));
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -34,6 +37,7 @@ Future<void> showCalendarAddSetDialog({
       exerciseName: exerciseName,
       restFlowContext: restFlowContext,
       requireAllMetricFields: requireAllMetricFields,
+      onSetSaved: onSetSaved,
     ),
   );
 }
@@ -48,6 +52,7 @@ Future<void> showCalendarEditPerformedSetDialog({
   required String exerciseName,
   bool requireAllMetricFields = false,
 }) {
+  repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 40));
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -130,6 +135,16 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
     _cargaFocus.dispose();
     _repsFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _handlePrimaryTap() async {
+    if (_saving) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    // Em alguns devices, o primeiro toque fecha teclado/foco e não dispara
+    // persistência de imediato; aguarda 1 frame para garantir commit dos campos.
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    if (!mounted || _saving) return;
+    await _submit();
   }
 
   Future<void> _submit() async {
@@ -257,8 +272,7 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
                     controller: _repsCtrl,
                     focusNode: _repsFocus,
                     textInputAction: TextInputAction.done,
-                    onSubmitted: (_) =>
-                        FocusManager.instance.primaryFocus?.unfocus(),
+                    onSubmitted: (_) => _handlePrimaryTap(),
                     keyboardType: const TextInputType.numberWithOptions(
                       signed: false,
                       decimal: false,
@@ -269,7 +283,7 @@ class _EditPerformedSetDialogState extends State<_EditPerformedSetDialog> {
                   _FuturisticPrimaryCta(
                     label: 'Salvar alterações',
                     icon: Icons.save_rounded,
-                    onPressed: _saving ? null : _submit,
+                    onPressed: _saving ? null : _handlePrimaryTap,
                     busy: _saving,
                   ),
                 ],
@@ -544,6 +558,7 @@ class _AddSetDialog extends StatefulWidget {
     required this.exerciseName,
     required this.restFlowContext,
     this.requireAllMetricFields = false,
+    this.onSetSaved,
   });
 
   final AppDataRepository repo;
@@ -551,6 +566,7 @@ class _AddSetDialog extends StatefulWidget {
   final String exerciseName;
   final BuildContext restFlowContext;
   final bool requireAllMetricFields;
+  final VoidCallback? onSetSaved;
 
   @override
   State<_AddSetDialog> createState() => _AddSetDialogState();
@@ -619,6 +635,16 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     super.dispose();
   }
 
+  Future<void> _handlePrimaryTap() async {
+    if (_saving) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    // Evita “primeiro toque não registra” em aparelhos onde o foco/teclado
+    // consome o primeiro evento de toque.
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    if (!mounted || _saving) return;
+    await _submit();
+  }
+
   Future<void> _submit() async {
     final repsRaw = _repsCtrl.text.trim();
     final reps = int.tryParse(repsRaw);
@@ -660,13 +686,18 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final restSec = widget.line.restBetweenSetsSec;
     var saved = false;
     try {
+      debugPrint(
+        '[add_set] submit start line=$lineId reps=$reps load=${loadKg?.toString() ?? 'null'}',
+      );
       await _appendPerformedSetWithRetry(
         lineId: lineId,
         loadKg: loadKg,
         reps: reps,
       );
+      debugPrint('[add_set] submit local_saved line=$lineId');
       saved = true;
       if (mounted) {
+        widget.onSetSaved?.call();
         final messenger = ScaffoldMessenger.of(context);
         Navigator.of(context).pop();
         messenger.showSnackBar(
@@ -674,12 +705,14 @@ class _AddSetDialogState extends State<_AddSetDialog> {
         );
       }
     } on ArgumentError catch (e) {
+      debugPrint('[add_set] submit argument_error line=$lineId error=$e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message ?? 'Não foi possível salvar.')),
         );
       }
     } catch (e) {
+      debugPrint('[add_set] submit error line=$lineId error=$e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -710,30 +743,40 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     required int reps,
   }) async {
     Object? lastError;
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 4; i++) {
       try {
-        await widget.repo.appendDayWorkoutExercisePerformedSet(
-          lineId: lineId,
-          loadKg: loadKg,
-          reps: reps,
-        );
+        debugPrint('[add_set] append try=${i + 1} line=$lineId');
+        await widget.repo
+            .appendDayWorkoutExercisePerformedSet(
+              lineId: lineId,
+              loadKg: loadKg,
+              reps: reps,
+            )
+            .timeout(const Duration(seconds: 12));
+        debugPrint('[add_set] append ok line=$lineId try=${i + 1}');
         return;
       } catch (e) {
         lastError = e;
+        debugPrint('[add_set] append fail line=$lineId try=${i + 1} error=$e');
         final msg = e.toString().toLowerCase();
         final retryable =
             msg.contains('database is locked') ||
             msg.contains('database table is locked') ||
             msg.contains('sqlite_busy') ||
-            msg.contains('busy');
-        if (!retryable || i == 2) rethrow;
-        await Future<void>.delayed(Duration(milliseconds: 120 * (i + 1)));
+            msg.contains('busy') ||
+            msg.contains('timeout');
+        if (!retryable || i == 3) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 150 * (i + 1)));
       }
     }
     throw lastError ?? Exception('Falha ao registrar série.');
   }
 
   String _friendlySaveError(Object e) {
+    if (e is TimeoutException) {
+      return 'O registo demorou demasiado (base de dados ocupada). '
+          'Feche esta janela e tente outra vez.';
+    }
     final msg = e.toString().toLowerCase();
     if (msg.contains('database is locked') ||
         msg.contains('database table is locked') ||
@@ -849,8 +892,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
                     controller: _repsCtrl,
                     focusNode: _repsFocus,
                     textInputAction: TextInputAction.done,
-                    onSubmitted: (_) =>
-                        FocusManager.instance.primaryFocus?.unfocus(),
+                    onSubmitted: (_) => _handlePrimaryTap(),
                     keyboardType: const TextInputType.numberWithOptions(
                       signed: false,
                       decimal: false,
@@ -861,7 +903,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
                   _FuturisticPrimaryCta(
                     label: 'Confirmar série',
                     icon: Icons.add_task_rounded,
-                    onPressed: _saving ? null : _submit,
+                    onPressed: _saving ? null : _handlePrimaryTap,
                     busy: _saving,
                   ),
                 ],

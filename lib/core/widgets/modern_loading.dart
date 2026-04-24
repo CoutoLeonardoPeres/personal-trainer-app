@@ -178,42 +178,15 @@ class _FuturisticOrbitalPainter extends CustomPainter {
       oldDelegate.phase != phase;
 }
 
-/// Coluna padrão: indicador + texto (carregamento de BD / nuvem na UI).
+/// Indicador de carregamento (sem texto) — calendário, modais e sync.
 class FuturisticLoadingView extends StatelessWidget {
-  const FuturisticLoadingView({
-    super.key,
-    this.message,
-    this.size = 64,
-    this.messageStyle,
-  });
+  const FuturisticLoadingView({super.key, this.size = 64});
 
-  final String? message;
   final double size;
-  final TextStyle? messageStyle;
 
   @override
   Widget build(BuildContext context) {
-    final defaultStyle = TextStyle(
-      color: Colors.white.withValues(alpha: 0.88),
-      fontSize: 15,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 0.35,
-      height: 1.35,
-    );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ModernLoadingIndicator(size: size),
-        if (message != null && message!.trim().isNotEmpty) ...[
-          SizedBox(height: size * 0.22),
-          Text(
-            message!,
-            textAlign: TextAlign.center,
-            style: messageStyle ?? defaultStyle,
-          ),
-        ],
-      ],
-    );
+    return ModernLoadingIndicator(size: size);
   }
 }
 
@@ -221,11 +194,9 @@ class FuturisticLoadingView extends StatelessWidget {
 class FuturisticLoadingOverlay extends StatelessWidget {
   const FuturisticLoadingOverlay({
     super.key,
-    this.message = 'A carregar…',
     this.indicatorSize = 72,
   });
 
-  final String message;
   final double indicatorSize;
 
   @override
@@ -249,10 +220,7 @@ class FuturisticLoadingOverlay extends StatelessWidget {
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: FuturisticLoadingView(
-                  message: message,
-                  size: indicatorSize,
-                ),
+                child: FuturisticLoadingView(size: indicatorSize),
               ),
             ),
           ),

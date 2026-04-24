@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth/app_session.dart';
+import '../../core/supabase/supabase_sync_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
+import '../../data/sync/supabase_auto_pull_scheduler.dart';
 import 'calendar_day_flow.dart';
 
 /// Preenchimento das datas com treino — bem translúcido para o fundo aparecer.
@@ -23,6 +26,7 @@ class _CalendarPageState extends State<CalendarPage> {
   late int _currentPageIndex;
   late DateTime _currentDate;
   late DateTime _selectedDay;
+  var _dayTapInFlight = false;
 
   static final _reference = DateTime(2000, 1, 1);
 
@@ -40,6 +44,19 @@ class _CalendarPageState extends State<CalendarPage> {
     _currentDate = DateTime(now.year, now.month, 1);
     _selectedDay = DateTime(now.year, now.month, now.day);
     _pageController = PageController(initialPage: _currentPageIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final db = context.read<AppDatabase>();
+      final sync = context.read<SupabaseSyncController>();
+      final session = context.read<AppSession>();
+      SupabaseAutoPullScheduler.scheduleAfterResume(
+        db: db,
+        sync: sync,
+        session: session,
+        delay: const Duration(milliseconds: 500),
+        bypassMinInterval: true,
+      );
+    });
   }
 
   @override
@@ -247,6 +264,19 @@ class _CalendarPageState extends State<CalendarPage> {
                     _currentPageIndex = index;
                     _currentDate = _dateFromPageIndex(index);
                   });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    final db = context.read<AppDatabase>();
+                    final sync = context.read<SupabaseSyncController>();
+                    final session = context.read<AppSession>();
+                    SupabaseAutoPullScheduler.scheduleAfterResume(
+                      db: db,
+                      sync: sync,
+                      session: session,
+                      delay: const Duration(milliseconds: 400),
+                      bypassMinInterval: true,
+                    );
+                  });
                 },
                 itemBuilder: (context, index) {
                   final monthDate = _dateFromPageIndex(index);
@@ -295,10 +325,16 @@ class _CalendarPageState extends State<CalendarPage> {
                       }
 
                       return GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           if (!inMonth) return;
+                          if (_dayTapInFlight) return;
+                          _dayTapInFlight = true;
                           setState(() => _selectedDay = date);
-                          CalendarDayFlow.open(context, date, dayList);
+                          try {
+                            await CalendarDayFlow.open(context, date, dayList);
+                          } finally {
+                            _dayTapInFlight = false;
+                          }
                         },
                         child: Container(
                           decoration: BoxDecoration(

@@ -51,7 +51,6 @@ class SupabaseRealtimeSyncService {
   bool _flushing = false;
 
   final Set<String> _pendingDayWorkoutIds = <String>{};
-  final Set<String> _pendingDayWorkoutIdsFromLine = <String>{};
   final Set<String> _pendingLineIds = <String>{};
   final Map<String, DateTime> _lastActivityAtByKey = <String, DateTime>{};
 
@@ -114,7 +113,6 @@ class SupabaseRealtimeSyncService {
   Future<void> dispose() async {
     _disposed = true;
     _pendingDayWorkoutIds.clear();
-    _pendingDayWorkoutIdsFromLine.clear();
     _pendingLineIds.clear();
     await _detachRealtimeChannels();
   }
@@ -129,8 +127,16 @@ class SupabaseRealtimeSyncService {
 
   void _onDayWorkoutExercisePayload(PostgresChangePayload payload) {
     final dayWorkoutId = _dayWorkoutIdFromPayload(payload);
+    final id = _idFromPayload(payload);
     if (dayWorkoutId != null && dayWorkoutId.isNotEmpty) {
-      _pendingDayWorkoutIdsFromLine.add(dayWorkoutId);
+      // Fallback crítico de consistência: além do pull da linha pontual,
+      // enfileira também o treino completo. Isso evita estado parcial
+      // (só primeiros exercícios/séries) quando algum evento de linha
+      // se perde ou chega fora de ordem entre dispositivos.
+      _pendingDayWorkoutIds.add(dayWorkoutId);
+      if (id != null && id.isNotEmpty) {
+        _pendingLineIds.add(id);
+      }
       unawaited(
         _emitWorkoutActivityFromLinePayload(
           payload,
@@ -140,7 +146,6 @@ class SupabaseRealtimeSyncService {
       _scheduleFlush();
       return;
     }
-    final id = _idFromPayload(payload);
     if (id == null || id.isEmpty) return;
     _pendingLineIds.add(id);
     _scheduleFlush();
@@ -246,36 +251,32 @@ class SupabaseRealtimeSyncService {
 
   Future<void> _flushPendingPulls() async {
     if (_flushing || _disposed || !supabaseAppEnabled) return;
-    if (_pendingDayWorkoutIds.isEmpty &&
-        _pendingDayWorkoutIdsFromLine.isEmpty &&
-        _pendingLineIds.isEmpty) {
+    if (_pendingDayWorkoutIds.isEmpty && _pendingLineIds.isEmpty) {
       return;
     }
 
     _flushing = true;
     try {
-      final dayIds = <String>{
-        ..._pendingDayWorkoutIds,
-        ..._pendingDayWorkoutIdsFromLine,
-      }.toList(growable: false);
+      final dayIds = _pendingDayWorkoutIds.toList(growable: false);
       final lineIds = _pendingLineIds.toList(growable: false);
       _pendingDayWorkoutIds.clear();
-      _pendingDayWorkoutIdsFromLine.clear();
       _pendingLineIds.clear();
 
       final pull = SupabasePullSyncService(_db, _sync, session: _session);
       for (final id in dayIds) {
         await pull.pullDayWorkoutById(id);
       }
-      for (final id in lineIds) {
-        await pull.pullDayWorkoutExerciseById(id);
+      // Se já puxamos o treino completo, evitar pull pontual redundante das linhas
+      // neste mesmo ciclo (reduz corrida/stale com snapshots intermediários).
+      if (dayIds.isEmpty) {
+        for (final id in lineIds) {
+          await pull.pullDayWorkoutExerciseById(id);
+        }
       }
       await _session.hydratePersonalAdminFlag(_db);
     } finally {
       _flushing = false;
-      if (_pendingDayWorkoutIds.isNotEmpty ||
-          _pendingDayWorkoutIdsFromLine.isNotEmpty ||
-          _pendingLineIds.isNotEmpty) {
+      if (_pendingDayWorkoutIds.isNotEmpty || _pendingLineIds.isNotEmpty) {
         _scheduleFlush();
       }
     }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../notifications/workout_activity_local_notifier.dart';
 import '../preferences/rest_timer_prefs.dart';
 import '../theme/app_colors.dart';
 import '../ui/keyboard_bottom_inset.dart';
@@ -55,6 +56,7 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
   var _transitionedToPost = false;
   var _playedEndSound = false;
   var _finishRequested = false;
+  var _restEndNotificationArmed = false;
   RestLiveActivityController? _restLive;
 
   @override
@@ -88,8 +90,32 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(_cancelRestEndNotification());
       unawaited(_syncPhaseWithWallClock());
+      return;
     }
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      unawaited(_armRestEndNotificationForBackground());
+    }
+  }
+
+  Future<void> _armRestEndNotificationForBackground() async {
+    if (!_phaseCountdown || _transitionedToPost || _finishRequested) return;
+    if (_restEndNotificationArmed) return;
+    final on = await RestTimerPrefs.isSoundEnabled();
+    if (!on) return;
+    final remaining = _remainingCountdownSec;
+    if (remaining <= 0) return;
+    _restEndNotificationArmed = true;
+    final at = DateTime.now().add(Duration(seconds: remaining));
+    await WorkoutActivityLocalNotifier.instance.scheduleRestTimerEnd(at: at);
+  }
+
+  Future<void> _cancelRestEndNotification() async {
+    _restEndNotificationArmed = false;
+    await WorkoutActivityLocalNotifier.instance.cancelRestTimerEnd();
   }
 
   /// Alinha fase com o relógio real (timers pausam com app em background / ecrã bloqueado).
@@ -110,6 +136,7 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
         _countdownStart.add(Duration(seconds: widget.prescribedSec));
     if (!_playedEndSound) {
       _playedEndSound = true;
+      await _cancelRestEndNotification();
       final on = await RestTimerPrefs.isSoundEnabled();
       if (on && mounted) {
         await SystemSound.play(SystemSoundType.alert);
@@ -134,6 +161,7 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
     if (_finishRequested) return;
     _finishRequested = true;
     _ticker?.cancel();
+    unawaited(_cancelRestEndNotification());
     _restLive?.clear();
     final postStart = _postPhaseStart;
     final countMs = postStart == null
@@ -160,6 +188,7 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
     if (!_phaseCountdown) return;
     final now = DateTime.now();
     _playedEndSound = true;
+    unawaited(_cancelRestEndNotification());
     _restLive?.enterPostPhase(startedAt: now);
     setState(() {
       _transitionedToPost = true;
@@ -172,6 +201,7 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
+    unawaited(_cancelRestEndNotification());
     _restLive?.clear();
     super.dispose();
   }

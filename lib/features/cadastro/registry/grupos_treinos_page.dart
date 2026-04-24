@@ -8,6 +8,7 @@ import '../../../core/ui/futuristic_background.dart';
 import '../../../core/widgets/app_form_fields.dart';
 import '../../../core/widgets/exercise_prescription_edit_dialog.dart';
 import '../../../core/widgets/exercise_registry_list_row.dart';
+import '../../../core/widgets/futuristic_choice_dialogs.dart';
 import '../../../core/widgets/gradient_app_bar.dart';
 import '../../../core/widgets/swipeable_registry_card.dart';
 import '../../../data/exercise_name_similarity.dart';
@@ -30,6 +31,46 @@ bool _wgLineIncomplete(WorkoutGroupExerciseEntity line) {
 
 class GruposTreinosPage extends StatelessWidget {
   const GruposTreinosPage({super.key});
+
+  Future<bool> _confirmSaveGroupDialog(
+    BuildContext context, {
+    required bool isEditing,
+    required String groupName,
+  }) async {
+    final title = isEditing ? 'Salvar alterações?' : 'Salvar grupo?';
+    final subtitle = isEditing
+        ? 'Isso pode atualizar planejamento e calendário a partir de hoje.'
+        : 'Você poderá adicionar exercícios no próximo passo.';
+
+    final r = await showFuturisticConfirmDialog(
+      context,
+      title: title,
+      message: 'Grupo: $groupName',
+      subtitle: subtitle,
+      confirmLabel: isEditing ? 'Salvar' : 'Criar',
+    );
+    return r == true;
+  }
+
+  Future<void> _showGroupSavedSummaryDialog(
+    BuildContext context, {
+    required int weekItemsUpdated,
+    required int dayExercisesUpdated,
+  }) async {
+    final msg =
+        (weekItemsUpdated == 0 && dayExercisesUpdated == 0)
+            ? 'Grupo salvo. Nada para alinhar agora.'
+            : 'Grupo salvo.\n'
+                  'Planejamento: $weekItemsUpdated · Calendário: $dayExercisesUpdated';
+    await showFuturisticInfoDialog(
+      context,
+      title: 'Tudo certo',
+      message: msg,
+      footnote:
+          'Treinos iniciados, concluídos ou cancelados não são alterados.',
+      buttonLabel: 'Ok',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,23 +166,27 @@ class GruposTreinosPage extends StatelessWidget {
             icon: Icons.check_rounded,
             onPressed: () async {
               if (name.text.trim().isEmpty || desc.text.trim().isEmpty) return;
+              final displayName = name.text.trim();
+              final ok = await _confirmSaveGroupDialog(
+                context,
+                isEditing: x != null,
+                groupName: displayName,
+              );
+              if (!ok) return;
               final gid = await repo.upsertWorkoutGroup(
                 id: x?.id,
-                name: name.text.trim(),
+                name: displayName,
                 description: desc.text.trim(),
               );
               if (ctx.mounted) Navigator.pop(ctx);
               if (context.mounted) {
                 final r = await repo.propagateWorkoutGroupTemplateFromNow(gid);
                 if (!context.mounted) return;
-                final w = r.weekItemsUpdated;
-                final d = r.dayExercisesUpdated;
-                final msg = (w == 0 && d == 0)
-                    ? 'Grupo guardado. Nenhum treino elegível para alinhar com este modelo.'
-                    : 'Grupo guardado. Planejamento: $w item(ns). Calendário: $d exercício(s) atualizado(s).';
-                ScaffoldMessenger.of(
+                await _showGroupSavedSummaryDialog(
                   context,
-                ).showSnackBar(SnackBar(content: Text(msg)));
+                  weekItemsUpdated: r.weekItemsUpdated,
+                  dayExercisesUpdated: r.dayExercisesUpdated,
+                );
               }
             },
           ),
@@ -191,41 +236,14 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
   }
 
   Future<void> _showGroupSavedFinishDialog(BuildContext context) async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: const Text(
-          'Grupo guardado',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 17,
-          ),
-        ),
-        content: Text(
-          'O grupo de treino foi salvo.\n\n'
-          'As alterações são aplicadas ao planejamento semanal e aos treinos '
-          'programados ou agendados no calendário (a partir de hoje), desde que '
-          'ainda possam seguir automaticamente este modelo.\n\n'
-          'No calendário, treinos já iniciados, já concluídos ou cancelados '
-          'não são alterados.\n\n'
-          'Se tiver ajustado manualmente prescrições no planejamento ou no '
-          'calendário para treinos que continuam elegíveis para sincronização, '
-          'o modelo do grupo pode voltar a alinhar esses valores.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.82),
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Entendi'),
-          ),
-        ],
-      ),
+    await showFuturisticInfoDialog(
+      context,
+      title: 'Grupo salvo',
+      message:
+          'As mudanças passam a valer a partir de hoje para treinos elegíveis.',
+      footnote:
+          'Treinos iniciados, concluídos ou cancelados não são alterados.',
+      buttonLabel: 'Entendi',
     );
   }
 

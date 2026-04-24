@@ -216,19 +216,24 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
 
     _controller.beginUpload();
     try {
-      const catalogThrottleTypes = {
+      if (job.entityType == 'day_workout_exercise' ||
+          job.entityType == 'day_workout') {
+        debugPrint(
+          'SupabaseRemoteSyncService: start action=${job.action} '
+          'entity=${job.entityType}/${job.entityId ?? '-'} '
+          'audit=${job.auditLogId} attempt=${job.attempt}',
+        );
+      }
+      const catalogReconcileTypes = {
         'muscle_group',
         'exercise',
         'workout_group',
         'workout_group_exercise',
-        'week_schedule',
-        'week_schedule_item',
-        'day_workout',
-        'day_workout_exercise',
       };
-      if (catalogThrottleTypes.contains(job.entityType)) {
-        // Sem throttle: vários jobs seguidos (ex.: linhas de treino) precisam de
-        // reconciliação fresh antes de cada upsert — senão 23505 em exercises / muscle_groups.
+      if (catalogReconcileTypes.contains(job.entityType)) {
+        // Reconciliação pesada só para entidades de catálogo com histórico de
+        // conflito de unicidade. Eventos de treino/séries devem ir direto para
+        // nuvem para reduzir latência entre dispositivos.
         await reconcileLocalCatalogWithCloud(_db, client);
       }
       try {
@@ -247,10 +252,26 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       );
       // ACK do job: este audit já foi espelhado com sucesso.
       await _discardAuditLog(job.auditLogId);
+      if (job.entityType == 'day_workout_exercise' ||
+          job.entityType == 'day_workout') {
+        debugPrint(
+          'SupabaseRemoteSyncService: ok action=${job.action} '
+          'entity=${job.entityType}/${job.entityId ?? '-'} '
+          'audit=${job.auditLogId}',
+        );
+      }
       _controller.noteConnected();
       _controller.noteBackgroundPushSuccess();
       return true;
     } catch (e, st) {
+      if (job.entityType == 'day_workout_exercise' ||
+          job.entityType == 'day_workout') {
+        debugPrint(
+          'SupabaseRemoteSyncService: fail action=${job.action} '
+          'entity=${job.entityType}/${job.entityId ?? '-'} '
+          'audit=${job.auditLogId} error=$e',
+        );
+      }
       debugPrint('SupabaseRemoteSyncService: $e\n$st');
       _controller.noteDisconnected();
       _controller.noteBackgroundPushError(e);
@@ -349,12 +370,21 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required Map<String, dynamic> map,
     required DateTime localUpdatedAt,
   }) async {
+    final hotRealtimeTables = {'day_workouts', 'day_workout_exercises'};
+    // Treinos/séries são colaboração em tempo real entre dispositivos.
+    // Não depender de relógio do dispositivo evita "registra e some" quando
+    // há drift entre iPhone/tablet e o servidor.
+    if (hotRealtimeTables.contains(table)) {
+      await client.from(table).upsert(map);
+      return true;
+    }
+    final effectiveLocalUpdatedAt = localUpdatedAt;
     final ok = await _lwwUpdateById(
       client: client,
       table: table,
       id: id,
       map: map,
-      localUpdatedAt: localUpdatedAt,
+      localUpdatedAt: effectiveLocalUpdatedAt,
     );
     if (ok) return true;
     try {
@@ -537,6 +567,56 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     if (!supabaseAppEnabled) return;
     final pull = SupabasePullSyncService(_db, _controller, session: null);
     await pull.pullDayWorkoutById(dayWorkoutId);
+  }
+
+  @override
+  Future<void> refreshRecentCompletedHistoryForStudent(
+    String studentId, {
+    int limit = 40,
+  }) async {
+    if (!supabaseAppEnabled) return;
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    await pull.pullRecentCompletedDayWorkoutsForStudent(
+      studentId,
+      limit: limit,
+    );
+  }
+
+  @override
+  Future<void> refreshStudentWeekScheduleFromCloud(
+    String studentId, {
+    required DateTime weekMonday,
+  }) async {
+    if (!supabaseAppEnabled) return;
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    await pull.pullWeekScheduleForStudentWeek(
+      studentId,
+      weekMonday: weekMonday,
+    );
+  }
+
+  @override
+  Future<void> refreshExercisesCatalogFromCloud() async {
+    if (!supabaseAppEnabled) return;
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    await pull.pullExercisesCatalog();
+  }
+
+  @override
+  Future<void> refreshExercisesByIdsFromCloud(
+    Iterable<String> exerciseIds,
+  ) async {
+    if (!supabaseAppEnabled) return;
+    final ids = exerciseIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (ids.isEmpty) return;
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    for (final id in ids) {
+      await pull.pullExerciseById(id);
+    }
   }
 
   Future<void> _mirrorAfterAudit(

@@ -137,6 +137,20 @@ post_install do |installer|
         config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
       end
     end
+
+    # wakelock_plus: categoria ObjC pode gerar aviso de libtool
+    # "'UIApplication+idleTimerLock.o' has no symbols" em alguns toolchains.
+    # Não afeta runtime; suprimimos apenas este warning específico.
+    if target.name == 'wakelock_plus'
+      target.build_configurations.each do |config|
+        flags = config.build_settings['OTHER_LIBTOOLFLAGS'] || '$(inherited)'
+        flags = flags.join(' ') if flags.is_a?(Array)
+        unless flags.include?('-no_warning_for_no_symbols')
+          flags = "#{flags} -no_warning_for_no_symbols"
+        end
+        config.build_settings['OTHER_LIBTOOLFLAGS'] = flags.strip
+      end
+    end
   end
 
   installer.aggregate_targets.each do |aggregate_target|

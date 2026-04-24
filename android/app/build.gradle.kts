@@ -7,12 +7,14 @@ plugins {
 
 android {
     namespace = "com.personaltrainer.app_personal"
-    compileSdk = flutter.compileSdkVersion
+    // API 36 (Android 16) — alinha com dispositivos recentes (ex. tablets A16).
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -25,7 +27,8 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
+        // Igual ao iOS: versionName = FLUTTER_BUILD_NAME, versionCode = FLUTTER_BUILD_NUMBER (pubspec).
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -41,4 +44,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

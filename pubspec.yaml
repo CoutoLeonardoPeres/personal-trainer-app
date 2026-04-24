@@ -1,7 +1,7 @@
 name: app_personal
 description: Personal Gym — gestão para personal trainers e alunos (treinos planejados, agendados, programados e concluídos).
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+10
 
 environment:
   sdk: ^3.10.1
@@ -30,6 +30,8 @@ dependencies:
   app_links: ^7.0.0
   local_auth: ^2.3.0
   flutter_local_notifications: ^21.0.0
+  wakelock_plus: ^1.3.2
+  timezone: ^0.11.0
 
 dev_dependencies:
   flutter_test:

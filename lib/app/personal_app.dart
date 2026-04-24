@@ -4,6 +4,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/auth/app_session.dart';
 import '../core/diagnostic/launch_diagnostic.dart';
@@ -13,6 +14,7 @@ import '../core/supabase/supabase_sync_controller.dart';
 import '../core/notifications/workout_activity_local_notifier.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
+import '../core/version/app_version_marker.dart';
 import '../core/workout/rest_live_activity_controller.dart';
 import '../core/workout/workout_live_deep_link_controller.dart';
 import '../core/widgets/biometric_resume_lock.dart';
@@ -73,6 +75,21 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   StreamSubscription<Uri>? _appLinkSubscription;
   SupabaseRealtimeSyncService? _realtimeSync;
   final Map<String, DateTime> _lastActivityToastByKey = <String, DateTime>{};
+  bool _keepScreenOnApplied = false;
+
+  Future<void> _setKeepScreenOn(bool enabled) async {
+    if (_keepScreenOnApplied == enabled) return;
+    _keepScreenOnApplied = enabled;
+    try {
+      if (enabled) {
+        await WakelockPlus.enable();
+      } else {
+        await WakelockPlus.disable();
+      }
+    } catch (_) {
+      // Best effort: se o plugin falhar, o app segue normalmente.
+    }
+  }
 
   void _cancelAppLinks() {
     _appLinkSubscription?.cancel();
@@ -131,9 +148,13 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   @override
   void initState() {
     super.initState();
-    bootTrace('PersonalTrainerApp.initState');
-    logLaunch('PersonalTrainerApp.initState');
+    final marker = kAppVersionMarker.trim().isEmpty
+        ? 'sem APP_VERSION_MARKER'
+        : kAppVersionMarker.trim();
+    bootTrace('PersonalTrainerApp.initState', 'marker=$marker');
+    logLaunch('PersonalTrainerApp.initState marker=$marker');
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_setKeepScreenOn(true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       bootTrace(
         'PersonalTrainerApp.postFrameCallback',
@@ -228,6 +249,11 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       session: s.session,
       delay: const Duration(seconds: 4),
       bypassMinInterval: true,
+    );
+    SupabaseAutoPullScheduler.startForegroundPolling(
+      db: s.db,
+      sync: s.sync,
+      session: s.session,
     );
     await _realtimeSync?.dispose();
     final realtime = SupabaseRealtimeSyncService(
@@ -402,6 +428,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   void dispose() {
     logLaunch('PersonalTrainerApp.dispose — DB será fechado');
     _cancelAppLinks();
+    unawaited(_setKeepScreenOn(false));
     WidgetsBinding.instance.removeObserver(this);
     final s = _services;
     if (s != null) {
@@ -455,6 +482,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       final s = _services;
       if (s == null) return;
       if (state == AppLifecycleState.resumed) {
+        unawaited(_setKeepScreenOn(true));
         if (_realtimeSync == null) {
           final realtime = SupabaseRealtimeSyncService(
             db: s.db,
@@ -482,6 +510,11 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
               session: s.session,
               bypassMinInterval: true,
             );
+            SupabaseAutoPullScheduler.startForegroundPolling(
+              db: s.db,
+              sync: s.sync,
+              session: s.session,
+            );
           },
           Priority.idle,
           debugLabel: 'personalApp.supabaseAutoSyncAfterResume',
@@ -490,8 +523,10 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
           state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
+        unawaited(_setKeepScreenOn(false));
         SupabaseAutoPushScheduler.cancelScheduledWork();
         SupabaseAutoPullScheduler.cancelScheduledWork();
+        SupabaseAutoPullScheduler.stopForegroundPolling();
         // Mantém o Realtime ligado em pausa para o aluno continuar a “empurrar”
         // atualizações para personal/admin (SnackBar / notificação). O SO pode
         // suspender o socket; ao [resumed] fazemos [reconnectAfterResume].

@@ -22,35 +22,74 @@ import '../../data/models/programmable_bundle.dart';
 import '../../data/models/week_schedule_row.dart';
 import '../../data/repositories/app_data_repository.dart';
 import '../../core/workout/active_workout_sheet_coordinator.dart';
+import '../../core/widgets/modern_loading.dart';
 import 'calendar_day_exercises_sheet.dart';
 
 /// Fluxo do dia: programar a partir da semana, iniciar treino, timer, trocar programado.
 class CalendarDayFlow {
+  static bool _openingWorkoutSheet = false;
+  static bool _openingDaySheet = false;
+
+  static Future<T> _runWithWorkoutOpeningLoading<T>(
+    BuildContext context,
+    Future<T> Function() task, {
+    /// Zero: overlay aparece já no 1º frame — melhor quando abrir a modal demora.
+    Duration delay = Duration.zero,
+  }) async {
+    OverlayEntry? entry;
+    final timer = Timer(delay, () {
+      if (!context.mounted) return;
+      final overlay = Overlay.of(context, rootOverlay: true);
+      entry = OverlayEntry(
+        builder: (_) => ColoredBox(
+          color: Colors.black.withValues(alpha: 0.42),
+          child: const Center(
+            child: FuturisticLoadingView(size: 68),
+          ),
+        ),
+      );
+      overlay.insert(entry!);
+    });
+
+    try {
+      return await task();
+    } finally {
+      timer.cancel();
+      entry?.remove();
+    }
+  }
+
   static Future<void> open(
     BuildContext context,
     DateTime date,
     List<DayWorkoutEntity> dayWorkouts,
   ) async {
+    if (_openingDaySheet) return;
+    _openingDaySheet = true;
     final repo = context.read<AppDataRepository>();
     final day = DateTime(date.year, date.month, date.day);
     final label =
         '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
 
-    if (dayWorkouts.isEmpty && isCalendarDateBeforeToday(day)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Não é possível agendar treinos em datas passadas.'),
-          ),
-        );
+    try {
+      if (dayWorkouts.isEmpty && isCalendarDateBeforeToday(day)) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Não é possível agendar treinos em datas passadas.'),
+            ),
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    if (dayWorkouts.isEmpty) {
-      await _openEmptyDay(context, repo, day, label);
-    } else {
-      await _openDayWithWorkouts(context, repo, day, label, dayWorkouts);
+      if (dayWorkouts.isEmpty) {
+        await _openEmptyDay(context, repo, day, label);
+      } else {
+        await _openDayWithWorkouts(context, repo, day, label, dayWorkouts);
+      }
+    } finally {
+      _openingDaySheet = false;
     }
   }
 
@@ -131,7 +170,13 @@ class CalendarDayFlow {
       }
       return;
     }
-    final students = await repo.getStudentsWithProgrammableWeek(day);
+    List<StudentEntity> students = const <StudentEntity>[];
+    await _runWithWorkoutOpeningLoading(
+      context,
+      () async {
+        students = await repo.getStudentsWithProgrammableWeek(day);
+      },
+    );
     if (!context.mounted) return;
 
     await showAppModalSheet<void>(
@@ -316,63 +361,204 @@ class CalendarDayFlow {
     String label,
     List<DayWorkoutEntity> dayWorkouts,
   ) async {
-    final students = await repo.watchStudentsAlphabetical().first;
-    final nameMap = {for (final s in students) s.id: s.name};
-    final visibleStudentIds = students.map((s) => s.id).toSet();
+    List<StudentEntity> students = const <StudentEntity>[];
+    var nameMap = <String, String>{};
+    var visibleStudentIds = <String>{};
     final byStudent = <String, List<DayWorkoutEntity>>{};
-    for (final w in dayWorkouts) {
-      byStudent.putIfAbsent(w.studentId, () => []).add(w);
-    }
-    // Treinos em dias anteriores à inativação podem referenciar alunos fora da lista ativa.
-    final missingNameIds = byStudent.keys.where((id) {
-      final n = nameMap[id];
-      return n == null || n.trim().isEmpty;
-    }).toList();
-    final inactiveByStudentId = <String, bool>{
-      for (final sid in byStudent.keys) sid: !visibleStudentIds.contains(sid),
-    };
-    if (missingNameIds.isNotEmpty) {
-      final fetched = await Future.wait(
-        missingNameIds.map(repo.getStudentById),
-      );
-      for (var i = 0; i < missingNameIds.length; i++) {
-        final row = fetched[i];
-        final id = missingNameIds[i];
-        if (row != null) {
-          inactiveByStudentId[id] = row.isArchived;
-        }
-        final label = row?.name.trim();
-        if (label != null && label.isNotEmpty) {
-          nameMap[id] = label;
-        }
-      }
-    }
-    String dayModalSortLabel(String sid) {
-      final raw = nameMap[sid] ?? sid;
-      final inactive = inactiveByStudentId[sid] ?? false;
-      final label = inactive ? studentNameWithoutArchivePrefix(raw) : raw;
-      return label.toLowerCase();
-    }
-
-    final sids = byStudent.keys.toList()
-      ..sort((a, b) => dayModalSortLabel(a).compareTo(dayModalSortLabel(b)));
-
-    if (!context.mounted) return;
+    var inactiveByStudentId = <String, bool>{};
+    var sids = <String>[];
 
     final canProgramAnother =
         !repo.session.isStudent && !isCalendarDateBeforeToday(day);
-    final othersProgrammable = canProgramAnother
-        ? (await repo.getStudentsWithProgrammableWeek(
-            day,
-          )).where((s) => !byStudent.containsKey(s.id)).toList()
-        : <StudentEntity>[];
+    // Não bloquear a abertura da modal: este passo pode puxar muitas semanas na nuvem.
+    final othersProgrammableFuture = canProgramAnother
+        ? repo
+              .getStudentsWithProgrammableWeek(day)
+              .timeout(
+                const Duration(seconds: 14),
+                onTimeout: () => <StudentEntity>[],
+              )
+              .then(
+                (list) => list.where((s) => !byStudent.containsKey(s.id)).toList(),
+              )
+        : Future<List<StudentEntity>>.value(const []);
+
+    await _runWithWorkoutOpeningLoading(
+      context,
+      () async {
+        students = await repo.watchStudentsAlphabetical().first;
+        nameMap = {for (final s in students) s.id: s.name};
+        visibleStudentIds = students.map((s) => s.id).toSet();
+        for (final w in dayWorkouts) {
+          byStudent.putIfAbsent(w.studentId, () => []).add(w);
+        }
+        // Treinos em dias anteriores à inativação podem referenciar alunos fora da lista ativa.
+        final missingNameIds = byStudent.keys.where((id) {
+          final n = nameMap[id];
+          return n == null || n.trim().isEmpty;
+        }).toList();
+        inactiveByStudentId = <String, bool>{
+          for (final sid in byStudent.keys) sid: !visibleStudentIds.contains(sid),
+        };
+        if (missingNameIds.isNotEmpty) {
+          final fetched = await Future.wait(
+            missingNameIds.map(repo.getStudentById),
+          );
+          for (var i = 0; i < missingNameIds.length; i++) {
+            final row = fetched[i];
+            final id = missingNameIds[i];
+            if (row != null) {
+              inactiveByStudentId[id] = row.isArchived;
+            }
+            final label = row?.name.trim();
+            if (label != null && label.isNotEmpty) {
+              nameMap[id] = label;
+            }
+          }
+        }
+        // Estado «inativo» na UI deve refletir só [isArchived], não «falta na lista»
+        // (primeira emissão do stream ou timeout de rede).
+        final dayStudentIds = byStudent.keys.toList(growable: false);
+        if (dayStudentIds.isNotEmpty) {
+          final rows = await Future.wait(
+            dayStudentIds.map(
+              (id) => repo
+                  .getStudentById(id)
+                  .timeout(const Duration(milliseconds: 2800), onTimeout: () => null),
+            ),
+          );
+          for (var i = 0; i < dayStudentIds.length; i++) {
+            final row = rows[i];
+            final id = dayStudentIds[i];
+            if (row != null) {
+              nameMap[id] = row.name;
+              inactiveByStudentId[id] = row.isArchived;
+            } else {
+              inactiveByStudentId[id] = false;
+              nameMap.putIfAbsent(id, () => id);
+            }
+          }
+        }
+        String dayModalSortLabel(String sid) {
+          final raw = nameMap[sid] ?? sid;
+          final inactive = inactiveByStudentId[sid] ?? false;
+          final label = inactive ? studentNameWithoutArchivePrefix(raw) : raw;
+          return label.toLowerCase();
+        }
+
+        sids = byStudent.keys.toList()
+          ..sort((a, b) => dayModalSortLabel(a).compareTo(dayModalSortLabel(b)));
+      },
+    );
 
     if (!context.mounted) return;
 
+    var studentTapLocked = false;
+
+    Future<DayWorkoutEntity?> pickWorkoutFromStudentDayList(
+      String studentId,
+      List<DayWorkoutEntity> list,
+    ) async {
+      if (list.isEmpty) return null;
+      if (list.length == 1) return list.single;
+
+      // Ordena de forma estável (mesma regra do “prioritário”).
+      final sorted = List<DayWorkoutEntity>.from(list)
+        ..sort((a, b) {
+          int priority(String status) => switch (status) {
+            'started' => 0,
+            'programmed' => 1,
+            'scheduled' => 2,
+            'completed' => 3,
+            _ => 4,
+          };
+          final c = priority(a.status).compareTo(priority(b.status));
+          if (c != 0) return c;
+          return a.id.compareTo(b.id);
+        });
+
+      // Pré-carrega rótulos/selos (best effort) para mostrar todos os grupos.
+      final badges = <String, String?>{};
+      await Future.wait(
+        sorted.map((w) async {
+          try {
+            final b = await repo
+                .getDayWorkoutGroupBadgeLabel(w)
+                .timeout(const Duration(milliseconds: 900), onTimeout: () => null);
+            badges[w.id] = b;
+          } catch (_) {
+            badges[w.id] = null;
+          }
+        }),
+      );
+
+      if (!context.mounted) return null;
+      final picked = await showAppModalSheet<DayWorkoutEntity>(
+        context: context,
+        futuristicChrome: true,
+        title: 'Treinos do dia',
+        subtitle: 'Escolha qual treino abrir para este aluno.',
+        initialChildSize: 0.72,
+        maxChildSize: 0.85,
+        builder: (ctx, scroll) => FuturisticBackground(
+          child: ListView.builder(
+            controller: scroll,
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
+            itemCount: sorted.length,
+            itemBuilder: (_, i) {
+              final w = sorted[i];
+              final badge = badges[w.id]?.trim();
+              final statusLabel = switch (w.status) {
+                'started' => 'Em andamento',
+                'programmed' => 'Programado',
+                'scheduled' => 'Agendado',
+                'completed' => 'Concluído',
+                _ => w.status,
+              };
+              final subtitle = badge != null && badge.isNotEmpty
+                  ? '$statusLabel · $badge'
+                  : statusLabel;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _DayModalStudentCard(
+                  name: 'Treino ${i + 1}',
+                  subtitle: subtitle,
+                  onTap: () => Navigator.pop(ctx, w),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      return picked;
+    }
+
     Future<void> openStudentWorkout(String studentKey) async {
-      final list = byStudent[studentKey]!;
-      final w = _pickPrimaryWorkoutForDay(list);
-      await _onWorkoutSelected(context, repo, day, w);
+      final list = List<DayWorkoutEntity>.from(byStudent[studentKey] ?? const []);
+      if (list.isEmpty) return;
+
+      // Local-first: abre imediatamente usando snapshot local (rápido) e
+      // sincroniza da nuvem em background para convergência entre dispositivos.
+      final w = await pickWorkoutFromStudentDayList(studentKey, list);
+      if (w == null) return;
+      if (!context.mounted) return;
+      await _onWorkoutSelected(
+        context,
+        repo,
+        day,
+        w,
+        // Mantém abertura rápida da modal; sincronismo fino acontece em background.
+        skipCloudPrewarmAndLoader: true,
+      );
+      unawaited(
+        Future.wait(
+          list.map(
+            (x) => repo
+                .refreshDayWorkoutFromCloud(x.id)
+                .timeout(const Duration(milliseconds: 1200), onTimeout: () {}),
+          ),
+        ),
+      );
     }
 
     final isAdmin = repo.session.hasFullOrgAccess;
@@ -437,63 +623,112 @@ class CalendarDayFlow {
                           repo: repo,
                           day: day,
                           onOpenStudent: () {
+                            if (studentTapLocked) return;
+                            studentTapLocked = true;
                             Navigator.pop(ctx);
                             WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!context.mounted) return;
-                              unawaited(openStudentWorkout(sid));
+                              if (!context.mounted) {
+                                studentTapLocked = false;
+                                return;
+                              }
+                              unawaited(() async {
+                                try {
+                                  await openStudentWorkout(sid);
+                                } finally {
+                                  studentTapLocked = false;
+                                }
+                              }());
                             });
                           },
                         ),
                       ),
                     ],
-                    if (othersProgrammable.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
-                        child: Text(
-                          'Programar outro aluno neste dia',
-                          style: TextStyle(
-                            color: AppColors.accentGreen.withValues(alpha: 0.9),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-                        child: Text(
-                          'Com planejamento na semana, mas sem treino neste dia:',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.48),
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                      for (final s in othersProgrammable)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _DayModalStudentCard(
-                            name: s.name,
-                            subtitle: 'Toque para escolher o que programar',
-                            onTap: () async {
-                              Navigator.pop(ctx);
-                              final bundles = await repo.getProgrammableBundles(
-                                s.id,
-                                day,
-                              );
-                              if (!context.mounted) return;
-                              await _pickBundleAndProgram(
-                                context,
-                                repo,
-                                s.id,
-                                day,
-                                bundles,
-                              );
-                            },
-                          ),
-                        ),
-                    ],
+                    FutureBuilder<List<StudentEntity>>(
+                      future: othersProgrammableFuture,
+                      // Não nomear este [BuildContext] de «context»: sombreia o
+                      // [context] do calendário; após [Navigator.pop] da folha o
+                      // filho desmonta e «!context.mounted» bloqueava o fluxo.
+                      builder: (_, snap) {
+                        if (snap.connectionState == ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.fromLTRB(4, 14, 4, 8),
+                            child: Center(
+                              child: ModernLoadingIndicator(size: 28),
+                            ),
+                          );
+                        }
+                        if (snap.hasError) {
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+                            child: Text(
+                              'Não foi possível carregar a lista para programar.',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.45),
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        }
+                        final othersProgrammable = snap.data ?? const [];
+                        if (othersProgrammable.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
+                              child: Text(
+                                'Programar outro aluno neste dia',
+                                style: TextStyle(
+                                  color: AppColors.accentGreen.withValues(
+                                    alpha: 0.9,
+                                  ),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                              child: Text(
+                                'Com planejamento na semana, mas sem treino neste dia:',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.48),
+                                  fontSize: 12,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                            for (final s in othersProgrammable)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _DayModalStudentCard(
+                                  name: s.name,
+                                  subtitle: 'Toque para escolher o que programar',
+                                  onTap: () async {
+                                    Navigator.pop(ctx);
+                                    final bundles =
+                                        await repo.getProgrammableBundles(
+                                      s.id,
+                                      day,
+                                    );
+                                    if (!context.mounted) return;
+                                    await _pickBundleAndProgram(
+                                      context,
+                                      repo,
+                                      s.id,
+                                      day,
+                                      bundles,
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -512,67 +747,140 @@ class CalendarDayFlow {
     return showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.65),
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1D2E),
-        title: Text(
-          'Excluir treino(s) do dia?',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
-            fontSize: 17,
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF0D1A2F).withValues(alpha: 0.97),
+                const Color(0xFF19172C).withValues(alpha: 0.97),
+              ],
+            ),
+            border: Border.all(
+              color: AppColors.accentPink.withValues(alpha: 0.45),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accentPink.withValues(alpha: 0.16),
+                blurRadius: 26,
+                spreadRadius: 1,
+                offset: const Offset(0, 12),
+              ),
+            ],
           ),
-        ),
-        content: Text(
-          'Esta ação é só para administradores.\n\n'
-          'Serão apagados permanentemente $workoutCount treino(s) de '
-          '$studentName nesta data — incluindo concluídos — com todas as séries, '
-          'tempos e scores. Os dados serão removidos do aparelho e da nuvem '
-          '(Supabase) após sincronizar.\n\n'
-          'Não é possível desfazer.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.82),
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: Text(
-              'Cancelar',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(11),
+                        color: AppColors.danger.withValues(alpha: 0.22),
+                        border: Border.all(
+                          color: AppColors.danger.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.delete_forever_rounded,
+                        color: AppColors.danger.withValues(alpha: 0.95),
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Excluir treino(s) do dia?',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Ação crítica de administrador',
+                            style: TextStyle(
+                              color: AppColors.accentPink.withValues(alpha: 0.88),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Serão apagados permanentemente $workoutCount treino(s) de '
+                  '$studentName nesta data, incluindo concluídos, com todas as séries, tempos e scores. '
+                  'Os dados serão removidos do aparelho e da nuvem após sincronizar.\n\n'
+                  'Não é possível desfazer.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.84),
+                    fontSize: 13.7,
+                    height: 1.42,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white.withValues(alpha: 0.82),
+                          side: BorderSide(
+                            color: AppColors.accentGreen.withValues(alpha: 0.46),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(dialogCtx, false),
+                        child: const Text('Cancelar'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.danger.withValues(alpha: 0.9),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(dialogCtx, true),
+                        child: const Text('Excluir'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.danger.withValues(alpha: 0.9),
-            ),
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Excluir definitivamente'),
-          ),
-        ],
+        ),
       ),
     );
-  }
-
-  /// Qual treino abrir quando há vários no mesmo dia: andamento → programado → concluído.
-  static DayWorkoutEntity _pickPrimaryWorkoutForDay(
-    List<DayWorkoutEntity> workouts,
-  ) {
-    if (workouts.length == 1) return workouts.first;
-    int priority(String s) => switch (s) {
-      'started' => 0,
-      'programmed' => 1,
-      'completed' => 2,
-      _ => 3,
-    };
-    final sorted = List<DayWorkoutEntity>.from(workouts)
-      ..sort((a, b) {
-        final c = priority(a.status).compareTo(priority(b.status));
-        if (c != 0) return c;
-        return a.id.compareTo(b.id);
-      });
-    return sorted.first;
   }
 
   static Future<void> _onWorkoutSelected(
@@ -584,67 +892,73 @@ class CalendarDayFlow {
     bool showRestTimerOverlayFromLive = false,
   }) async {
     if (!context.mounted) return;
+    if (_openingWorkoutSheet) return;
+    _openingWorkoutSheet = true;
 
     Future<void> Function(BuildContext sheetContext)? onSwap;
     String studentName = 'Aluno';
     var studentInactive = false;
     DayWorkoutEntity workout = w;
     String? badge;
+    try {
+      await _runWithWorkoutOpeningLoading(context, () async {
+        if (!skipCloudPrewarmAndLoader) {
+          // Atualização pontual antes de abrir para diminuir estado "atrasado"
+          // quando o treino mudou noutro dispositivo há poucos segundos.
+          await repo
+              .refreshDayWorkoutFromCloud(w.id)
+              .timeout(const Duration(milliseconds: 1200), onTimeout: () {});
+          await repo
+              .prewarmCompletedHistoryForWorkout(w.id, limit: 60)
+              .timeout(const Duration(milliseconds: 1600), onTimeout: () {});
+        }
+        if (!context.mounted) return;
+        final refreshed = await repo.getDayWorkout(w.id);
+        workout = refreshed ?? w;
 
-    if (!skipCloudPrewarmAndLoader) {
-      // Sem loading bloqueante: abre modal instantânea e atualiza em segundo plano.
-      unawaited(repo.refreshDayWorkoutFromCloud(w.id));
-    }
-    if (!context.mounted) return;
-    final refreshed = await repo.getDayWorkout(w.id);
-    workout = refreshed ?? w;
+        final found = await repo
+            .getStudentById(workout.studentId)
+            .timeout(const Duration(milliseconds: 1200), onTimeout: () => null);
+        if (found != null) {
+          studentName = found.name;
+          studentInactive = found.isArchived;
+        } else {
+          // Timeout/rede: não tratar como «inativo» — só falta o nome.
+          studentInactive = false;
+        }
+        if (studentInactive) {
+          studentName = studentNameWithoutArchivePrefix(studentName);
+        }
+        if (!context.mounted) return;
+        badge = await repo.getDayWorkoutGroupBadgeLabel(workout);
+        if (!context.mounted) return;
 
-    final students = await repo.watchStudentsAlphabetical().first;
-    StudentEntity? found;
-    for (final s in students) {
-      if (s.id == workout.studentId) {
-        found = s;
-        break;
-      }
-    }
-    if (found != null) {
-      studentName = found.name;
-      studentInactive = found.isArchived;
-    } else {
-      final row = await repo.getStudentById(workout.studentId);
-      final n = row?.name.trim();
-      if (n != null && n.isNotEmpty) studentName = n;
-      studentInactive = row?.isArchived ?? true;
-    }
-    if (studentInactive) {
-      studentName = studentNameWithoutArchivePrefix(studentName);
-    }
-    if (!context.mounted) return;
-    badge = await repo.getDayWorkoutGroupBadgeLabel(workout);
-    if (!context.mounted) return;
+        if (workout.status == 'programmed') {
+          onSwap = (sheetCtx) => _runSwapWorkoutFromSheet(
+            sheetContext: sheetCtx,
+            parentContext: context,
+            repo: repo,
+            day: day,
+            workout: workout,
+          );
+        }
+      }).timeout(const Duration(seconds: 8), onTimeout: () {});
 
-    if (workout.status == 'programmed') {
-      onSwap = (sheetCtx) => _runSwapWorkoutFromSheet(
-        sheetContext: sheetCtx,
-        parentContext: context,
+      if (!context.mounted) return;
+      await showProgrammedDayExercisesSheet(
+        context: context,
         repo: repo,
-        day: day,
         workout: workout,
+        studentName: studentName,
+        studentInactive: studentInactive,
+        day: day,
+        workoutBadgeLabel: badge,
+        onSwapWorkout: onSwap,
+        showRestTimerOverlayFromLive: showRestTimerOverlayFromLive,
       );
+    } finally {
+      _openingWorkoutSheet = false;
     }
-
-    if (!context.mounted) return;
-    await showProgrammedDayExercisesSheet(
-      context: context,
-      repo: repo,
-      workout: workout,
-      studentName: studentName,
-      studentInactive: studentInactive,
-      day: day,
-      workoutBadgeLabel: badge,
-      onSwapWorkout: onSwap,
-      showRestTimerOverlayFromLive: showRestTimerOverlayFromLive,
-    );
   }
 
   /// Substitui o treino programado: fecha a sheet, apaga o dia e abre escolha de bundle.

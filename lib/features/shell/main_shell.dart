@@ -12,8 +12,10 @@ import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../core/widgets/mandatory_password_change_scaffold.dart';
 import '../../core/widgets/modern_loading.dart';
+import '../../core/supabase/supabase_sync_controller.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
+import '../../data/sync/supabase_auto_pull_scheduler.dart';
 import '../cadastro/cadastro_hub_page.dart';
 import '../calendar/calendar_day_flow.dart';
 import '../calendar/calendar_page.dart';
@@ -95,6 +97,21 @@ class _MainShellState extends State<MainShell> {
       _tab = tab;
       _tabLoading = false;
     });
+    // [IndexedStack] mantém separadores montados off-screen: ao voltar ao separador,
+    // força importação da nuvem (calendário + planejamento alinhados iPhone/tablet).
+    if (mounted &&
+        (tab == MainNavTab.calendar || tab == MainNavTab.planning)) {
+      final db = context.read<AppDatabase>();
+      final sync = context.read<SupabaseSyncController>();
+      final session = context.read<AppSession>();
+      SupabaseAutoPullScheduler.scheduleAfterResume(
+        db: db,
+        sync: sync,
+        session: session,
+        delay: Duration.zero,
+        bypassMinInterval: true,
+      );
+    }
   }
 
   String _title(MainNavTab t) => switch (t) {
@@ -169,11 +186,7 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
           ),
-          if (_tabLoading)
-            const FuturisticLoadingOverlay(
-              message: 'Atualizando…',
-              indicatorSize: 72,
-            ),
+          if (_tabLoading) const FuturisticLoadingOverlay(indicatorSize: 72),
         ],
       ),
       bottomNavigationBar: AppBottomNav(
@@ -202,10 +215,7 @@ class _MainShellState extends State<MainShell> {
               return const Scaffold(
                 backgroundColor: AppColors.background,
                 body: Center(
-                  child: FuturisticLoadingView(
-                    message: 'A carregar dados do aluno…',
-                    size: 56,
-                  ),
+                  child: FuturisticLoadingView(size: 56),
                 ),
               );
             }

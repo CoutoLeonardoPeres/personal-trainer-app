@@ -1,8 +1,14 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth/app_session.dart';
+import '../../core/supabase/supabase_sync_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
+import '../../data/local/app_database.dart';
+import '../../data/sync/supabase_auto_pull_scheduler.dart';
 import '../../core/ui/app_modal_sheet.dart';
 import '../../core/utils/combo_line_grouping_utils.dart';
 import '../../core/utils/reps_text_utils.dart';
@@ -11,7 +17,6 @@ import '../../core/widgets/exercise_prescription_edit_dialog.dart';
 import '../../core/widgets/exercise_registry_list_row.dart';
 import '../../core/widgets/swipeable_registry_card.dart';
 import '../../data/exercise_name_similarity.dart';
-import '../../data/local/app_database.dart';
 import '../../data/models/week_schedule_row.dart';
 import '../../data/repositories/app_data_repository.dart';
 import 'planning_schedule_workout_flow.dart';
@@ -45,6 +50,20 @@ class _PlanningPageState extends State<PlanningPage> {
     final thisMonday = _mondayOf(now);
     _weekIndex = thisMonday.difference(_epochMonday).inDays ~/ 7;
     _weekController = PageController(initialPage: _weekIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final db = context.read<AppDatabase>();
+      final sync = context.read<SupabaseSyncController>();
+      final session = context.read<AppSession>();
+      // Primeira abertura do separador: alinha SQLite com a nuvem (igual tablet).
+      SupabaseAutoPullScheduler.scheduleAfterResume(
+        db: db,
+        sync: sync,
+        session: session,
+        delay: const Duration(milliseconds: 400),
+        bypassMinInterval: true,
+      );
+    });
   }
 
   @override
@@ -119,7 +138,22 @@ class _PlanningPageState extends State<PlanningPage> {
                 students: students,
                 selectedId: dropdownValue,
                 enabled: students.isNotEmpty,
-                onChanged: (v) => setState(() => _studentId = v),
+                onChanged: (v) {
+                  setState(() => _studentId = v);
+                  final sid = v;
+                  if (sid == null) return;
+                  final mon = _mondayForPage(_weekIndex);
+                  // Garantia: ao trocar o aluno, forçar pull da semana (calendário pode
+                  // já ter `day_workouts`, mas o planejamento depende de `week_schedule_*`).
+                  unawaited(
+                    repo
+                        .refreshStudentWeekScheduleFromCloud(
+                          sid,
+                          weekMonday: mon,
+                        )
+                        .timeout(const Duration(seconds: 25), onTimeout: () {}),
+                  );
+                },
               );
             },
           ),
@@ -142,7 +176,21 @@ class _PlanningPageState extends State<PlanningPage> {
                 )
               : PageView.builder(
                   controller: _weekController,
-                  onPageChanged: (p) => setState(() => _weekIndex = p),
+                  onPageChanged: (p) {
+                    setState(() => _weekIndex = p);
+                    final sid = _studentId;
+                    if (sid == null) return;
+                    final mon = _mondayForPage(p);
+                    // Garantia: ao trocar a semana, forçar pull do planejamento daquela semana.
+                    unawaited(
+                      repo
+                          .refreshStudentWeekScheduleFromCloud(
+                            sid,
+                            weekMonday: mon,
+                          )
+                          .timeout(const Duration(seconds: 25), onTimeout: () {}),
+                    );
+                  },
                   itemBuilder: (context, pageIndex) {
                     final pageMonday = _mondayForPage(pageIndex);
                     return Column(
@@ -201,9 +249,122 @@ class _PlanningPageState extends State<PlanningPage> {
                                   }
                                   final rows = snap.data ?? [];
                                   if (rows.isEmpty) {
-                                    return _emptyHint(
-                                      'Nenhum exercício agendado nesta semana.\n'
-                                      'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
+                                    // Fallback: é possível ter treinos programados no calendário
+                                    // (day_workouts) sem existir bloco/itens de planejamento
+                                    // (week_schedule_*). Nesse caso, ainda assim mostrar os
+                                    // grupos agendados da semana para não “sumir” na UI.
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        _emptyHint(
+                                          'Nenhum exercício agendado nesta semana.\n'
+                                          'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
+                                        ),
+                                        const SizedBox(height: 10),
+                                        StreamBuilder<List<DayWorkoutEntity>>(
+                                          stream: repo.watchStudentWeekDayWorkouts(
+                                            studentId: studentId,
+                                            weekMonday: pageMonday,
+                                          ),
+                                          builder: (context, wSnap) {
+                                            final all = wSnap.data ?? const [];
+                                            final byGroup =
+                                                <String, List<DayWorkoutEntity>>{};
+                                            for (final w in all) {
+                                              final gid =
+                                                  (w.sourceWorkoutGroupId ?? '')
+                                                      .trim();
+                                              if (gid.isEmpty) continue;
+                                              byGroup
+                                                  .putIfAbsent(gid, () => [])
+                                                  .add(w);
+                                            }
+                                            if (byGroup.isEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            return StreamBuilder<
+                                              List<WorkoutGroupEntity>
+                                            >(
+                                              stream: repo
+                                                  .watchWorkoutGroupsAlphabetical(),
+                                              builder: (context, gSnap) {
+                                                final groupById = <String,
+                                                  WorkoutGroupEntity>{
+                                                  for (final g
+                                                      in gSnap.data ??
+                                                          <WorkoutGroupEntity>[])
+                                                    g.id: g,
+                                                };
+                                                final keys = byGroup.keys.toList()
+                                                  ..sort((a, b) {
+                                                    final na =
+                                                        groupById[a]?.name ??
+                                                        a;
+                                                    final nb =
+                                                        groupById[b]?.name ??
+                                                        b;
+                                                    return na
+                                                        .toLowerCase()
+                                                        .compareTo(
+                                                          nb.toLowerCase(),
+                                                        );
+                                                  });
+                                                return Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.stretch,
+                                                  children: [
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                        top: 6,
+                                                        bottom: 8,
+                                                      ),
+                                                      child: Text(
+                                                        'Grupos programados no calendário',
+                                                        style: TextStyle(
+                                                          color: AppColors
+                                                              .accentGreen
+                                                              .withValues(
+                                                            alpha: 0.85,
+                                                          ),
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          fontSize: 13,
+                                                          letterSpacing: 0.2,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    for (final gid in keys)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                          bottom: 10,
+                                                        ),
+                                                        child:
+                                                            SwipeableRegistryCard(
+                                                          slidableKey:
+                                                              'week_calendar_group_${studentId}_${pageMonday.toIso8601String()}_$gid',
+                                                          translucentBlueExerciseStyle:
+                                                              true,
+                                                          showEditOnSwipe: false,
+                                                          title: groupById[gid]
+                                                                  ?.name ??
+                                                              'Grupo',
+                                                          subtitle:
+                                                              '${byGroup[gid]!.length} treino(s) na semana (calendário)',
+                                                          onCardTap: () {},
+                                                          onEdit: () {},
+                                                          onDelete: () {},
+                                                        ),
+                                                      ),
+                                                  ],
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ],
                                     );
                                   }
                                   return StreamBuilder<

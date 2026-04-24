@@ -20,6 +20,27 @@ abstract class RemoteSyncService {
 
   /// Força atualização imediata do treino e suas linhas a partir da nuvem.
   Future<void> refreshDayWorkoutFromCloud(String dayWorkoutId) async {}
+
+  /// Pré-carrega treinos concluídos recentes do aluno para métricas comparativas
+  /// (ex.: score percentual vs último treino do mesmo exercício).
+  Future<void> refreshRecentCompletedHistoryForStudent(
+    String studentId, {
+    int limit = 40,
+  }) async {}
+
+  /// Força atualização do planejamento semanal de um aluno para a semana indicada.
+  Future<void> refreshStudentWeekScheduleFromCloud(
+    String studentId, {
+    required DateTime weekMonday,
+  }) async {}
+
+  /// Força atualização do catálogo base de exercícios (grupos + exercícios).
+  Future<void> refreshExercisesCatalogFromCloud() async {}
+
+  /// Força atualização pontual de exercícios por id (mais rápido para modal de treino).
+  Future<void> refreshExercisesByIdsFromCloud(
+    Iterable<String> exerciseIds,
+  ) async {}
 }
 
 class NoOpRemoteSyncService implements RemoteSyncService {
@@ -45,4 +66,24 @@ class NoOpRemoteSyncService implements RemoteSyncService {
 
   @override
   Future<void> refreshDayWorkoutFromCloud(String dayWorkoutId) async {}
+
+  @override
+  Future<void> refreshRecentCompletedHistoryForStudent(
+    String studentId, {
+    int limit = 40,
+  }) async {}
+
+  @override
+  Future<void> refreshStudentWeekScheduleFromCloud(
+    String studentId, {
+    required DateTime weekMonday,
+  }) async {}
+
+  @override
+  Future<void> refreshExercisesCatalogFromCloud() async {}
+
+  @override
+  Future<void> refreshExercisesByIdsFromCloud(
+    Iterable<String> exerciseIds,
+  ) async {}
 }
