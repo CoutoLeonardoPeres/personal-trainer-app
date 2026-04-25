@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/auth/app_session.dart';
+import '../../core/supabase/supabase_sync_controller.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../core/utils/combo_line_grouping_utils.dart';
 import '../../core/utils/reps_text_utils.dart';
@@ -21,6 +23,7 @@ import '../../data/local/app_database.dart';
 import '../../data/models/programmable_bundle.dart';
 import '../../data/models/week_schedule_row.dart';
 import '../../data/repositories/app_data_repository.dart';
+import '../../data/sync/supabase_auto_pull_scheduler.dart';
 import '../../core/workout/active_workout_sheet_coordinator.dart';
 import '../../core/widgets/modern_loading.dart';
 import 'calendar_day_exercises_sheet.dart';
@@ -33,6 +36,7 @@ class CalendarDayFlow {
   static Future<T> _runWithWorkoutOpeningLoading<T>(
     BuildContext context,
     Future<T> Function() task, {
+
     /// Zero: overlay aparece já no 1º frame — melhor quando abrir a modal demora.
     Duration delay = Duration.zero,
   }) async {
@@ -43,9 +47,7 @@ class CalendarDayFlow {
       entry = OverlayEntry(
         builder: (_) => ColoredBox(
           color: Colors.black.withValues(alpha: 0.42),
-          child: const Center(
-            child: FuturisticLoadingView(size: 68),
-          ),
+          child: const Center(child: FuturisticLoadingView(size: 68)),
         ),
       );
       overlay.insert(entry!);
@@ -67,6 +69,9 @@ class CalendarDayFlow {
     if (_openingDaySheet) return;
     _openingDaySheet = true;
     final repo = context.read<AppDataRepository>();
+    final db = context.read<AppDatabase>();
+    final sync = context.read<SupabaseSyncController>();
+    final session = context.read<AppSession>();
     final day = DateTime(date.year, date.month, date.day);
     final label =
         '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
@@ -76,7 +81,9 @@ class CalendarDayFlow {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Não é possível agendar treinos em datas passadas.'),
+              content: Text(
+                'Não é possível agendar treinos em datas passadas.',
+              ),
             ),
           );
         }
@@ -84,7 +91,23 @@ class CalendarDayFlow {
       }
 
       if (dayWorkouts.isEmpty) {
-        await _openEmptyDay(context, repo, day, label);
+        // Auto-recuperação: quando o dia aparece vazio (ex.: cache local atrasado),
+        // força pull curto da nuvem antes de assumir que não há treino.
+        SupabaseAutoPullScheduler.scheduleAfterResume(
+          db: db,
+          sync: sync,
+          session: session,
+          delay: const Duration(milliseconds: 120),
+          bypassMinInterval: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 650));
+        final recovered = await repo.getDayWorkoutsForDay(day);
+        if (!context.mounted) return;
+        if (recovered.isNotEmpty) {
+          await _openDayWithWorkouts(context, repo, day, label, recovered);
+        } else {
+          await _openEmptyDay(context, repo, day, label);
+        }
       } else {
         await _openDayWithWorkouts(context, repo, day, label, dayWorkouts);
       }
@@ -171,12 +194,9 @@ class CalendarDayFlow {
       return;
     }
     List<StudentEntity> students = const <StudentEntity>[];
-    await _runWithWorkoutOpeningLoading(
-      context,
-      () async {
-        students = await repo.getStudentsWithProgrammableWeek(day);
-      },
-    );
+    await _runWithWorkoutOpeningLoading(context, () async {
+      students = await repo.getStudentsWithProgrammableWeek(day);
+    });
     if (!context.mounted) return;
 
     await showAppModalSheet<void>(
@@ -379,77 +399,78 @@ class CalendarDayFlow {
                 onTimeout: () => <StudentEntity>[],
               )
               .then(
-                (list) => list.where((s) => !byStudent.containsKey(s.id)).toList(),
+                (list) =>
+                    list.where((s) => !byStudent.containsKey(s.id)).toList(),
               )
         : Future<List<StudentEntity>>.value(const []);
 
-    await _runWithWorkoutOpeningLoading(
-      context,
-      () async {
-        students = await repo.watchStudentsAlphabetical().first;
-        nameMap = {for (final s in students) s.id: s.name};
-        visibleStudentIds = students.map((s) => s.id).toSet();
-        for (final w in dayWorkouts) {
-          byStudent.putIfAbsent(w.studentId, () => []).add(w);
-        }
-        // Treinos em dias anteriores à inativação podem referenciar alunos fora da lista ativa.
-        final missingNameIds = byStudent.keys.where((id) {
-          final n = nameMap[id];
-          return n == null || n.trim().isEmpty;
-        }).toList();
-        inactiveByStudentId = <String, bool>{
-          for (final sid in byStudent.keys) sid: !visibleStudentIds.contains(sid),
-        };
-        if (missingNameIds.isNotEmpty) {
-          final fetched = await Future.wait(
-            missingNameIds.map(repo.getStudentById),
-          );
-          for (var i = 0; i < missingNameIds.length; i++) {
-            final row = fetched[i];
-            final id = missingNameIds[i];
-            if (row != null) {
-              inactiveByStudentId[id] = row.isArchived;
-            }
-            final label = row?.name.trim();
-            if (label != null && label.isNotEmpty) {
-              nameMap[id] = label;
-            }
+    await _runWithWorkoutOpeningLoading(context, () async {
+      students = await repo.watchStudentsAlphabetical().first;
+      nameMap = {for (final s in students) s.id: s.name};
+      visibleStudentIds = students.map((s) => s.id).toSet();
+      for (final w in dayWorkouts) {
+        byStudent.putIfAbsent(w.studentId, () => []).add(w);
+      }
+      // Treinos em dias anteriores à inativação podem referenciar alunos fora da lista ativa.
+      final missingNameIds = byStudent.keys.where((id) {
+        final n = nameMap[id];
+        return n == null || n.trim().isEmpty;
+      }).toList();
+      inactiveByStudentId = <String, bool>{
+        for (final sid in byStudent.keys) sid: !visibleStudentIds.contains(sid),
+      };
+      if (missingNameIds.isNotEmpty) {
+        final fetched = await Future.wait(
+          missingNameIds.map(repo.getStudentById),
+        );
+        for (var i = 0; i < missingNameIds.length; i++) {
+          final row = fetched[i];
+          final id = missingNameIds[i];
+          if (row != null) {
+            inactiveByStudentId[id] = row.isArchived;
+          }
+          final label = row?.name.trim();
+          if (label != null && label.isNotEmpty) {
+            nameMap[id] = label;
           }
         }
-        // Estado «inativo» na UI deve refletir só [isArchived], não «falta na lista»
-        // (primeira emissão do stream ou timeout de rede).
-        final dayStudentIds = byStudent.keys.toList(growable: false);
-        if (dayStudentIds.isNotEmpty) {
-          final rows = await Future.wait(
-            dayStudentIds.map(
-              (id) => repo
-                  .getStudentById(id)
-                  .timeout(const Duration(milliseconds: 2800), onTimeout: () => null),
-            ),
-          );
-          for (var i = 0; i < dayStudentIds.length; i++) {
-            final row = rows[i];
-            final id = dayStudentIds[i];
-            if (row != null) {
-              nameMap[id] = row.name;
-              inactiveByStudentId[id] = row.isArchived;
-            } else {
-              inactiveByStudentId[id] = false;
-              nameMap.putIfAbsent(id, () => id);
-            }
+      }
+      // Estado «inativo» na UI deve refletir só [isArchived], não «falta na lista»
+      // (primeira emissão do stream ou timeout de rede).
+      final dayStudentIds = byStudent.keys.toList(growable: false);
+      if (dayStudentIds.isNotEmpty) {
+        final rows = await Future.wait(
+          dayStudentIds.map(
+            (id) => repo
+                .getStudentById(id)
+                .timeout(
+                  const Duration(milliseconds: 2800),
+                  onTimeout: () => null,
+                ),
+          ),
+        );
+        for (var i = 0; i < dayStudentIds.length; i++) {
+          final row = rows[i];
+          final id = dayStudentIds[i];
+          if (row != null) {
+            nameMap[id] = row.name;
+            inactiveByStudentId[id] = row.isArchived;
+          } else {
+            inactiveByStudentId[id] = false;
+            nameMap.putIfAbsent(id, () => id);
           }
         }
-        String dayModalSortLabel(String sid) {
-          final raw = nameMap[sid] ?? sid;
-          final inactive = inactiveByStudentId[sid] ?? false;
-          final label = inactive ? studentNameWithoutArchivePrefix(raw) : raw;
-          return label.toLowerCase();
-        }
+      }
+      String dayModalSortLabel(String sid) {
+        final raw = nameMap[sid] ?? sid;
+        final inactive = inactiveByStudentId[sid] ?? false;
+        final label = inactive ? studentNameWithoutArchivePrefix(raw) : raw;
+        return label.toLowerCase();
+      }
 
-        sids = byStudent.keys.toList()
-          ..sort((a, b) => dayModalSortLabel(a).compareTo(dayModalSortLabel(b)));
-      },
-    );
+      sids = byStudent.keys.toList()
+        ..sort((a, b) => dayModalSortLabel(a).compareTo(dayModalSortLabel(b)));
+    });
 
     if (!context.mounted) return;
 
@@ -484,7 +505,10 @@ class CalendarDayFlow {
           try {
             final b = await repo
                 .getDayWorkoutGroupBadgeLabel(w)
-                .timeout(const Duration(milliseconds: 900), onTimeout: () => null);
+                .timeout(
+                  const Duration(milliseconds: 900),
+                  onTimeout: () => null,
+                );
             badges[w.id] = b;
           } catch (_) {
             badges[w.id] = null;
@@ -534,7 +558,9 @@ class CalendarDayFlow {
     }
 
     Future<void> openStudentWorkout(String studentKey) async {
-      final list = List<DayWorkoutEntity>.from(byStudent[studentKey] ?? const []);
+      final list = List<DayWorkoutEntity>.from(
+        byStudent[studentKey] ?? const [],
+      );
       if (list.isEmpty) return;
 
       // Local-first: abre imediatamente usando snapshot local (rápido) e
@@ -706,14 +732,12 @@ class CalendarDayFlow {
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: _DayModalStudentCard(
                                   name: s.name,
-                                  subtitle: 'Toque para escolher o que programar',
+                                  subtitle:
+                                      'Toque para escolher o que programar',
                                   onTap: () async {
                                     Navigator.pop(ctx);
-                                    final bundles =
-                                        await repo.getProgrammableBundles(
-                                      s.id,
-                                      day,
-                                    );
+                                    final bundles = await repo
+                                        .getProgrammableBundles(s.id, day);
                                     if (!context.mounted) return;
                                     await _pickBundleAndProgram(
                                       context,
@@ -817,7 +841,9 @@ class CalendarDayFlow {
                           Text(
                             'Ação crítica de administrador',
                             style: TextStyle(
-                              color: AppColors.accentPink.withValues(alpha: 0.88),
+                              color: AppColors.accentPink.withValues(
+                                alpha: 0.88,
+                              ),
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -847,7 +873,9 @@ class CalendarDayFlow {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white.withValues(alpha: 0.82),
                           side: BorderSide(
-                            color: AppColors.accentGreen.withValues(alpha: 0.46),
+                            color: AppColors.accentGreen.withValues(
+                              alpha: 0.46,
+                            ),
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
@@ -862,7 +890,9 @@ class CalendarDayFlow {
                     Expanded(
                       child: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.danger.withValues(alpha: 0.9),
+                          backgroundColor: AppColors.danger.withValues(
+                            alpha: 0.9,
+                          ),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(

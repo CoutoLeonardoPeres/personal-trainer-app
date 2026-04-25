@@ -29,6 +29,21 @@ bool _wgLineIncomplete(WorkoutGroupExerciseEntity line) {
   return false;
 }
 
+/// Nunca devolve string vazia: o mapa pode estar vazio no 1º frame até o stream de exercícios emitir.
+String _wgResolveExerciseName(
+  Map<String, ExerciseEntity> idToExercise,
+  String exerciseId,
+) {
+  final raw = idToExercise[exerciseId]?.name.trim();
+  if (raw != null && raw.isNotEmpty) return raw;
+  const fallback = 'Nome do exercício a sincronizar';
+  final id = exerciseId.trim();
+  if (id.length >= 8) {
+    return '$fallback (${id.substring(0, 8)}…)';
+  }
+  return fallback;
+}
+
 class GruposTreinosPage extends StatelessWidget {
   const GruposTreinosPage({super.key});
 
@@ -755,23 +770,27 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                 ),
                               ),
                             )
-                          : ReorderableListView.builder(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              buildDefaultDragHandles: false,
-                              itemCount: blocks.length,
-                              onReorder: (oldIndex, newIndex) =>
-                                  _reorderComboBlocks(
-                                    lines,
-                                    oldIndex,
-                                    newIndex,
-                                  ),
-                              itemBuilder: (context, bi) {
+                          : PrimaryScrollController.none(
+                              child: ReorderableListView.builder(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                buildDefaultDragHandles: false,
+                                itemCount: blocks.length,
+                                onReorder: (oldIndex, newIndex) =>
+                                    _reorderComboBlocks(
+                                      lines,
+                                      oldIndex,
+                                      newIndex,
+                                    ),
+                                itemBuilder: (context, bi) {
                                 final block = blocks[bi];
                                 final needs = block.any(_wgLineIncomplete);
                                 if (block.length == 1) {
                                   final line = block.single;
                                   final ex = idToExercise[line.exerciseId];
-                                  final name = ex?.name ?? 'Exercício';
+                                  final name = _wgResolveExerciseName(
+                                    idToExercise,
+                                    line.exerciseId,
+                                  );
                                   final reps = _wgRepsDisplay(line);
                                   return KeyedSubtree(
                                     key: ValueKey('wg_line_${line.id}'),
@@ -843,18 +862,20 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                 }
                                 final names = block
                                     .map(
-                                      (l) =>
-                                          idToExercise[l.exerciseId]?.name ??
-                                          'Exercício',
+                                      (l) => _wgResolveExerciseName(
+                                        idToExercise,
+                                        l.exerciseId,
+                                      ),
                                     )
                                     .join(' · ');
                                 final cid = block.first.comboId ?? '';
                                 final sub = block
                                     .map((l) {
                                       final r = _wgRepsDisplay(l);
-                                      final nm =
-                                          idToExercise[l.exerciseId]?.name ??
-                                          '…';
+                                      final nm = _wgResolveExerciseName(
+                                        idToExercise,
+                                        l.exerciseId,
+                                      );
                                       return '$nm: ${l.lastSets ?? '—'}×${r.isEmpty ? '—' : r}';
                                     })
                                     .join('  |  ');
@@ -910,10 +931,10 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                                   for (final line in block)
                                                     ListTile(
                                                       title: Text(
-                                                        idToExercise[line
-                                                                    .exerciseId]
-                                                                ?.name ??
-                                                            'Exercício',
+                                                        _wgResolveExerciseName(
+                                                          idToExercise,
+                                                          line.exerciseId,
+                                                        ),
                                                         style: const TextStyle(
                                                           color: AppColors
                                                               .textPrimary,
@@ -932,10 +953,10 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                       if (!context.mounted || choice == null) {
                                         return;
                                       }
-                                      final nm =
-                                          idToExercise[choice.exerciseId]
-                                              ?.name ??
-                                          'Exercício';
+                                      final nm = _wgResolveExerciseName(
+                                        idToExercise,
+                                        choice.exerciseId,
+                                      );
                                       await _lineDialog(context, choice, nm);
                                     },
                                     onSlidableCombine: () =>
@@ -989,11 +1010,10 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                             lines: [
                                               for (final line in block)
                                                 (
-                                                  name:
-                                                      idToExercise[line
-                                                              .exerciseId]
-                                                          ?.name ??
-                                                      'Exercício',
+                                                  name: _wgResolveExerciseName(
+                                                    idToExercise,
+                                                    line.exerciseId,
+                                                  ),
                                                   exercise: idToExercise[
                                                     line.exerciseId
                                                   ],
@@ -1023,6 +1043,7 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                 );
                               },
                             ),
+                          ),
                     ),
                     Divider(
                       height: 1,

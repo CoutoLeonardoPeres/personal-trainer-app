@@ -229,6 +229,7 @@ class _PlanningPageState extends State<PlanningPage> {
                         ),
                         Expanded(
                           child: ListView(
+                            primary: false,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             children: [
                               _sectionTitle('Grupos de treino na semana'),
@@ -887,6 +888,7 @@ class _PlanningPageState extends State<PlanningPage> {
     final needs = rows.where((r) => r.needsAttention).length;
     final borderBlue = AppColors.cadastroCardBorder;
     final lightBlue = AppColors.registrySectionBlueLight;
+    final expanded = _expandedGroupKeys.contains(expKeyFull);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
@@ -922,144 +924,221 @@ class _PlanningPageState extends State<PlanningPage> {
               splashColor: AppColors.accentGreen.withValues(alpha: 0.12),
               highlightColor: AppColors.accentGreen.withValues(alpha: 0.08),
             ),
-            child: ExpansionTile(
-              key: ValueKey('plan_group_$expKeyFull'),
-              initiallyExpanded: _expandedGroupKeys.contains(expKeyFull),
-              onExpansionChanged: (v) {
-                setState(() {
-                  if (v) {
-                    _expandedGroupKeys.add(expKeyFull);
-                  } else {
-                    _expandedGroupKeys.remove(expKeyFull);
-                  }
-                });
-              },
-              tilePadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 2,
-              ),
-              childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-              leading: Icon(
-                groupId == null
-                    ? Icons.sports_gymnastics_rounded
-                    : Icons.layers_rounded,
-                color: lightBlue.withValues(alpha: 0.95),
-                size: 26,
-              ),
-              title: Text(
-                title,
-                style: TextStyle(
-                  color: lightBlue.withValues(alpha: 0.98),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (group != null && group.description.isNotEmpty)
-                      Text(
-                        group.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 12,
-                        ),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                key: ValueKey('plan_group_$expKeyFull'),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (expanded) {
+                          _expandedGroupKeys.remove(expKeyFull);
+                        } else {
+                          _expandedGroupKeys.add(expKeyFull);
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(17),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
-                    Text(
-                      '${rows.length} exercício${rows.length == 1 ? '' : 's'}'
-                      '${needs > 0 ? ' · $needs pendente${needs == 1 ? '' : 's'}' : ''}',
-                      style: TextStyle(
-                        color: needs > 0
-                            ? AppColors.danger
-                            : AppColors.textMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              iconColor: borderBlue.withValues(alpha: 0.95),
-              collapsedIconColor: borderBlue.withValues(alpha: 0.95),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.danger.withValues(
-                          alpha: 0.18,
-                        ),
-                        foregroundColor: AppColors.danger,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 14,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(
-                            color: AppColors.danger.withValues(alpha: 0.55),
-                            width: 1.2,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            groupId == null
+                                ? Icons.sports_gymnastics_rounded
+                                : Icons.layers_rounded,
+                            color: lightBlue.withValues(alpha: 0.95),
+                            size: 26,
                           ),
-                        ),
-                      ),
-                      onPressed: () => _deleteGroupWeekItems(
-                        context,
-                        repo,
-                        rows,
-                        keepExpandedKey: expKeyFull,
-                      ),
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      label: const Text(
-                        'Remover da semana',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: TextStyle(
+                                    color: lightBlue.withValues(alpha: 0.98),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (group != null &&
+                                          group.description.isNotEmpty)
+                                        Text(
+                                          group.description,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      Text(
+                                        '${rows.length} exercício${rows.length == 1 ? '' : 's'}'
+                                        '${needs > 0 ? ' · $needs pendente${needs == 1 ? '' : 's'}' : ''}',
+                                        style: TextStyle(
+                                          color: needs > 0
+                                              ? AppColors.danger
+                                              : AppColors.textMuted,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          AnimatedRotation(
+                            turns: expanded ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeInOut,
+                            child: Icon(
+                              Icons.expand_more_rounded,
+                              color: borderBlue.withValues(alpha: 0.95),
+                              size: 28,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-                if (rowBlocks.length > 1)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    child: Text(
-                      'Arraste pelo ícone para alterar a ordem de execução.',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 11.5,
-                      ),
-                    ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    clipBehavior: Clip.hardEdge,
+                    child: expanded
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    4,
+                                    0,
+                                    4,
+                                    10,
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: AppColors.danger
+                                            .withValues(alpha: 0.18),
+                                        foregroundColor: AppColors.danger,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                          horizontal: 14,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          side: BorderSide(
+                                            color: AppColors.danger.withValues(
+                                              alpha: 0.55,
+                                            ),
+                                            width: 1.2,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: () => _deleteGroupWeekItems(
+                                        context,
+                                        repo,
+                                        rows,
+                                        keepExpandedKey: expKeyFull,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 20,
+                                      ),
+                                      label: const Text(
+                                        'Remover da semana',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (rowBlocks.length > 1)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      8,
+                                      0,
+                                      8,
+                                      8,
+                                    ),
+                                    child: Text(
+                                      'Arraste pelo ícone para alterar a ordem de execução.',
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ),
+                                PrimaryScrollController.none(
+                                  child: ReorderableListView.builder(
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    buildDefaultDragHandles: false,
+                                    itemCount: rowBlocks.length,
+                                    onReorder: (oldIndex, newIndex) =>
+                                        _reorderGroupWeekItems(
+                                          repo,
+                                          rows,
+                                          oldIndex,
+                                          newIndex,
+                                        ),
+                                    itemBuilder: (context, index) {
+                                      final br = rowBlocks[index];
+                                      return KeyedSubtree(
+                                        key: ValueKey(
+                                          'week_block_${br.first.item.id}_${br.length}',
+                                        ),
+                                        child: _scheduledExerciseBlockCard(
+                                          context,
+                                          repo,
+                                          pageMonday,
+                                          br,
+                                          allWeekRows: allWeekRows,
+                                          dragIndex: index,
+                                          allowReorder: rowBlocks.length > 1,
+                                          idToExercise: idToExercise,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
-                ReorderableListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  buildDefaultDragHandles: false,
-                  itemCount: rowBlocks.length,
-                  onReorder: (oldIndex, newIndex) =>
-                      _reorderGroupWeekItems(repo, rows, oldIndex, newIndex),
-                  itemBuilder: (context, index) {
-                    final br = rowBlocks[index];
-                    return KeyedSubtree(
-                      key: ValueKey(
-                        'week_block_${br.first.item.id}_${br.length}',
-                      ),
-                      child: _scheduledExerciseBlockCard(
-                        context,
-                        repo,
-                        pageMonday,
-                        br,
-                        allWeekRows: allWeekRows,
-                        dragIndex: index,
-                        allowReorder: rowBlocks.length > 1,
-                        idToExercise: idToExercise,
-                      ),
-                    );
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

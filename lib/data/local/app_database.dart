@@ -313,6 +313,18 @@ class DayWorkouts extends Table {
   /// Frequência cardíaca média (bpm) opcional, ex.: Apple Watch / Garmin.
   IntColumn get watchAvgHeartRateBpm => integer().nullable()();
 
+  /// Revisão monotônica para resolução determinística de conflito (local x nuvem).
+  IntColumn get revision => integer().withDefault(const Constant(0))();
+
+  /// Identificador do dispositivo que alterou por último.
+  TextColumn get lastModifiedByDeviceId => text().nullable()();
+
+  /// pending | syncing | synced | failed (somente para observabilidade local).
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+
+  /// Tombstone local para evitar ressurreição por pull remoto antigo.
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -344,6 +356,18 @@ class DayWorkoutExercises extends Table {
 
   TextColumn get comboId => text().nullable()();
 
+  /// Revisão monotônica para resolução determinística de conflito (local x nuvem).
+  IntColumn get revision => integer().withDefault(const Constant(0))();
+
+  /// Identificador do dispositivo que alterou por último.
+  TextColumn get lastModifiedByDeviceId => text().nullable()();
+
+  /// pending | syncing | synced | failed (somente para observabilidade local).
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+
+  /// Tombstone local para evitar ressurreição por pull remoto antigo.
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -358,6 +382,26 @@ class AuditLogs extends Table {
   TextColumn get entityType => text()();
   TextColumn get entityId => text().nullable()();
   TextColumn get payloadJson => text().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+@DataClassName('SyncQueueItemEntity')
+class SyncQueue extends Table {
+  TextColumn get id => text()();
+  TextColumn get entityType => text()();
+  TextColumn get entityId => text()();
+  TextColumn get operation => text()();
+  TextColumn get payloadJson => text().nullable()();
+  IntColumn get priority => integer().withDefault(const Constant(2))();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  IntColumn get retryCount => integer().withDefault(const Constant(0))();
+  DateTimeColumn get nextRetryAt => dateTime().nullable()();
+  TextColumn get dedupeKey => text().nullable()();
+  TextColumn get auditLogId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -379,13 +423,14 @@ class AuditLogs extends Table {
     DayWorkouts,
     DayWorkoutExercises,
     AuditLogs,
+    SyncQueue,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 28;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -403,6 +448,14 @@ class AppDatabase extends _$AppDatabase {
       await customStatement(
         'CREATE UNIQUE INDEX IF NOT EXISTS exercises_unique_normalized_name '
         'ON exercises (lower(trim(name)))',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS sync_queue_status_next_retry_idx '
+        'ON sync_queue(status, next_retry_at, priority, updated_at)',
+      );
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_dedupe_key_uidx '
+        'ON sync_queue(dedupe_key) WHERE dedupe_key IS NOT NULL',
       );
     },
     onUpgrade: (m, from, to) async {
@@ -579,6 +632,28 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 27) {
         await m.addColumn(workoutGroups, workoutGroups.deletedAt);
+      }
+      if (from < 28) {
+        await m.addColumn(dayWorkouts, dayWorkouts.revision);
+        await m.addColumn(dayWorkouts, dayWorkouts.lastModifiedByDeviceId);
+        await m.addColumn(dayWorkouts, dayWorkouts.syncStatus);
+        await m.addColumn(dayWorkouts, dayWorkouts.deletedAt);
+        await m.addColumn(dayWorkoutExercises, dayWorkoutExercises.revision);
+        await m.addColumn(
+          dayWorkoutExercises,
+          dayWorkoutExercises.lastModifiedByDeviceId,
+        );
+        await m.addColumn(dayWorkoutExercises, dayWorkoutExercises.syncStatus);
+        await m.addColumn(dayWorkoutExercises, dayWorkoutExercises.deletedAt);
+        await m.createTable(syncQueue);
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS sync_queue_status_next_retry_idx '
+          'ON sync_queue(status, next_retry_at, priority, updated_at)',
+        );
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_dedupe_key_uidx '
+          'ON sync_queue(dedupe_key) WHERE dedupe_key IS NOT NULL',
+        );
       }
     },
     beforeOpen: (details) async {

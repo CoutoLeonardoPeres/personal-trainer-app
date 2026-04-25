@@ -795,3 +795,48 @@ alter table public.day_workouts
   add column if not exists watch_calories_kcal double precision null;
 alter table public.day_workouts
   add column if not exists watch_avg_heart_rate_bpm integer null;
+
+-- ---------------------------------------------------------------------------
+-- Nota (app: resumo ao concluir séries de um exercício no calendário)
+-- A comparação «último treino concluído vs atual» usa apenas dados já existentes:
+--   day_workout_exercises.performed_sets_json (carga, reps, logged_at_ms,
+--   rest_prescribed_sec, rest_countdown_elapsed_ms, post_rest_modal_ms),
+--   day_workout_exercises.exercise_score,
+--   day_workouts.watch_calories_kcal (estimativa proporcional por exercício).
+-- Não é obrigatória nenhuma migração adicional no Supabase para esta funcionalidade.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Migração robusta de sync offline-first (treino/séries).
+-- Garante versionamento por revisão + metadados de dispositivo/sync para merge LWW.
+-- Idempotente.
+-- ---------------------------------------------------------------------------
+alter table public.day_workouts
+  add column if not exists revision integer not null default 0;
+alter table public.day_workouts
+  add column if not exists last_modified_by_device_id text null;
+alter table public.day_workouts
+  add column if not exists sync_status text not null default 'synced';
+alter table public.day_workouts
+  add column if not exists deleted_at timestamptz null;
+
+alter table public.day_workout_exercises
+  add column if not exists revision integer not null default 0;
+alter table public.day_workout_exercises
+  add column if not exists last_modified_by_device_id text null;
+alter table public.day_workout_exercises
+  add column if not exists sync_status text not null default 'synced';
+alter table public.day_workout_exercises
+  add column if not exists deleted_at timestamptz null;
+
+create index if not exists day_workouts_sync_merge_idx
+  on public.day_workouts (id, revision, updated_at);
+
+create index if not exists day_workout_exercises_sync_merge_idx
+  on public.day_workout_exercises (id, revision, updated_at);
+
+create index if not exists day_workouts_student_updated_idx
+  on public.day_workouts (student_id, updated_at desc);
+
+create index if not exists day_workout_exercises_workout_updated_idx
+  on public.day_workout_exercises (day_workout_id, updated_at desc);

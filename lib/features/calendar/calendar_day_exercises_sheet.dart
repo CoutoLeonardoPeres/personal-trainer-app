@@ -73,43 +73,112 @@ String _workoutTagLabel(String status) => switch (status) {
   _ => 'Treino',
 };
 
-/// Valor do score no canto direito do card do cabeçalho (ícone + número), alinhado ao layout único da sheet.
-Widget _calendarSheetHeaderScoreValue({
-  required DayWorkoutEntity workout,
-  required AppDataRepository repo,
-}) {
-  const iconSize = 16.0;
-  const valueFs = 17.0;
-  final iconColor = AppColors.splashMint.withValues(alpha: 0.9);
-  final valueStyle = TextStyle(
-    fontWeight: FontWeight.w800,
-    fontSize: valueFs,
-    height: 1.05,
-    fontFeatures: const [FontFeature.tabularFigures()],
-  );
-
-  if (workout.status == 'completed') {
-    final has = workout.workoutScore != null;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
-        const SizedBox(width: 4),
-        has
-            ? CountUpScoreText(
-                key: ValueKey('dw_header_score_${workout.id}'),
-                target: workout.workoutScore!,
-                duration: const Duration(milliseconds: 900),
-                format: (v) => v.toStringAsFixed(2),
-                style: valueStyle.copyWith(
-                  color: AppColors.splashMint.withValues(alpha: 0.98),
-                ),
-              )
-            : Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
-      ],
-    );
+String _workoutHeaderDeltaPercentLabel(double current, double? previous) {
+  if (previous == null) return '--';
+  const eps = 0.0001;
+  final diff = current - previous;
+  if (diff.abs() <= eps) return '0%';
+  if (previous.abs() <= eps) {
+    return diff > 0 ? '+100%+' : '-100%';
   }
-  if (workout.status == 'started') {
+  final pct = (diff / previous) * 100.0;
+  final decimals = pct.abs() >= 100 ? 0 : 1;
+  final txt = pct.toStringAsFixed(decimals).replaceAll('.', ',');
+  return '$txt%';
+}
+
+Color _workoutHeaderDeltaColor(double current, double? previous) {
+  if (previous == null) return const Color(0xFF64B5F6);
+  const eps = 0.0001;
+  final diff = current - previous;
+  if (diff.abs() <= eps) return Colors.amberAccent.shade200;
+  if (current > previous + eps) return const Color(0xFF4CAF50);
+  return const Color(0xFFEF5350);
+}
+
+/// Valor do score no canto direito do card do cabeçalho (ícone + número + % vs treino anterior).
+class _CalendarSheetHeaderWorkoutScore extends StatelessWidget {
+  const _CalendarSheetHeaderWorkoutScore({
+    required this.workout,
+    required this.repo,
+  });
+
+  final DayWorkoutEntity workout;
+  final AppDataRepository repo;
+
+  @override
+  Widget build(BuildContext context) {
+    const iconSize = 16.0;
+    const valueFs = 17.0;
+    const pctFs = 14.0;
+    final iconColor = AppColors.splashMint.withValues(alpha: 0.9);
+    final valueStyle = TextStyle(
+      fontWeight: FontWeight.w800,
+      fontSize: valueFs,
+      height: 1.05,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+    if (workout.status == 'completed') {
+      final cur = workout.workoutScore;
+      if (cur != null) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+            const SizedBox(width: 4),
+            CountUpScoreText(
+              key: ValueKey('dw_header_score_${workout.id}'),
+              target: cur,
+              duration: const Duration(milliseconds: 900),
+              format: (v) => v.toStringAsFixed(2),
+              style: valueStyle.copyWith(
+                color: AppColors.splashMint.withValues(alpha: 0.98),
+              ),
+            ),
+            const SizedBox(width: 6),
+            FutureBuilder<double?>(
+              future: repo.previousCompletedWorkoutScore(
+                dayWorkoutId: workout.id,
+              ),
+              builder: (context, snap) {
+                final prev = snap.data;
+                final label = _workoutHeaderDeltaPercentLabel(cur, prev);
+                final color = _workoutHeaderDeltaColor(cur, prev);
+                return Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                    fontSize: pctFs,
+                    height: 1.05,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      }
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+          const SizedBox(width: 4),
+          Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
+        ],
+      );
+    }
+    if (workout.status == 'started') {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+          const SizedBox(width: 4),
+          Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
+        ],
+      );
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -119,14 +188,6 @@ Widget _calendarSheetHeaderScoreValue({
       ],
     );
   }
-  return Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
-      const SizedBox(width: 4),
-      Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
-    ],
-  );
 }
 
 enum _ExerciseScoreTrend { better, worse, same, noPrevious }
@@ -1608,12 +1669,12 @@ class _DayExercisesSheetScaffoldState
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateWorkoutLinesFromCloud());
-      if (widget.workout.status == 'started') {
-        _liveWorkoutCloudRefreshTimer = Timer.periodic(
-          const Duration(seconds: 8),
-          (_) => unawaited(_hydrateWorkoutLinesFromCloud(silentUi: true)),
-        );
-      }
+      // Resiliência multi-dispositivo: manter pull periódico mesmo quando o
+      // snapshot inicial ainda não está "started" localmente.
+      _liveWorkoutCloudRefreshTimer = Timer.periodic(
+        const Duration(seconds: 4),
+        (_) => unawaited(_hydrateWorkoutLinesFromCloud(silentUi: true)),
+      );
     });
     // Evita loading infinito se pull/rede ou flags de hidratação ficarem presos.
     unawaited(
@@ -1718,9 +1779,10 @@ class _DayExercisesSheetScaffoldState
     if (prescribedSec <= 0) return;
     await showInterSetRestModal(context: context, prescribedSec: prescribedSec);
     if (!mounted) return;
+    // Só foco na linha atual — não incrementar [_refreshKey]: isso remontava
+    // toda a lista e o [CountUpScoreText] de todos os exercícios animava de novo.
     setState(() {
       _focusCurrentExerciseAfterRestClose = true;
-      _refreshKey++;
     });
   }
 
@@ -2181,7 +2243,7 @@ class _DayExercisesSheetScaffoldState
                                       const SizedBox(height: 3),
                                       Align(
                                         alignment: Alignment.centerRight,
-                                        child: _calendarSheetHeaderScoreValue(
+                                        child: _CalendarSheetHeaderWorkoutScore(
                                           workout: w,
                                           repo: widget.repo,
                                         ),
@@ -2200,6 +2262,8 @@ class _DayExercisesSheetScaffoldState
               ),
               const SizedBox(height: 10),
               Expanded(
+                // [_refreshKey] só para “Tentar novamente” / ícone Atualizar — não após cada série
+                // (remontar aqui reiniciava [CountUpScoreText] em todos os exercícios).
                 child: KeyedSubtree(
                   key: ValueKey(_refreshKey),
                   child: StreamBuilder<List<ExerciseEntity>>(
@@ -2337,7 +2401,9 @@ class _DayExercisesSheetScaffoldState
                                         onPressed: () {
                                           if (!mounted) return;
                                           setState(() => _refreshKey++);
-                                          unawaited(_hydrateWorkoutLinesFromCloud());
+                                          unawaited(
+                                            _hydrateWorkoutLinesFromCloud(),
+                                          );
                                         },
                                         icon: const Icon(
                                           Icons.refresh_rounded,
@@ -2448,13 +2514,6 @@ class _DayExercisesSheetScaffoldState
                                             exerciseName: dialogTitle,
                                             requireAllMetricFields:
                                                 w.status == 'started',
-                                            onSetSaved: () {
-                                              if (!mounted) return;
-                                              // Força rebuild/re-subscribe imediato após gravar série:
-                                              // em cenários de i/o/locks o stream pode demorar a emitir,
-                                              // e o utilizador vê o timer/rest iniciar sem a série aparecer.
-                                              setState(() => _refreshKey++);
-                                            },
                                           )
                                         : null,
                                     performedSetsRepo: widget.repo,

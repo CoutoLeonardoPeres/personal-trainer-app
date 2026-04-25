@@ -106,6 +106,15 @@ abstract final class DayWorkoutPerformedSetCodec {
     return minMs;
   }
 
+  static int? maxLoggedAtMs(List<DayWorkoutPerformedSet> list) {
+    int? maxMs;
+    for (final s in list) {
+      final t = s.loggedAtMs;
+      if (t != null && (maxMs == null || t > maxMs)) maxMs = t;
+    }
+    return maxMs;
+  }
+
   /// Volume bruto: soma (carga × reps) por série (p.ex. calorias / tonelagem).
   static double totalVolumeScore(List<DayWorkoutPerformedSet> list) {
     var sum = 0.0;

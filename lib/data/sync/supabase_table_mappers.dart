@@ -165,6 +165,10 @@ Map<String, dynamic> supabaseDayWorkout(DayWorkoutEntity e) => {
       'source_workout_group_id': e.sourceWorkoutGroupId,
       'watch_calories_kcal': e.watchCaloriesKcal,
       'watch_avg_heart_rate_bpm': e.watchAvgHeartRateBpm,
+      'revision': e.revision,
+      'last_modified_by_device_id': e.lastModifiedByDeviceId,
+      'sync_status': e.syncStatus,
+      'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
     };
 
 Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
@@ -182,6 +186,10 @@ Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
       'training_method_id': e.trainingMethodId,
       'combo_id': e.comboId,
       'updated_at': supabaseTs(e.updatedAt),
+      'revision': e.revision,
+      'last_modified_by_device_id': e.lastModifiedByDeviceId,
+      'sync_status': e.syncStatus,
+      'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
     };
 
 Map<String, dynamic> supabaseAuditLog(AuditLogEntity e) => {

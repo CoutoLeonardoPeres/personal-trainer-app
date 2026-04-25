@@ -7192,6 +7192,52 @@ class $DayWorkoutsTable extends DayWorkouts
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastModifiedByDeviceIdMeta =
+      const VerificationMeta('lastModifiedByDeviceId');
+  @override
+  late final GeneratedColumn<String> lastModifiedByDeviceId =
+      GeneratedColumn<String>(
+        'last_modified_by_device_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -7209,6 +7255,10 @@ class $DayWorkoutsTable extends DayWorkouts
     sourceWorkoutGroupId,
     watchCaloriesKcal,
     watchAvgHeartRateBpm,
+    revision,
+    lastModifiedByDeviceId,
+    syncStatus,
+    deletedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -7341,6 +7391,33 @@ class $DayWorkoutsTable extends DayWorkouts
         ),
       );
     }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('last_modified_by_device_id')) {
+      context.handle(
+        _lastModifiedByDeviceIdMeta,
+        lastModifiedByDeviceId.isAcceptableOrUnknown(
+          data['last_modified_by_device_id']!,
+          _lastModifiedByDeviceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -7410,6 +7487,22 @@ class $DayWorkoutsTable extends DayWorkouts
         DriftSqlType.int,
         data['${effectivePrefix}watch_avg_heart_rate_bpm'],
       ),
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+      lastModifiedByDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_modified_by_device_id'],
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -7446,6 +7539,18 @@ class DayWorkoutEntity extends DataClass
 
   /// Frequência cardíaca média (bpm) opcional, ex.: Apple Watch / Garmin.
   final int? watchAvgHeartRateBpm;
+
+  /// Revisão monotônica para resolução determinística de conflito (local x nuvem).
+  final int revision;
+
+  /// Identificador do dispositivo que alterou por último.
+  final String? lastModifiedByDeviceId;
+
+  /// pending | syncing | synced | failed (somente para observabilidade local).
+  final String syncStatus;
+
+  /// Tombstone local para evitar ressurreição por pull remoto antigo.
+  final DateTime? deletedAt;
   const DayWorkoutEntity({
     required this.id,
     required this.studentId,
@@ -7462,6 +7567,10 @@ class DayWorkoutEntity extends DataClass
     this.sourceWorkoutGroupId,
     this.watchCaloriesKcal,
     this.watchAvgHeartRateBpm,
+    required this.revision,
+    this.lastModifiedByDeviceId,
+    required this.syncStatus,
+    this.deletedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7496,6 +7605,16 @@ class DayWorkoutEntity extends DataClass
     }
     if (!nullToAbsent || watchAvgHeartRateBpm != null) {
       map['watch_avg_heart_rate_bpm'] = Variable<int>(watchAvgHeartRateBpm);
+    }
+    map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || lastModifiedByDeviceId != null) {
+      map['last_modified_by_device_id'] = Variable<String>(
+        lastModifiedByDeviceId,
+      );
+    }
+    map['sync_status'] = Variable<String>(syncStatus);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
     }
     return map;
   }
@@ -7533,6 +7652,14 @@ class DayWorkoutEntity extends DataClass
       watchAvgHeartRateBpm: watchAvgHeartRateBpm == null && nullToAbsent
           ? const Value.absent()
           : Value(watchAvgHeartRateBpm),
+      revision: Value(revision),
+      lastModifiedByDeviceId: lastModifiedByDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastModifiedByDeviceId),
+      syncStatus: Value(syncStatus),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -7565,6 +7692,12 @@ class DayWorkoutEntity extends DataClass
       watchAvgHeartRateBpm: serializer.fromJson<int?>(
         json['watchAvgHeartRateBpm'],
       ),
+      revision: serializer.fromJson<int>(json['revision']),
+      lastModifiedByDeviceId: serializer.fromJson<String?>(
+        json['lastModifiedByDeviceId'],
+      ),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
     );
   }
   @override
@@ -7586,6 +7719,12 @@ class DayWorkoutEntity extends DataClass
       'sourceWorkoutGroupId': serializer.toJson<String?>(sourceWorkoutGroupId),
       'watchCaloriesKcal': serializer.toJson<double?>(watchCaloriesKcal),
       'watchAvgHeartRateBpm': serializer.toJson<int?>(watchAvgHeartRateBpm),
+      'revision': serializer.toJson<int>(revision),
+      'lastModifiedByDeviceId': serializer.toJson<String?>(
+        lastModifiedByDeviceId,
+      ),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
     };
   }
 
@@ -7605,6 +7744,10 @@ class DayWorkoutEntity extends DataClass
     Value<String?> sourceWorkoutGroupId = const Value.absent(),
     Value<double?> watchCaloriesKcal = const Value.absent(),
     Value<int?> watchAvgHeartRateBpm = const Value.absent(),
+    int? revision,
+    Value<String?> lastModifiedByDeviceId = const Value.absent(),
+    String? syncStatus,
+    Value<DateTime?> deletedAt = const Value.absent(),
   }) => DayWorkoutEntity(
     id: id ?? this.id,
     studentId: studentId ?? this.studentId,
@@ -7629,6 +7772,12 @@ class DayWorkoutEntity extends DataClass
     watchAvgHeartRateBpm: watchAvgHeartRateBpm.present
         ? watchAvgHeartRateBpm.value
         : this.watchAvgHeartRateBpm,
+    revision: revision ?? this.revision,
+    lastModifiedByDeviceId: lastModifiedByDeviceId.present
+        ? lastModifiedByDeviceId.value
+        : this.lastModifiedByDeviceId,
+    syncStatus: syncStatus ?? this.syncStatus,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
   );
   DayWorkoutEntity copyWithCompanion(DayWorkoutsCompanion data) {
     return DayWorkoutEntity(
@@ -7663,6 +7812,14 @@ class DayWorkoutEntity extends DataClass
       watchAvgHeartRateBpm: data.watchAvgHeartRateBpm.present
           ? data.watchAvgHeartRateBpm.value
           : this.watchAvgHeartRateBpm,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      lastModifiedByDeviceId: data.lastModifiedByDeviceId.present
+          ? data.lastModifiedByDeviceId.value
+          : this.lastModifiedByDeviceId,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -7683,7 +7840,11 @@ class DayWorkoutEntity extends DataClass
           ..write('updatedAt: $updatedAt, ')
           ..write('sourceWorkoutGroupId: $sourceWorkoutGroupId, ')
           ..write('watchCaloriesKcal: $watchCaloriesKcal, ')
-          ..write('watchAvgHeartRateBpm: $watchAvgHeartRateBpm')
+          ..write('watchAvgHeartRateBpm: $watchAvgHeartRateBpm, ')
+          ..write('revision: $revision, ')
+          ..write('lastModifiedByDeviceId: $lastModifiedByDeviceId, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
@@ -7705,6 +7866,10 @@ class DayWorkoutEntity extends DataClass
     sourceWorkoutGroupId,
     watchCaloriesKcal,
     watchAvgHeartRateBpm,
+    revision,
+    lastModifiedByDeviceId,
+    syncStatus,
+    deletedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -7724,7 +7889,11 @@ class DayWorkoutEntity extends DataClass
           other.updatedAt == this.updatedAt &&
           other.sourceWorkoutGroupId == this.sourceWorkoutGroupId &&
           other.watchCaloriesKcal == this.watchCaloriesKcal &&
-          other.watchAvgHeartRateBpm == this.watchAvgHeartRateBpm);
+          other.watchAvgHeartRateBpm == this.watchAvgHeartRateBpm &&
+          other.revision == this.revision &&
+          other.lastModifiedByDeviceId == this.lastModifiedByDeviceId &&
+          other.syncStatus == this.syncStatus &&
+          other.deletedAt == this.deletedAt);
 }
 
 class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
@@ -7743,6 +7912,10 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
   final Value<String?> sourceWorkoutGroupId;
   final Value<double?> watchCaloriesKcal;
   final Value<int?> watchAvgHeartRateBpm;
+  final Value<int> revision;
+  final Value<String?> lastModifiedByDeviceId;
+  final Value<String> syncStatus;
+  final Value<DateTime?> deletedAt;
   final Value<int> rowid;
   const DayWorkoutsCompanion({
     this.id = const Value.absent(),
@@ -7760,6 +7933,10 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
     this.sourceWorkoutGroupId = const Value.absent(),
     this.watchCaloriesKcal = const Value.absent(),
     this.watchAvgHeartRateBpm = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.lastModifiedByDeviceId = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DayWorkoutsCompanion.insert({
@@ -7778,6 +7955,10 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
     this.sourceWorkoutGroupId = const Value.absent(),
     this.watchCaloriesKcal = const Value.absent(),
     this.watchAvgHeartRateBpm = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.lastModifiedByDeviceId = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        studentId = Value(studentId),
@@ -7799,6 +7980,10 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
     Expression<String>? sourceWorkoutGroupId,
     Expression<double>? watchCaloriesKcal,
     Expression<int>? watchAvgHeartRateBpm,
+    Expression<int>? revision,
+    Expression<String>? lastModifiedByDeviceId,
+    Expression<String>? syncStatus,
+    Expression<DateTime>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -7820,6 +8005,11 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
       if (watchCaloriesKcal != null) 'watch_calories_kcal': watchCaloriesKcal,
       if (watchAvgHeartRateBpm != null)
         'watch_avg_heart_rate_bpm': watchAvgHeartRateBpm,
+      if (revision != null) 'revision': revision,
+      if (lastModifiedByDeviceId != null)
+        'last_modified_by_device_id': lastModifiedByDeviceId,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -7840,6 +8030,10 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
     Value<String?>? sourceWorkoutGroupId,
     Value<double?>? watchCaloriesKcal,
     Value<int?>? watchAvgHeartRateBpm,
+    Value<int>? revision,
+    Value<String?>? lastModifiedByDeviceId,
+    Value<String>? syncStatus,
+    Value<DateTime?>? deletedAt,
     Value<int>? rowid,
   }) {
     return DayWorkoutsCompanion(
@@ -7859,6 +8053,11 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
       sourceWorkoutGroupId: sourceWorkoutGroupId ?? this.sourceWorkoutGroupId,
       watchCaloriesKcal: watchCaloriesKcal ?? this.watchCaloriesKcal,
       watchAvgHeartRateBpm: watchAvgHeartRateBpm ?? this.watchAvgHeartRateBpm,
+      revision: revision ?? this.revision,
+      lastModifiedByDeviceId:
+          lastModifiedByDeviceId ?? this.lastModifiedByDeviceId,
+      syncStatus: syncStatus ?? this.syncStatus,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -7917,6 +8116,20 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
         watchAvgHeartRateBpm.value,
       );
     }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (lastModifiedByDeviceId.present) {
+      map['last_modified_by_device_id'] = Variable<String>(
+        lastModifiedByDeviceId.value,
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -7941,6 +8154,10 @@ class DayWorkoutsCompanion extends UpdateCompanion<DayWorkoutEntity> {
           ..write('sourceWorkoutGroupId: $sourceWorkoutGroupId, ')
           ..write('watchCaloriesKcal: $watchCaloriesKcal, ')
           ..write('watchAvgHeartRateBpm: $watchAvgHeartRateBpm, ')
+          ..write('revision: $revision, ')
+          ..write('lastModifiedByDeviceId: $lastModifiedByDeviceId, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8111,6 +8328,52 @@ class $DayWorkoutExercisesTable extends DayWorkoutExercises
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastModifiedByDeviceIdMeta =
+      const VerificationMeta('lastModifiedByDeviceId');
+  @override
+  late final GeneratedColumn<String> lastModifiedByDeviceId =
+      GeneratedColumn<String>(
+        'last_modified_by_device_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -8127,6 +8390,10 @@ class $DayWorkoutExercisesTable extends DayWorkoutExercises
     trainingMethodId,
     updatedAt,
     comboId,
+    revision,
+    lastModifiedByDeviceId,
+    syncStatus,
+    deletedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8246,6 +8513,33 @@ class $DayWorkoutExercisesTable extends DayWorkoutExercises
         comboId.isAcceptableOrUnknown(data['combo_id']!, _comboIdMeta),
       );
     }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('last_modified_by_device_id')) {
+      context.handle(
+        _lastModifiedByDeviceIdMeta,
+        lastModifiedByDeviceId.isAcceptableOrUnknown(
+          data['last_modified_by_device_id']!,
+          _lastModifiedByDeviceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -8314,6 +8608,22 @@ class $DayWorkoutExercisesTable extends DayWorkoutExercises
         DriftSqlType.string,
         data['${effectivePrefix}combo_id'],
       ),
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+      lastModifiedByDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_modified_by_device_id'],
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -8345,6 +8655,18 @@ class DayWorkoutExerciseEntity extends DataClass
   /// Para importação admin (LWW) alinhada ao Supabase.
   final DateTime updatedAt;
   final String? comboId;
+
+  /// Revisão monotônica para resolução determinística de conflito (local x nuvem).
+  final int revision;
+
+  /// Identificador do dispositivo que alterou por último.
+  final String? lastModifiedByDeviceId;
+
+  /// pending | syncing | synced | failed (somente para observabilidade local).
+  final String syncStatus;
+
+  /// Tombstone local para evitar ressurreição por pull remoto antigo.
+  final DateTime? deletedAt;
   const DayWorkoutExerciseEntity({
     required this.id,
     required this.dayWorkoutId,
@@ -8360,6 +8682,10 @@ class DayWorkoutExerciseEntity extends DataClass
     this.trainingMethodId,
     required this.updatedAt,
     this.comboId,
+    required this.revision,
+    this.lastModifiedByDeviceId,
+    required this.syncStatus,
+    this.deletedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8389,6 +8715,16 @@ class DayWorkoutExerciseEntity extends DataClass
     map['updated_at'] = Variable<DateTime>(updatedAt);
     if (!nullToAbsent || comboId != null) {
       map['combo_id'] = Variable<String>(comboId);
+    }
+    map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || lastModifiedByDeviceId != null) {
+      map['last_modified_by_device_id'] = Variable<String>(
+        lastModifiedByDeviceId,
+      );
+    }
+    map['sync_status'] = Variable<String>(syncStatus);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
     }
     return map;
   }
@@ -8421,6 +8757,14 @@ class DayWorkoutExerciseEntity extends DataClass
       comboId: comboId == null && nullToAbsent
           ? const Value.absent()
           : Value(comboId),
+      revision: Value(revision),
+      lastModifiedByDeviceId: lastModifiedByDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastModifiedByDeviceId),
+      syncStatus: Value(syncStatus),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -8446,6 +8790,12 @@ class DayWorkoutExerciseEntity extends DataClass
       trainingMethodId: serializer.fromJson<String?>(json['trainingMethodId']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       comboId: serializer.fromJson<String?>(json['comboId']),
+      revision: serializer.fromJson<int>(json['revision']),
+      lastModifiedByDeviceId: serializer.fromJson<String?>(
+        json['lastModifiedByDeviceId'],
+      ),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
     );
   }
   @override
@@ -8466,6 +8816,12 @@ class DayWorkoutExerciseEntity extends DataClass
       'trainingMethodId': serializer.toJson<String?>(trainingMethodId),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'comboId': serializer.toJson<String?>(comboId),
+      'revision': serializer.toJson<int>(revision),
+      'lastModifiedByDeviceId': serializer.toJson<String?>(
+        lastModifiedByDeviceId,
+      ),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
     };
   }
 
@@ -8484,6 +8840,10 @@ class DayWorkoutExerciseEntity extends DataClass
     Value<String?> trainingMethodId = const Value.absent(),
     DateTime? updatedAt,
     Value<String?> comboId = const Value.absent(),
+    int? revision,
+    Value<String?> lastModifiedByDeviceId = const Value.absent(),
+    String? syncStatus,
+    Value<DateTime?> deletedAt = const Value.absent(),
   }) => DayWorkoutExerciseEntity(
     id: id ?? this.id,
     dayWorkoutId: dayWorkoutId ?? this.dayWorkoutId,
@@ -8505,6 +8865,12 @@ class DayWorkoutExerciseEntity extends DataClass
         : this.trainingMethodId,
     updatedAt: updatedAt ?? this.updatedAt,
     comboId: comboId.present ? comboId.value : this.comboId,
+    revision: revision ?? this.revision,
+    lastModifiedByDeviceId: lastModifiedByDeviceId.present
+        ? lastModifiedByDeviceId.value
+        : this.lastModifiedByDeviceId,
+    syncStatus: syncStatus ?? this.syncStatus,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
   );
   DayWorkoutExerciseEntity copyWithCompanion(
     DayWorkoutExercisesCompanion data,
@@ -8536,6 +8902,14 @@ class DayWorkoutExerciseEntity extends DataClass
           : this.trainingMethodId,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       comboId: data.comboId.present ? data.comboId.value : this.comboId,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      lastModifiedByDeviceId: data.lastModifiedByDeviceId.present
+          ? data.lastModifiedByDeviceId.value
+          : this.lastModifiedByDeviceId,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -8555,7 +8929,11 @@ class DayWorkoutExerciseEntity extends DataClass
           ..write('restBetweenSetsSec: $restBetweenSetsSec, ')
           ..write('trainingMethodId: $trainingMethodId, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('comboId: $comboId')
+          ..write('comboId: $comboId, ')
+          ..write('revision: $revision, ')
+          ..write('lastModifiedByDeviceId: $lastModifiedByDeviceId, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
@@ -8576,6 +8954,10 @@ class DayWorkoutExerciseEntity extends DataClass
     trainingMethodId,
     updatedAt,
     comboId,
+    revision,
+    lastModifiedByDeviceId,
+    syncStatus,
+    deletedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -8594,7 +8976,11 @@ class DayWorkoutExerciseEntity extends DataClass
           other.restBetweenSetsSec == this.restBetweenSetsSec &&
           other.trainingMethodId == this.trainingMethodId &&
           other.updatedAt == this.updatedAt &&
-          other.comboId == this.comboId);
+          other.comboId == this.comboId &&
+          other.revision == this.revision &&
+          other.lastModifiedByDeviceId == this.lastModifiedByDeviceId &&
+          other.syncStatus == this.syncStatus &&
+          other.deletedAt == this.deletedAt);
 }
 
 class DayWorkoutExercisesCompanion
@@ -8613,6 +8999,10 @@ class DayWorkoutExercisesCompanion
   final Value<String?> trainingMethodId;
   final Value<DateTime> updatedAt;
   final Value<String?> comboId;
+  final Value<int> revision;
+  final Value<String?> lastModifiedByDeviceId;
+  final Value<String> syncStatus;
+  final Value<DateTime?> deletedAt;
   final Value<int> rowid;
   const DayWorkoutExercisesCompanion({
     this.id = const Value.absent(),
@@ -8629,6 +9019,10 @@ class DayWorkoutExercisesCompanion
     this.trainingMethodId = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.comboId = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.lastModifiedByDeviceId = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DayWorkoutExercisesCompanion.insert({
@@ -8646,6 +9040,10 @@ class DayWorkoutExercisesCompanion
     this.trainingMethodId = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.comboId = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.lastModifiedByDeviceId = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        dayWorkoutId = Value(dayWorkoutId),
@@ -8667,6 +9065,10 @@ class DayWorkoutExercisesCompanion
     Expression<String>? trainingMethodId,
     Expression<DateTime>? updatedAt,
     Expression<String>? comboId,
+    Expression<int>? revision,
+    Expression<String>? lastModifiedByDeviceId,
+    Expression<String>? syncStatus,
+    Expression<DateTime>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8685,6 +9087,11 @@ class DayWorkoutExercisesCompanion
       if (trainingMethodId != null) 'training_method_id': trainingMethodId,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (comboId != null) 'combo_id': comboId,
+      if (revision != null) 'revision': revision,
+      if (lastModifiedByDeviceId != null)
+        'last_modified_by_device_id': lastModifiedByDeviceId,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8704,6 +9111,10 @@ class DayWorkoutExercisesCompanion
     Value<String?>? trainingMethodId,
     Value<DateTime>? updatedAt,
     Value<String?>? comboId,
+    Value<int>? revision,
+    Value<String?>? lastModifiedByDeviceId,
+    Value<String>? syncStatus,
+    Value<DateTime?>? deletedAt,
     Value<int>? rowid,
   }) {
     return DayWorkoutExercisesCompanion(
@@ -8721,6 +9132,11 @@ class DayWorkoutExercisesCompanion
       trainingMethodId: trainingMethodId ?? this.trainingMethodId,
       updatedAt: updatedAt ?? this.updatedAt,
       comboId: comboId ?? this.comboId,
+      revision: revision ?? this.revision,
+      lastModifiedByDeviceId:
+          lastModifiedByDeviceId ?? this.lastModifiedByDeviceId,
+      syncStatus: syncStatus ?? this.syncStatus,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8770,6 +9186,20 @@ class DayWorkoutExercisesCompanion
     if (comboId.present) {
       map['combo_id'] = Variable<String>(comboId.value);
     }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (lastModifiedByDeviceId.present) {
+      map['last_modified_by_device_id'] = Variable<String>(
+        lastModifiedByDeviceId.value,
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8793,6 +9223,10 @@ class DayWorkoutExercisesCompanion
           ..write('trainingMethodId: $trainingMethodId, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('comboId: $comboId, ')
+          ..write('revision: $revision, ')
+          ..write('lastModifiedByDeviceId: $lastModifiedByDeviceId, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -9209,6 +9643,770 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
   }
 }
 
+class $SyncQueueTable extends SyncQueue
+    with TableInfo<$SyncQueueTable, SyncQueueItemEntity> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncQueueTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityTypeMeta = const VerificationMeta(
+    'entityType',
+  );
+  @override
+  late final GeneratedColumn<String> entityType = GeneratedColumn<String>(
+    'entity_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<String> entityId = GeneratedColumn<String>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _operationMeta = const VerificationMeta(
+    'operation',
+  );
+  @override
+  late final GeneratedColumn<String> operation = GeneratedColumn<String>(
+    'operation',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
+    'payloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
+    'payload_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _priorityMeta = const VerificationMeta(
+    'priority',
+  );
+  @override
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+    'priority',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(2),
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pending'),
+  );
+  static const VerificationMeta _retryCountMeta = const VerificationMeta(
+    'retryCount',
+  );
+  @override
+  late final GeneratedColumn<int> retryCount = GeneratedColumn<int>(
+    'retry_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _nextRetryAtMeta = const VerificationMeta(
+    'nextRetryAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> nextRetryAt = GeneratedColumn<DateTime>(
+    'next_retry_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dedupeKeyMeta = const VerificationMeta(
+    'dedupeKey',
+  );
+  @override
+  late final GeneratedColumn<String> dedupeKey = GeneratedColumn<String>(
+    'dedupe_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _auditLogIdMeta = const VerificationMeta(
+    'auditLogId',
+  );
+  @override
+  late final GeneratedColumn<String> auditLogId = GeneratedColumn<String>(
+    'audit_log_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    entityType,
+    entityId,
+    operation,
+    payloadJson,
+    priority,
+    status,
+    retryCount,
+    nextRetryAt,
+    dedupeKey,
+    auditLogId,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_queue';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncQueueItemEntity> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('entity_type')) {
+      context.handle(
+        _entityTypeMeta,
+        entityType.isAcceptableOrUnknown(data['entity_type']!, _entityTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityTypeMeta);
+    }
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('operation')) {
+      context.handle(
+        _operationMeta,
+        operation.isAcceptableOrUnknown(data['operation']!, _operationMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_operationMeta);
+    }
+    if (data.containsKey('payload_json')) {
+      context.handle(
+        _payloadJsonMeta,
+        payloadJson.isAcceptableOrUnknown(
+          data['payload_json']!,
+          _payloadJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('priority')) {
+      context.handle(
+        _priorityMeta,
+        priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('retry_count')) {
+      context.handle(
+        _retryCountMeta,
+        retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
+      );
+    }
+    if (data.containsKey('next_retry_at')) {
+      context.handle(
+        _nextRetryAtMeta,
+        nextRetryAt.isAcceptableOrUnknown(
+          data['next_retry_at']!,
+          _nextRetryAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('dedupe_key')) {
+      context.handle(
+        _dedupeKeyMeta,
+        dedupeKey.isAcceptableOrUnknown(data['dedupe_key']!, _dedupeKeyMeta),
+      );
+    }
+    if (data.containsKey('audit_log_id')) {
+      context.handle(
+        _auditLogIdMeta,
+        auditLogId.isAcceptableOrUnknown(
+          data['audit_log_id']!,
+          _auditLogIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncQueueItemEntity map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncQueueItemEntity(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      entityType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_type'],
+      )!,
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      operation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}operation'],
+      )!,
+      payloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload_json'],
+      ),
+      priority: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}priority'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      retryCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}retry_count'],
+      )!,
+      nextRetryAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}next_retry_at'],
+      ),
+      dedupeKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}dedupe_key'],
+      ),
+      auditLogId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}audit_log_id'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SyncQueueTable createAlias(String alias) {
+    return $SyncQueueTable(attachedDatabase, alias);
+  }
+}
+
+class SyncQueueItemEntity extends DataClass
+    implements Insertable<SyncQueueItemEntity> {
+  final String id;
+  final String entityType;
+  final String entityId;
+  final String operation;
+  final String? payloadJson;
+  final int priority;
+  final String status;
+  final int retryCount;
+  final DateTime? nextRetryAt;
+  final String? dedupeKey;
+  final String? auditLogId;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const SyncQueueItemEntity({
+    required this.id,
+    required this.entityType,
+    required this.entityId,
+    required this.operation,
+    this.payloadJson,
+    required this.priority,
+    required this.status,
+    required this.retryCount,
+    this.nextRetryAt,
+    this.dedupeKey,
+    this.auditLogId,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['entity_type'] = Variable<String>(entityType);
+    map['entity_id'] = Variable<String>(entityId);
+    map['operation'] = Variable<String>(operation);
+    if (!nullToAbsent || payloadJson != null) {
+      map['payload_json'] = Variable<String>(payloadJson);
+    }
+    map['priority'] = Variable<int>(priority);
+    map['status'] = Variable<String>(status);
+    map['retry_count'] = Variable<int>(retryCount);
+    if (!nullToAbsent || nextRetryAt != null) {
+      map['next_retry_at'] = Variable<DateTime>(nextRetryAt);
+    }
+    if (!nullToAbsent || dedupeKey != null) {
+      map['dedupe_key'] = Variable<String>(dedupeKey);
+    }
+    if (!nullToAbsent || auditLogId != null) {
+      map['audit_log_id'] = Variable<String>(auditLogId);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  SyncQueueCompanion toCompanion(bool nullToAbsent) {
+    return SyncQueueCompanion(
+      id: Value(id),
+      entityType: Value(entityType),
+      entityId: Value(entityId),
+      operation: Value(operation),
+      payloadJson: payloadJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(payloadJson),
+      priority: Value(priority),
+      status: Value(status),
+      retryCount: Value(retryCount),
+      nextRetryAt: nextRetryAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nextRetryAt),
+      dedupeKey: dedupeKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dedupeKey),
+      auditLogId: auditLogId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(auditLogId),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SyncQueueItemEntity.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncQueueItemEntity(
+      id: serializer.fromJson<String>(json['id']),
+      entityType: serializer.fromJson<String>(json['entityType']),
+      entityId: serializer.fromJson<String>(json['entityId']),
+      operation: serializer.fromJson<String>(json['operation']),
+      payloadJson: serializer.fromJson<String?>(json['payloadJson']),
+      priority: serializer.fromJson<int>(json['priority']),
+      status: serializer.fromJson<String>(json['status']),
+      retryCount: serializer.fromJson<int>(json['retryCount']),
+      nextRetryAt: serializer.fromJson<DateTime?>(json['nextRetryAt']),
+      dedupeKey: serializer.fromJson<String?>(json['dedupeKey']),
+      auditLogId: serializer.fromJson<String?>(json['auditLogId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'entityType': serializer.toJson<String>(entityType),
+      'entityId': serializer.toJson<String>(entityId),
+      'operation': serializer.toJson<String>(operation),
+      'payloadJson': serializer.toJson<String?>(payloadJson),
+      'priority': serializer.toJson<int>(priority),
+      'status': serializer.toJson<String>(status),
+      'retryCount': serializer.toJson<int>(retryCount),
+      'nextRetryAt': serializer.toJson<DateTime?>(nextRetryAt),
+      'dedupeKey': serializer.toJson<String?>(dedupeKey),
+      'auditLogId': serializer.toJson<String?>(auditLogId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  SyncQueueItemEntity copyWith({
+    String? id,
+    String? entityType,
+    String? entityId,
+    String? operation,
+    Value<String?> payloadJson = const Value.absent(),
+    int? priority,
+    String? status,
+    int? retryCount,
+    Value<DateTime?> nextRetryAt = const Value.absent(),
+    Value<String?> dedupeKey = const Value.absent(),
+    Value<String?> auditLogId = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => SyncQueueItemEntity(
+    id: id ?? this.id,
+    entityType: entityType ?? this.entityType,
+    entityId: entityId ?? this.entityId,
+    operation: operation ?? this.operation,
+    payloadJson: payloadJson.present ? payloadJson.value : this.payloadJson,
+    priority: priority ?? this.priority,
+    status: status ?? this.status,
+    retryCount: retryCount ?? this.retryCount,
+    nextRetryAt: nextRetryAt.present ? nextRetryAt.value : this.nextRetryAt,
+    dedupeKey: dedupeKey.present ? dedupeKey.value : this.dedupeKey,
+    auditLogId: auditLogId.present ? auditLogId.value : this.auditLogId,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  SyncQueueItemEntity copyWithCompanion(SyncQueueCompanion data) {
+    return SyncQueueItemEntity(
+      id: data.id.present ? data.id.value : this.id,
+      entityType: data.entityType.present
+          ? data.entityType.value
+          : this.entityType,
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      operation: data.operation.present ? data.operation.value : this.operation,
+      payloadJson: data.payloadJson.present
+          ? data.payloadJson.value
+          : this.payloadJson,
+      priority: data.priority.present ? data.priority.value : this.priority,
+      status: data.status.present ? data.status.value : this.status,
+      retryCount: data.retryCount.present
+          ? data.retryCount.value
+          : this.retryCount,
+      nextRetryAt: data.nextRetryAt.present
+          ? data.nextRetryAt.value
+          : this.nextRetryAt,
+      dedupeKey: data.dedupeKey.present ? data.dedupeKey.value : this.dedupeKey,
+      auditLogId: data.auditLogId.present
+          ? data.auditLogId.value
+          : this.auditLogId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncQueueItemEntity(')
+          ..write('id: $id, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('operation: $operation, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('priority: $priority, ')
+          ..write('status: $status, ')
+          ..write('retryCount: $retryCount, ')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('dedupeKey: $dedupeKey, ')
+          ..write('auditLogId: $auditLogId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    entityType,
+    entityId,
+    operation,
+    payloadJson,
+    priority,
+    status,
+    retryCount,
+    nextRetryAt,
+    dedupeKey,
+    auditLogId,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncQueueItemEntity &&
+          other.id == this.id &&
+          other.entityType == this.entityType &&
+          other.entityId == this.entityId &&
+          other.operation == this.operation &&
+          other.payloadJson == this.payloadJson &&
+          other.priority == this.priority &&
+          other.status == this.status &&
+          other.retryCount == this.retryCount &&
+          other.nextRetryAt == this.nextRetryAt &&
+          other.dedupeKey == this.dedupeKey &&
+          other.auditLogId == this.auditLogId &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
+  final Value<String> id;
+  final Value<String> entityType;
+  final Value<String> entityId;
+  final Value<String> operation;
+  final Value<String?> payloadJson;
+  final Value<int> priority;
+  final Value<String> status;
+  final Value<int> retryCount;
+  final Value<DateTime?> nextRetryAt;
+  final Value<String?> dedupeKey;
+  final Value<String?> auditLogId;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const SyncQueueCompanion({
+    this.id = const Value.absent(),
+    this.entityType = const Value.absent(),
+    this.entityId = const Value.absent(),
+    this.operation = const Value.absent(),
+    this.payloadJson = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.status = const Value.absent(),
+    this.retryCount = const Value.absent(),
+    this.nextRetryAt = const Value.absent(),
+    this.dedupeKey = const Value.absent(),
+    this.auditLogId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncQueueCompanion.insert({
+    required String id,
+    required String entityType,
+    required String entityId,
+    required String operation,
+    this.payloadJson = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.status = const Value.absent(),
+    this.retryCount = const Value.absent(),
+    this.nextRetryAt = const Value.absent(),
+    this.dedupeKey = const Value.absent(),
+    this.auditLogId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       entityType = Value(entityType),
+       entityId = Value(entityId),
+       operation = Value(operation);
+  static Insertable<SyncQueueItemEntity> custom({
+    Expression<String>? id,
+    Expression<String>? entityType,
+    Expression<String>? entityId,
+    Expression<String>? operation,
+    Expression<String>? payloadJson,
+    Expression<int>? priority,
+    Expression<String>? status,
+    Expression<int>? retryCount,
+    Expression<DateTime>? nextRetryAt,
+    Expression<String>? dedupeKey,
+    Expression<String>? auditLogId,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (entityType != null) 'entity_type': entityType,
+      if (entityId != null) 'entity_id': entityId,
+      if (operation != null) 'operation': operation,
+      if (payloadJson != null) 'payload_json': payloadJson,
+      if (priority != null) 'priority': priority,
+      if (status != null) 'status': status,
+      if (retryCount != null) 'retry_count': retryCount,
+      if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
+      if (dedupeKey != null) 'dedupe_key': dedupeKey,
+      if (auditLogId != null) 'audit_log_id': auditLogId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncQueueCompanion copyWith({
+    Value<String>? id,
+    Value<String>? entityType,
+    Value<String>? entityId,
+    Value<String>? operation,
+    Value<String?>? payloadJson,
+    Value<int>? priority,
+    Value<String>? status,
+    Value<int>? retryCount,
+    Value<DateTime?>? nextRetryAt,
+    Value<String?>? dedupeKey,
+    Value<String?>? auditLogId,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return SyncQueueCompanion(
+      id: id ?? this.id,
+      entityType: entityType ?? this.entityType,
+      entityId: entityId ?? this.entityId,
+      operation: operation ?? this.operation,
+      payloadJson: payloadJson ?? this.payloadJson,
+      priority: priority ?? this.priority,
+      status: status ?? this.status,
+      retryCount: retryCount ?? this.retryCount,
+      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      dedupeKey: dedupeKey ?? this.dedupeKey,
+      auditLogId: auditLogId ?? this.auditLogId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (entityType.present) {
+      map['entity_type'] = Variable<String>(entityType.value);
+    }
+    if (entityId.present) {
+      map['entity_id'] = Variable<String>(entityId.value);
+    }
+    if (operation.present) {
+      map['operation'] = Variable<String>(operation.value);
+    }
+    if (payloadJson.present) {
+      map['payload_json'] = Variable<String>(payloadJson.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (retryCount.present) {
+      map['retry_count'] = Variable<int>(retryCount.value);
+    }
+    if (nextRetryAt.present) {
+      map['next_retry_at'] = Variable<DateTime>(nextRetryAt.value);
+    }
+    if (dedupeKey.present) {
+      map['dedupe_key'] = Variable<String>(dedupeKey.value);
+    }
+    if (auditLogId.present) {
+      map['audit_log_id'] = Variable<String>(auditLogId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncQueueCompanion(')
+          ..write('id: $id, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('operation: $operation, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('priority: $priority, ')
+          ..write('status: $status, ')
+          ..write('retryCount: $retryCount, ')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('dedupeKey: $dedupeKey, ')
+          ..write('auditLogId: $auditLogId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -9232,6 +10430,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $DayWorkoutExercisesTable dayWorkoutExercises =
       $DayWorkoutExercisesTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
+  late final $SyncQueueTable syncQueue = $SyncQueueTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9251,6 +10450,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     dayWorkouts,
     dayWorkoutExercises,
     auditLogs,
+    syncQueue,
   ];
 }
 
@@ -15388,6 +16588,10 @@ typedef $$DayWorkoutsTableCreateCompanionBuilder =
       Value<String?> sourceWorkoutGroupId,
       Value<double?> watchCaloriesKcal,
       Value<int?> watchAvgHeartRateBpm,
+      Value<int> revision,
+      Value<String?> lastModifiedByDeviceId,
+      Value<String> syncStatus,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 typedef $$DayWorkoutsTableUpdateCompanionBuilder =
@@ -15407,6 +16611,10 @@ typedef $$DayWorkoutsTableUpdateCompanionBuilder =
       Value<String?> sourceWorkoutGroupId,
       Value<double?> watchCaloriesKcal,
       Value<int?> watchAvgHeartRateBpm,
+      Value<int> revision,
+      Value<String?> lastModifiedByDeviceId,
+      Value<String> syncStatus,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 
@@ -15540,6 +16748,26 @@ class $$DayWorkoutsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$StudentsTableFilterComposer get studentId {
     final $$StudentsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -15668,6 +16896,26 @@ class $$DayWorkoutsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$StudentsTableOrderingComposer get studentId {
     final $$StudentsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -15758,6 +17006,22 @@ class $$DayWorkoutsTableAnnotationComposer
     column: $table.watchAvgHeartRateBpm,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   $$StudentsTableAnnotationComposer get studentId {
     final $$StudentsTableAnnotationComposer composer = $composerBuilder(
@@ -15852,6 +17116,10 @@ class $$DayWorkoutsTableTableManager
                 Value<String?> sourceWorkoutGroupId = const Value.absent(),
                 Value<double?> watchCaloriesKcal = const Value.absent(),
                 Value<int?> watchAvgHeartRateBpm = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<String?> lastModifiedByDeviceId = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DayWorkoutsCompanion(
                 id: id,
@@ -15869,6 +17137,10 @@ class $$DayWorkoutsTableTableManager
                 sourceWorkoutGroupId: sourceWorkoutGroupId,
                 watchCaloriesKcal: watchCaloriesKcal,
                 watchAvgHeartRateBpm: watchAvgHeartRateBpm,
+                revision: revision,
+                lastModifiedByDeviceId: lastModifiedByDeviceId,
+                syncStatus: syncStatus,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -15888,6 +17160,10 @@ class $$DayWorkoutsTableTableManager
                 Value<String?> sourceWorkoutGroupId = const Value.absent(),
                 Value<double?> watchCaloriesKcal = const Value.absent(),
                 Value<int?> watchAvgHeartRateBpm = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<String?> lastModifiedByDeviceId = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DayWorkoutsCompanion.insert(
                 id: id,
@@ -15905,6 +17181,10 @@ class $$DayWorkoutsTableTableManager
                 sourceWorkoutGroupId: sourceWorkoutGroupId,
                 watchCaloriesKcal: watchCaloriesKcal,
                 watchAvgHeartRateBpm: watchAvgHeartRateBpm,
+                revision: revision,
+                lastModifiedByDeviceId: lastModifiedByDeviceId,
+                syncStatus: syncStatus,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -16017,6 +17297,10 @@ typedef $$DayWorkoutExercisesTableCreateCompanionBuilder =
       Value<String?> trainingMethodId,
       Value<DateTime> updatedAt,
       Value<String?> comboId,
+      Value<int> revision,
+      Value<String?> lastModifiedByDeviceId,
+      Value<String> syncStatus,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 typedef $$DayWorkoutExercisesTableUpdateCompanionBuilder =
@@ -16035,6 +17319,10 @@ typedef $$DayWorkoutExercisesTableUpdateCompanionBuilder =
       Value<String?> trainingMethodId,
       Value<DateTime> updatedAt,
       Value<String?> comboId,
+      Value<int> revision,
+      Value<String?> lastModifiedByDeviceId,
+      Value<String> syncStatus,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 
@@ -16182,6 +17470,26 @@ class $$DayWorkoutExercisesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$DayWorkoutsTableFilterComposer get dayWorkoutId {
     final $$DayWorkoutsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -16316,6 +17624,26 @@ class $$DayWorkoutExercisesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$DayWorkoutsTableOrderingComposer get dayWorkoutId {
     final $$DayWorkoutsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -16433,6 +17761,22 @@ class $$DayWorkoutExercisesTableAnnotationComposer
 
   GeneratedColumn<String> get comboId =>
       $composableBuilder(column: $table.comboId, builder: (column) => column);
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   $$DayWorkoutsTableAnnotationComposer get dayWorkoutId {
     final $$DayWorkoutsTableAnnotationComposer composer = $composerBuilder(
@@ -16558,6 +17902,10 @@ class $$DayWorkoutExercisesTableTableManager
                 Value<String?> trainingMethodId = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<String?> comboId = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<String?> lastModifiedByDeviceId = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DayWorkoutExercisesCompanion(
                 id: id,
@@ -16574,6 +17922,10 @@ class $$DayWorkoutExercisesTableTableManager
                 trainingMethodId: trainingMethodId,
                 updatedAt: updatedAt,
                 comboId: comboId,
+                revision: revision,
+                lastModifiedByDeviceId: lastModifiedByDeviceId,
+                syncStatus: syncStatus,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -16592,6 +17944,10 @@ class $$DayWorkoutExercisesTableTableManager
                 Value<String?> trainingMethodId = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<String?> comboId = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<String?> lastModifiedByDeviceId = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DayWorkoutExercisesCompanion.insert(
                 id: id,
@@ -16608,6 +17964,10 @@ class $$DayWorkoutExercisesTableTableManager
                 trainingMethodId: trainingMethodId,
                 updatedAt: updatedAt,
                 comboId: comboId,
+                revision: revision,
+                lastModifiedByDeviceId: lastModifiedByDeviceId,
+                syncStatus: syncStatus,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -16941,6 +18301,368 @@ typedef $$AuditLogsTableProcessedTableManager =
       AuditLogEntity,
       PrefetchHooks Function()
     >;
+typedef $$SyncQueueTableCreateCompanionBuilder =
+    SyncQueueCompanion Function({
+      required String id,
+      required String entityType,
+      required String entityId,
+      required String operation,
+      Value<String?> payloadJson,
+      Value<int> priority,
+      Value<String> status,
+      Value<int> retryCount,
+      Value<DateTime?> nextRetryAt,
+      Value<String?> dedupeKey,
+      Value<String?> auditLogId,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$SyncQueueTableUpdateCompanionBuilder =
+    SyncQueueCompanion Function({
+      Value<String> id,
+      Value<String> entityType,
+      Value<String> entityId,
+      Value<String> operation,
+      Value<String?> payloadJson,
+      Value<int> priority,
+      Value<String> status,
+      Value<int> retryCount,
+      Value<DateTime?> nextRetryAt,
+      Value<String?> dedupeKey,
+      Value<String?> auditLogId,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$SyncQueueTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncQueueTable> {
+  $$SyncQueueTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get operation => $composableBuilder(
+    column: $table.operation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get nextRetryAt => $composableBuilder(
+    column: $table.nextRetryAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dedupeKey => $composableBuilder(
+    column: $table.dedupeKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get auditLogId => $composableBuilder(
+    column: $table.auditLogId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SyncQueueTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncQueueTable> {
+  $$SyncQueueTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get operation => $composableBuilder(
+    column: $table.operation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get nextRetryAt => $composableBuilder(
+    column: $table.nextRetryAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dedupeKey => $composableBuilder(
+    column: $table.dedupeKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get auditLogId => $composableBuilder(
+    column: $table.auditLogId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncQueueTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncQueueTable> {
+  $$SyncQueueTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get operation =>
+      $composableBuilder(column: $table.operation, builder: (column) => column);
+
+  GeneratedColumn<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get nextRetryAt => $composableBuilder(
+    column: $table.nextRetryAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get dedupeKey =>
+      $composableBuilder(column: $table.dedupeKey, builder: (column) => column);
+
+  GeneratedColumn<String> get auditLogId => $composableBuilder(
+    column: $table.auditLogId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$SyncQueueTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncQueueTable,
+          SyncQueueItemEntity,
+          $$SyncQueueTableFilterComposer,
+          $$SyncQueueTableOrderingComposer,
+          $$SyncQueueTableAnnotationComposer,
+          $$SyncQueueTableCreateCompanionBuilder,
+          $$SyncQueueTableUpdateCompanionBuilder,
+          (
+            SyncQueueItemEntity,
+            BaseReferences<_$AppDatabase, $SyncQueueTable, SyncQueueItemEntity>,
+          ),
+          SyncQueueItemEntity,
+          PrefetchHooks Function()
+        > {
+  $$SyncQueueTableTableManager(_$AppDatabase db, $SyncQueueTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncQueueTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncQueueTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncQueueTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> entityType = const Value.absent(),
+                Value<String> entityId = const Value.absent(),
+                Value<String> operation = const Value.absent(),
+                Value<String?> payloadJson = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> retryCount = const Value.absent(),
+                Value<DateTime?> nextRetryAt = const Value.absent(),
+                Value<String?> dedupeKey = const Value.absent(),
+                Value<String?> auditLogId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncQueueCompanion(
+                id: id,
+                entityType: entityType,
+                entityId: entityId,
+                operation: operation,
+                payloadJson: payloadJson,
+                priority: priority,
+                status: status,
+                retryCount: retryCount,
+                nextRetryAt: nextRetryAt,
+                dedupeKey: dedupeKey,
+                auditLogId: auditLogId,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String entityType,
+                required String entityId,
+                required String operation,
+                Value<String?> payloadJson = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> retryCount = const Value.absent(),
+                Value<DateTime?> nextRetryAt = const Value.absent(),
+                Value<String?> dedupeKey = const Value.absent(),
+                Value<String?> auditLogId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncQueueCompanion.insert(
+                id: id,
+                entityType: entityType,
+                entityId: entityId,
+                operation: operation,
+                payloadJson: payloadJson,
+                priority: priority,
+                status: status,
+                retryCount: retryCount,
+                nextRetryAt: nextRetryAt,
+                dedupeKey: dedupeKey,
+                auditLogId: auditLogId,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncQueueTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncQueueTable,
+      SyncQueueItemEntity,
+      $$SyncQueueTableFilterComposer,
+      $$SyncQueueTableOrderingComposer,
+      $$SyncQueueTableAnnotationComposer,
+      $$SyncQueueTableCreateCompanionBuilder,
+      $$SyncQueueTableUpdateCompanionBuilder,
+      (
+        SyncQueueItemEntity,
+        BaseReferences<_$AppDatabase, $SyncQueueTable, SyncQueueItemEntity>,
+      ),
+      SyncQueueItemEntity,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -16972,4 +18694,6 @@ class $AppDatabaseManager {
       $$DayWorkoutExercisesTableTableManager(_db, _db.dayWorkoutExercises);
   $$AuditLogsTableTableManager get auditLogs =>
       $$AuditLogsTableTableManager(_db, _db.auditLogs);
+  $$SyncQueueTableTableManager get syncQueue =>
+      $$SyncQueueTableTableManager(_db, _db.syncQueue);
 }

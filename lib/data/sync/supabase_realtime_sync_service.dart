@@ -243,7 +243,9 @@ class SupabaseRealtimeSyncService {
 
   void _scheduleFlush() {
     _flushTimer?.cancel();
-    _flushTimer = Timer(const Duration(milliseconds: 220), () {
+    // Debounce maior: em iPhone/rede móvel chegam rajadas de eventos Postgres;
+    // puxar o treino cedo demais repete snapshots ainda sem o push local.
+    _flushTimer = Timer(const Duration(milliseconds: 550), () {
       _flushTimer = null;
       unawaited(_flushPendingPulls());
     });

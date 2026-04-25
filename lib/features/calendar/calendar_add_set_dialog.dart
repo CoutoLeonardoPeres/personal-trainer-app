@@ -9,6 +9,7 @@ import '../../core/widgets/inter_set_rest_modal.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
+import 'exercise_completion_comparison_dialog.dart';
 
 /// Abre o diálogo "Adicionar Série" (carga + repetições) para uma linha do treino do dia.
 Future<void> showCalendarAddSetDialog({
@@ -22,7 +23,6 @@ Future<void> showCalendarAddSetDialog({
 
   /// Treino `started`: carga (kg) e repetições obrigatórias.
   bool requireAllMetricFields = false,
-  VoidCallback? onSetSaved,
 }) {
   // Evita pull da nuvem a competir com o commit da série (loading infinito no modal).
   repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 40));
@@ -37,7 +37,6 @@ Future<void> showCalendarAddSetDialog({
       exerciseName: exerciseName,
       restFlowContext: restFlowContext,
       requireAllMetricFields: requireAllMetricFields,
-      onSetSaved: onSetSaved,
     ),
   );
 }
@@ -558,7 +557,6 @@ class _AddSetDialog extends StatefulWidget {
     required this.exerciseName,
     required this.restFlowContext,
     this.requireAllMetricFields = false,
-    this.onSetSaved,
   });
 
   final AppDataRepository repo;
@@ -566,7 +564,6 @@ class _AddSetDialog extends StatefulWidget {
   final String exerciseName;
   final BuildContext restFlowContext;
   final bool requireAllMetricFields;
-  final VoidCallback? onSetSaved;
 
   @override
   State<_AddSetDialog> createState() => _AddSetDialogState();
@@ -679,6 +676,11 @@ class _AddSetDialogState extends State<_AddSetDialog> {
       }
     }
 
+    final performedBefore =
+        DayWorkoutPerformedSetCodec.decode(widget.line.performedSetsJson).length;
+    final willCompleteExercise =
+        widget.line.sets > 0 && performedBefore + 1 >= widget.line.sets;
+
     setState(() => _saving = true);
     final dayWorkoutId = widget.line.dayWorkoutId;
     final lineId = widget.line.id;
@@ -697,7 +699,6 @@ class _AddSetDialogState extends State<_AddSetDialog> {
       debugPrint('[add_set] submit local_saved line=$lineId');
       saved = true;
       if (mounted) {
-        widget.onSetSaved?.call();
         final messenger = ScaffoldMessenger.of(context);
         Navigator.of(context).pop();
         messenger.showSnackBar(
@@ -725,16 +726,24 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     if (!saved) return;
     final restCtx = widget.restFlowContext;
     if (!restCtx.mounted) return;
-    unawaited(
-      _runPostSaveRestFlow(
-        repo: widget.repo,
-        restFlowContext: restCtx,
-        dayWorkoutId: dayWorkoutId,
-        lineId: lineId,
-        plannedSets: planned,
-        restSec: restSec,
-      ),
+    await _runPostSaveRestFlow(
+      repo: widget.repo,
+      restFlowContext: restCtx,
+      dayWorkoutId: dayWorkoutId,
+      lineId: lineId,
+      plannedSets: planned,
+      restSec: restSec,
     );
+    if (!restCtx.mounted) return;
+    if (willCompleteExercise) {
+      final summary = await widget.repo.getExerciseSessionComparison(lineId);
+      if (summary != null && restCtx.mounted) {
+        await showExerciseCompletionComparisonDialog(
+          context: restCtx,
+          data: summary,
+        );
+      }
+    }
   }
 
   Future<void> _appendPerformedSetWithRetry({

@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' show min;
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/auth/app_session.dart';
 import '../../core/utils/calendar_day_utils.dart';
@@ -203,6 +205,71 @@ bool _hasRecentPendingLocalAudit({
 }
 
 const _kPerformedSetAuditActions = {'append_set', 'remove_set', 'update_set'};
+const _uuid = Uuid();
+
+int _remoteRevision(Map<String, dynamic> row) => _intOpt(row, 'revision', 0);
+
+String? _remoteDeviceId(Map<String, dynamic> row) =>
+    (row['last_modified_by_device_id'] as String?)?.trim();
+
+bool _localWinsConflictByVersion({
+  required int localRevision,
+  required int remoteRevision,
+  required DateTime localUpdatedAt,
+  required DateTime remoteUpdatedAt,
+  required String? localDeviceId,
+  required String? remoteDeviceId,
+}) {
+  if (localRevision != remoteRevision) {
+    return localRevision > remoteRevision;
+  }
+  if (localUpdatedAt != remoteUpdatedAt) {
+    return localUpdatedAt.isAfter(remoteUpdatedAt);
+  }
+  final ld = (localDeviceId ?? '').trim();
+  final rd = (remoteDeviceId ?? '').trim();
+  if (ld.isEmpty || rd.isEmpty) return false;
+  return ld.compareTo(rd) >= 0;
+}
+
+Future<void> _enqueueLocalRepush(
+  AppDatabase db, {
+  required String entityType,
+  required String entityId,
+  required String reason,
+}) async {
+  final now = DateTime.now();
+  final auditId = _uuid.v4();
+  final payload = <String, Object?>{'reason': reason, 'from': 'pull_conflict'};
+  await db.into(db.auditLogs).insert(
+    AuditLogsCompanion.insert(
+      id: auditId,
+      action: 'resync_local',
+      entityType: entityType,
+      entityId: Value(entityId),
+      payloadJson: Value(jsonEncode(payload)),
+      at: Value(now),
+    ),
+  );
+  final queueId = _uuid.v4();
+  await db.into(db.syncQueue).insertOnConflictUpdate(
+    SyncQueueCompanion.insert(
+      id: queueId,
+      entityType: entityType,
+      entityId: entityId,
+      operation: 'resync_local',
+      payloadJson: Value(jsonEncode(payload)),
+      priority: const Value(0),
+      status: const Value('pending'),
+      retryCount: const Value(0),
+      nextRetryAt: const Value(null),
+      dedupeKey: const Value(null),
+      auditLogId: Value(auditId),
+      createdAt: Value(now),
+      updatedAt: Value(now),
+    ),
+  );
+}
 
 /// Só bloqueia fusão de séries quando há **auditoria recente** da mesma linha —
 /// auditorias antigas (fila presa, sync falhou há dias) não podem impedir que
@@ -213,7 +280,12 @@ Future<bool> _hasRecentBlockingPerformedSetAuditForLine({
   required DateTime remoteRowUpdatedAt,
 }) async {
   try {
-    final threshold = remoteRowUpdatedAt.subtract(const Duration(seconds: 8));
+    // iPhone/rede lenta: o push pode chegar segundos depois. Usamos o instante
+    // **mais recente** entre (remoto−90s) e (agora−3min) para não bloquear merges
+    // legítimos quando o updated_at remoto é muito antigo.
+    final tRemote = remoteRowUpdatedAt.subtract(const Duration(seconds: 90));
+    final tClock = DateTime.now().subtract(const Duration(minutes: 3));
+    final threshold = tRemote.isAfter(tClock) ? tRemote : tClock;
     final rows =
         await (db.select(db.auditLogs)..where(
               (a) =>
@@ -262,7 +334,7 @@ bool _shouldPreserveLocalPerformedSetsSnapshot({
   required DayWorkoutExerciseEntity local,
   required Map<String, dynamic> remoteRow,
   required DateTime remoteUpdatedAt,
-  Duration recentLocalWindow = const Duration(seconds: 90),
+  Duration recentLocalWindow = const Duration(minutes: 15),
 }) {
   final remoteSets = DayWorkoutPerformedSetCodec.decode(
     (_strOpt(remoteRow, 'performed_sets_json') ?? '').trim().isEmpty
@@ -273,6 +345,19 @@ bool _shouldPreserveLocalPerformedSetsSnapshot({
   if (localSets.isEmpty) return false;
   if (_remotePerformedSetsAheadOfLocal(remote: remoteSets, local: localSets)) {
     return false;
+  }
+  // Nunca regredir o nº de séries executadas por um JSON remoto com menos entradas
+  // (push atrasado / pull intermédio / realtime fora de ordem).
+  if (localSets.length > remoteSets.length) {
+    return true;
+  }
+  // Mesmo nº de séries: último registo local mais recente ⇒ snapshot remoto velho.
+  if (localSets.length == remoteSets.length && localSets.isNotEmpty) {
+    final lm = _maxLoggedAtMs(localSets);
+    final rm = _maxLoggedAtMs(remoteSets);
+    if (lm != null && (rm == null || lm > rm)) {
+      return true;
+    }
   }
   final now = DateTime.now();
   final localIsRecent = local.updatedAt.isAfter(
@@ -349,9 +434,9 @@ bool _hotLocalWorkoutEditCooldownWins({
   const hotWorkoutEntities = {'day_workout', 'day_workout_exercise'};
   if (!hotWorkoutEntities.contains(entityType)) return false;
   final now = DateTime.now();
-  // Janela curta anti-ioiô: após edição local (excluir/editar/adicionar série),
-  // evita que pull remoto atrasado reescreva a UI imediatamente.
-  return localUpdatedAt.isAfter(now.subtract(const Duration(seconds: 30)));
+  // Janela anti-ioiô (iPhone/rede instável): evita pull/realtime a reescrever
+  // linhas de treino logo após registo local de séries.
+  return localUpdatedAt.isAfter(now.subtract(const Duration(seconds: 120)));
 }
 
 Future<bool> _shouldSkipRemoteEntityUpsertById({
@@ -1588,6 +1673,8 @@ class SupabasePullSyncService {
       final r = Map<String, dynamic>.from(list.first as Map);
       final remoteUpd = _ts(r['updated_at']);
       final remoteStatus = _str(r, 'status');
+      final remoteRevision = _remoteRevision(r);
+      final remoteDeviceId = _remoteDeviceId(r);
 
       final tombstones = await _localDayWorkoutPullTombstones();
       final tomb = tombstones[id];
@@ -1632,6 +1719,45 @@ class SupabasePullSyncService {
             tombstone: local.updatedAt,
           )) {
         return;
+      }
+
+      if (local != null) {
+        final localWins = _localWinsConflictByVersion(
+          localRevision: local.revision,
+          remoteRevision: remoteRevision,
+          localUpdatedAt: local.updatedAt,
+          remoteUpdatedAt: remoteUpd,
+          localDeviceId: local.lastModifiedByDeviceId,
+          remoteDeviceId: remoteDeviceId,
+        );
+        if (localWins) {
+          await _enqueueLocalRepush(
+            _db,
+            entityType: 'day_workout',
+            entityId: id,
+            reason: 'local_revision_wins_pull_day_workout',
+          );
+          return;
+        }
+        if (local.status == 'completed' && remoteStatus != 'completed') {
+          final remoteCompletedAt = r['completed_at'] == null
+              ? null
+              : _ts(r['completed_at']);
+          final localCompletedAt = local.completedAt;
+          if (localCompletedAt != null &&
+              (remoteCompletedAt == null ||
+                  localCompletedAt.isAfter(
+                    remoteCompletedAt.add(const Duration(seconds: 1)),
+                  ))) {
+            await _enqueueLocalRepush(
+              _db,
+              entityType: 'day_workout',
+              entityId: id,
+              reason: 'completed_local_wins_pull_day_workout',
+            );
+            return;
+          }
+        }
       }
 
       if (local != null &&
@@ -1689,6 +1815,12 @@ class SupabasePullSyncService {
                     ? null
                     : _int(r, 'watch_avg_heart_rate_bpm'),
               ),
+              revision: Value(remoteRevision),
+              lastModifiedByDeviceId: Value(remoteDeviceId),
+              syncStatus: const Value('synced'),
+              deletedAt: Value(
+                r['deleted_at'] == null ? null : _ts(r['deleted_at']),
+              ),
             ),
           );
 
@@ -1713,6 +1845,22 @@ class SupabasePullSyncService {
             localLine.updatedAt.isAfter(
               lineRemoteUpd.add(const Duration(seconds: 2)),
             )) {
+          if (_localWinsConflictByVersion(
+            localRevision: localLine.revision,
+            remoteRevision: _remoteRevision(m),
+            localUpdatedAt: localLine.updatedAt,
+            remoteUpdatedAt: lineRemoteUpd,
+            localDeviceId: localLine.lastModifiedByDeviceId,
+            remoteDeviceId: _remoteDeviceId(m),
+          )) {
+            await _enqueueLocalRepush(
+              _db,
+              entityType: 'day_workout_exercise',
+              entityId: lineId,
+              reason: 'local_revision_wins_pull_line',
+            );
+            continue;
+          }
           await _tryMergeRemotePerformedSetsWhenLocalLooksNewer(
             db: _db,
             local: localLine,
@@ -1762,6 +1910,12 @@ class SupabasePullSyncService {
                 trainingMethodId: Value(_strOpt(m, 'training_method_id')),
                 comboId: Value(_strOpt(m, 'combo_id')),
                 updatedAt: Value(lineRemoteUpd),
+                revision: Value(_remoteRevision(m)),
+                lastModifiedByDeviceId: Value(_remoteDeviceId(m)),
+                syncStatus: const Value('synced'),
+                deletedAt: Value(
+                  m['deleted_at'] == null ? null : _ts(m['deleted_at']),
+                ),
               ),
             );
       }
@@ -1855,6 +2009,8 @@ class SupabasePullSyncService {
       final r = Map<String, dynamic>.from(list.first as Map);
       final remoteUpd =
           _tsOpt(r['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final remoteRevision = _remoteRevision(r);
+      final remoteDeviceId = _remoteDeviceId(r);
 
       final localDeletes = await _localDeletesById('day_workout_exercise');
       final delAt = localDeletes[id];
@@ -1885,6 +2041,23 @@ class SupabasePullSyncService {
       }
       if (local != null &&
           local.updatedAt.isAfter(remoteUpd.add(const Duration(seconds: 2)))) {
+        if (_localWinsConflictByVersion(
+          localRevision: local.revision,
+          remoteRevision: remoteRevision,
+          localUpdatedAt: local.updatedAt,
+          remoteUpdatedAt: remoteUpd,
+          localDeviceId: local.lastModifiedByDeviceId,
+          remoteDeviceId: remoteDeviceId,
+        )) {
+          await _enqueueLocalRepush(
+            _db,
+            entityType: 'day_workout_exercise',
+            entityId: id,
+            reason: 'local_revision_wins_pull_line_by_id',
+          );
+          _sync.noteConnected();
+          return;
+        }
         final merged = await _tryMergeRemotePerformedSetsWhenLocalLooksNewer(
           db: _db,
           local: local,
@@ -1960,6 +2133,12 @@ class SupabasePullSyncService {
               trainingMethodId: Value(_strOpt(r, 'training_method_id')),
               comboId: Value(_strOpt(r, 'combo_id')),
               updatedAt: Value(remoteUpd),
+              revision: Value(remoteRevision),
+              lastModifiedByDeviceId: Value(remoteDeviceId),
+              syncStatus: const Value('synced'),
+              deletedAt: Value(
+                r['deleted_at'] == null ? null : _ts(r['deleted_at']),
+              ),
             ),
           );
       _sync.noteConnected();
@@ -2874,6 +3053,7 @@ class SupabasePullSyncService {
         'day_workout',
       );
       final localDayWorkouts = await _db.select(_db.dayWorkouts).get();
+      final localDayWorkoutById = {for (final x in localDayWorkouts) x.id: x};
       final dayWUpd = {for (final x in localDayWorkouts) x.id: x.updatedAt};
       final localCancelledAt = <String, DateTime>{};
       for (final x in localDayWorkouts) {
@@ -2889,6 +3069,7 @@ class SupabasePullSyncService {
         }
         final id = _str(r, 'id');
         final remoteUpd = _ts(r['updated_at']);
+        final remoteRevision = _remoteRevision(r);
         final tomb = dayWorkoutTombstones[id];
         if (!_remoteDayWorkoutStrictlyAfterTombstone(
           remoteUpdatedAt: remoteUpd,
@@ -2917,6 +3098,25 @@ class SupabasePullSyncService {
               latestPendingAuditAtById: latestPendingDayWorkoutAtById,
             ) &&
             _adminKeepLocalNewer(full, remoteUpd, dayWUpd[id])) {
+          skippedNewer++;
+          continue;
+        }
+        final localRow = localDayWorkoutById[id];
+        if (localRow != null &&
+            _localWinsConflictByVersion(
+              localRevision: localRow.revision,
+              remoteRevision: remoteRevision,
+              localUpdatedAt: localRow.updatedAt,
+              remoteUpdatedAt: remoteUpd,
+              localDeviceId: localRow.lastModifiedByDeviceId,
+              remoteDeviceId: _remoteDeviceId(r),
+            )) {
+          await _enqueueLocalRepush(
+            _db,
+            entityType: 'day_workout',
+            entityId: id,
+            reason: 'local_revision_wins_bulk_pull_day_workout',
+          );
           skippedNewer++;
           continue;
         }
@@ -2955,6 +3155,12 @@ class SupabasePullSyncService {
                   r['watch_avg_heart_rate_bpm'] == null
                       ? null
                       : _int(r, 'watch_avg_heart_rate_bpm'),
+                ),
+                revision: Value(remoteRevision),
+                lastModifiedByDeviceId: Value(_remoteDeviceId(r)),
+                syncStatus: const Value('synced'),
+                deletedAt: Value(
+                  r['deleted_at'] == null ? null : _ts(r['deleted_at']),
                 ),
               ),
             );
@@ -3030,6 +3236,23 @@ class SupabasePullSyncService {
             localLine.updatedAt.isAfter(
               remoteUpd.add(const Duration(seconds: 2)),
             )) {
+          if (_localWinsConflictByVersion(
+            localRevision: localLine.revision,
+            remoteRevision: _remoteRevision(r),
+            localUpdatedAt: localLine.updatedAt,
+            remoteUpdatedAt: remoteUpd,
+            localDeviceId: localLine.lastModifiedByDeviceId,
+            remoteDeviceId: _remoteDeviceId(r),
+          )) {
+            await _enqueueLocalRepush(
+              _db,
+              entityType: 'day_workout_exercise',
+              entityId: id,
+              reason: 'local_revision_wins_bulk_pull_line',
+            );
+            skippedNewer++;
+            continue;
+          }
           final merged = await _tryMergeRemotePerformedSetsWhenLocalLooksNewer(
             db: _db,
             local: localLine,
@@ -3078,6 +3301,12 @@ class SupabasePullSyncService {
                   trainingMethodId: Value(_strOpt(r, 'training_method_id')),
                   comboId: Value(_strOpt(r, 'combo_id')),
                   updatedAt: Value(remoteUpd),
+                  revision: Value(_remoteRevision(r)),
+                  lastModifiedByDeviceId: Value(_remoteDeviceId(r)),
+                  syncStatus: const Value('synced'),
+                  deletedAt: Value(
+                    r['deleted_at'] == null ? null : _ts(r['deleted_at']),
+                  ),
                 ),
               );
           written++;

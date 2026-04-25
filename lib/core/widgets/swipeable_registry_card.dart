@@ -16,12 +16,16 @@ class SwipeableRegistryCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.trailing,
+
     /// Chave estável para o [Slidable] (ex.: id do registro). Evita colisão quando [title] se repete.
     this.slidableKey,
+
     /// Fundo azul translúcido + borda azul (itens dentro do bloco na tela de planejamento).
     this.translucentBlueExerciseStyle = false,
+
     /// Toque no card (ex.: tela de personais: abre edição).
     this.onCardTap,
+
     /// Se false, o arraste revela só [onDelete] (ex.: personais).
     this.showEditOnSwipe = true,
     this.onSlidableCombine,
@@ -109,11 +113,7 @@ class SwipeableRegistryCard extends StatelessWidget {
               child: Padding(padding: pad, child: row),
             ),
           )
-        : Container(
-            padding: pad,
-            decoration: decoration,
-            child: row,
-          );
+        : Container(padding: pad, decoration: decoration, child: row);
 
     final actions = <Widget>[
       if (showEditOnSwipe)

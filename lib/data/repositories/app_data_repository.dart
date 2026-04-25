@@ -10,6 +10,7 @@ import '../../core/access/access_tiers.dart';
 import '../../core/access/permission_service.dart';
 import '../../core/auth/app_session.dart';
 import '../../core/auth/password_reset_webhook.dart';
+import '../../core/sync/sync_device_identity.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../core/utils/student_archive_display_utils.dart';
 import '../../core/utils/muscle_group_utils.dart';
@@ -18,6 +19,7 @@ import '../../domain/scoring.dart' as scoring;
 import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
 import '../models/day_workout_performed_set.dart';
+import '../models/exercise_session_comparison.dart';
 import '../models/programmable_bundle.dart';
 import '../models/week_schedule_row.dart';
 import '../sync/remote_sync_service.dart';
@@ -190,6 +192,9 @@ class AppDataRepository {
   Stream<List<StudentEntity>>? _studentsRawBroadcast;
   List<StudentEntity>? _lastStudentsRaw;
 
+  Stream<List<ExerciseEntity>>? _exercisesRawBroadcast;
+  List<ExerciseEntity>? _lastExercisesRaw;
+
   Stream<List<WorkoutGroupEntity>>? _workoutGroupsInnerBroadcast;
   List<WorkoutGroupEntity>? _lastWorkoutGroups;
 
@@ -217,6 +222,8 @@ class AppDataRepository {
     _studentWeekWorkoutsLastByKey.clear();
     _studentsRawBroadcast = null;
     _lastStudentsRaw = null;
+    _exercisesRawBroadcast = null;
+    _lastExercisesRaw = null;
     _workoutGroupsInnerBroadcast = null;
     _lastWorkoutGroups = null;
     _workoutGroupsSchedulableInnerBroadcast = null;
@@ -736,6 +743,10 @@ class AppDataRepository {
     );
   }
 
+  Future<String> _syncDeviceId() => SyncDeviceIdentity.getOrCreate();
+
+  int _nextRevision(int current) => current < 0 ? 1 : current + 1;
+
   Stream<List<MuscleGroupEntity>> watchMuscleGroupsAlphabetical() {
     return (_db.select(
       _db.muscleGroups,
@@ -782,16 +793,32 @@ class AppDataRepository {
     await _audit('delete', 'muscle_group', entityId: id);
   }
 
-  Stream<List<ExerciseEntity>> watchExercisesAlphabetical() {
-    final stream = (_db.select(
-      _db.exercises,
-    )..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
-    return stream.map((list) {
-      if (list.isEmpty) {
-        _triggerCatalogRefreshIfNeeded();
+  Stream<List<ExerciseEntity>> _exercisesRawStreamWithReplay() {
+    _exercisesRawBroadcast ??=
+        (_db.select(
+              _db.exercises,
+            )..orderBy([(t) => OrderingTerm.asc(t.name)]))
+            .watch()
+            .map((list) {
+              if (list.isEmpty) {
+                _triggerCatalogRefreshIfNeeded();
+              }
+              _lastExercisesRaw = list;
+              return list;
+            })
+            .asBroadcastStream();
+
+    return Stream.multi((controller) async {
+      final last = _lastExercisesRaw;
+      if (last != null) {
+        controller.add(last);
       }
-      return list;
+      await controller.addStream(_exercisesRawBroadcast!);
     });
+  }
+
+  Stream<List<ExerciseEntity>> watchExercisesAlphabetical() {
+    return _exercisesRawStreamWithReplay();
   }
 
   Future<List<ExerciseEntity>> getExercisesByIds(
@@ -2693,6 +2720,27 @@ class AppDataRepository {
         .asyncMap(_visibleDayWorkouts);
   }
 
+  /// Snapshot imediato dos treinos do dia (mesma regra de dia civil local do calendário).
+  Future<List<DayWorkoutEntity>> getDayWorkoutsForDay(DateTime day) async {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    final startPad = start.subtract(const Duration(days: 2));
+    final endPad = end.add(const Duration(days: 2));
+    final rows =
+        await (_db.select(_db.dayWorkouts)..where(
+              (t) =>
+                  t.dayDate.isBiggerOrEqualValue(startPad) &
+                  t.dayDate.isSmallerThanValue(endPad) &
+                  _dayWorkoutNotCancelled(t),
+            ))
+            .get();
+    final filtered = rows.where((w) {
+      final d = weekScheduleLocalCalendarDate(w.dayDate);
+      return !d.isBefore(start) && d.isBefore(end);
+    }).toList();
+    return _visibleDayWorkouts(filtered);
+  }
+
   /// Treinos visíveis no intervalo **[fromInclusive, toExclusive)** por **dia civil local**
   /// (mesma regra da grade do calendário e da semana no planejamento).
   Stream<List<DayWorkoutEntity>> watchWorkoutsBetween(
@@ -2828,9 +2876,12 @@ class AppDataRepository {
                   )
                   .map((row) {
                     final ex = row.readTableOrNull(_db.exercises);
+                    final rawName = ex?.name.trim();
                     return WeekScheduleRow(
                       item: row.readTable(_db.weekScheduleItems),
-                      exerciseName: ex?.name ?? 'Exercício ausente no catálogo',
+                      exerciseName: (rawName != null && rawName.isNotEmpty)
+                          ? rawName
+                          : 'Exercício ausente no catálogo',
                     );
                   })
                   .toList();
@@ -3596,9 +3647,12 @@ class AppDataRepository {
         )
         .map((row) {
           final ex = row.readTableOrNull(_db.exercises);
+          final rawName = ex?.name.trim();
           return WeekScheduleRow(
             item: row.readTable(_db.weekScheduleItems),
-            exerciseName: ex?.name ?? 'Exercício ausente no catálogo',
+            exerciseName: (rawName != null && rawName.isNotEmpty)
+                ? rawName
+                : 'Exercício ausente no catálogo',
           );
         })
         .toList();
@@ -4146,6 +4200,32 @@ class AppDataRepository {
     );
   }
 
+  /// [DayWorkoutEntity.workoutScore] do treino concluído **imediatamente anterior**
+  /// do mesmo aluno (exclui o treino atual). `null` se não há histórico.
+  Future<double?> previousCompletedWorkoutScore({
+    required String dayWorkoutId,
+  }) async {
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
+    final current = await _dayWorkoutRow(dayWorkoutId);
+    if (current == null) return null;
+
+    final cutoff = current.completedAt ?? DateTime.now();
+    final prev = await (_db.select(_db.dayWorkouts)
+          ..where(
+            (w) =>
+                w.studentId.equals(current.studentId) &
+                w.status.equals('completed') &
+                w.id.equals(dayWorkoutId).not() &
+                w.completedAt.isSmallerThanValue(cutoff),
+          )
+          ..orderBy([
+            (w) => OrderingTerm.desc(w.completedAt),
+            (w) => OrderingTerm.desc(w.dayDate),
+          ]))
+        .getSingleOrNull();
+    return prev?.workoutScore;
+  }
+
   /// Maior [DayWorkoutPerformedSet.loadKg] entre as séries do **último treino
   /// concluído** anterior com o mesmo aluno + exercício (não conta o treino atual).
   /// `null` se não há treino anterior ou não há carga registada nas séries feitas.
@@ -4234,6 +4314,199 @@ class AppDataRepository {
       if (performed.isNotEmpty) return performed.last;
     }
     return null;
+  }
+
+  Duration _wallSpanPerformed(List<DayWorkoutPerformedSet> performed) {
+    final a = DayWorkoutPerformedSetCodec.minLoggedAtMs(performed);
+    final b = DayWorkoutPerformedSetCodec.maxLoggedAtMs(performed);
+    if (a == null || b == null || b < a) return Duration.zero;
+    return Duration(milliseconds: b - a);
+  }
+
+  Future<double> _sumPerformedScoresForDayWorkout(String dayWorkoutId) async {
+    final lines = await getDayWorkoutExercises(dayWorkoutId);
+    var sum = 0.0;
+    for (final e in lines) {
+      sum += DayWorkoutPerformedSetCodec.totalExerciseScore(
+        DayWorkoutPerformedSetCodec.decode(e.performedSetsJson),
+      );
+    }
+    return sum <= 0 ? 1.0 : sum;
+  }
+
+  /// Resumo comparativo (treino anterior concluído vs atual) quando a linha já tem
+  /// todas as séries registadas. Usa apenas dados locais / JSON já espelhados.
+  Future<ExerciseSessionComparison?> getExerciseSessionComparison(
+    String dayWorkoutExerciseLineId,
+  ) async {
+    await _requireAccessForDayWorkoutLineId(dayWorkoutExerciseLineId);
+    final curLine =
+        await (_db.select(
+              _db.dayWorkoutExercises,
+            )..where((e) => e.id.equals(dayWorkoutExerciseLineId)))
+            .getSingleOrNull();
+    if (curLine == null) return null;
+    final performed = DayWorkoutPerformedSetCodec.decode(
+      curLine.performedSetsJson,
+    );
+    if (curLine.sets <= 0 || performed.length < curLine.sets) return null;
+
+    final exRow =
+        await (_db.select(
+              _db.exercises,
+            )..where((e) => e.id.equals(curLine.exerciseId)))
+            .getSingleOrNull();
+    final exerciseName = (exRow?.name ?? '').trim().isEmpty
+        ? 'Exercício'
+        : exRow!.name.trim();
+
+    final prescribedContrib = scoring.perSetScoreContribution(
+      loadKg: curLine.loadKg ?? 0,
+      reps: curLine.reps,
+    );
+    final prescribedSafe =
+        prescribedContrib <= 1e-9 ? 1e-6 : prescribedContrib;
+
+    final curDw = await _dayWorkoutRow(curLine.dayWorkoutId);
+    if (curDw == null) return null;
+
+    final sumCurScores = await _sumPerformedScoresForDayWorkout(
+      curLine.dayWorkoutId,
+    );
+    final curTotal = DayWorkoutPerformedSetCodec.totalExerciseScore(performed);
+    final wkCal = curDw.watchCaloriesKcal;
+    double? currentKcal;
+    var hasWatch = false;
+    if (wkCal != null && wkCal > 0) {
+      hasWatch = true;
+      currentKcal = wkCal * (curTotal / sumCurScores);
+    }
+
+    final cutoff = curDw.completedAt ?? DateTime.now();
+    final prevJoin =
+        _db.select(_db.dayWorkoutExercises).join([
+            innerJoin(
+              _db.dayWorkouts,
+              _db.dayWorkouts.id.equalsExp(
+                _db.dayWorkoutExercises.dayWorkoutId,
+              ),
+            ),
+          ])
+          ..where(
+            _db.dayWorkoutExercises.exerciseId.equals(curLine.exerciseId) &
+                _db.dayWorkouts.studentId.equals(curDw.studentId) &
+                _db.dayWorkouts.status.equals('completed') &
+                _db.dayWorkouts.id.equals(curLine.dayWorkoutId).not() &
+                _db.dayWorkouts.completedAt.isSmallerThanValue(cutoff),
+          )
+          ..orderBy([OrderingTerm.desc(_db.dayWorkouts.completedAt)])
+          ..limit(1);
+
+    final prevJoined = await prevJoin.getSingleOrNull();
+    DayWorkoutExerciseEntity? prevLine;
+    DayWorkoutEntity? prevDw;
+    if (prevJoined != null) {
+      prevLine = prevJoined.readTable(_db.dayWorkoutExercises);
+      prevDw = prevJoined.readTable(_db.dayWorkouts);
+    }
+    final prevPerformed = prevLine == null
+        ? const <DayWorkoutPerformedSet>[]
+        : DayWorkoutPerformedSetCodec.decode(prevLine.performedSetsJson);
+    final prevPrescribedContrib = prevLine == null
+        ? 0.0
+        : scoring.perSetScoreContribution(
+            loadKg: prevLine.loadKg ?? 0,
+            reps: prevLine.reps,
+          );
+    final prevPrescribedSafe =
+        prevPrescribedContrib <= 1e-9 ? 1e-6 : prevPrescribedContrib;
+
+    double? prevTotal;
+    Duration? prevWall;
+    double? previousKcal;
+    if (prevLine != null && prevPerformed.isNotEmpty) {
+      prevTotal = DayWorkoutPerformedSetCodec.totalExerciseScore(
+        prevPerformed,
+      );
+      prevWall = _wallSpanPerformed(prevPerformed);
+      final pk = prevDw?.watchCaloriesKcal;
+      if (pk != null && pk > 0) {
+        final sumPrev = await _sumPerformedScoresForDayWorkout(
+          prevLine.dayWorkoutId,
+        );
+        if (sumPrev > 0) {
+          previousKcal = pk * (prevTotal / sumPrev);
+        }
+      }
+    }
+
+    double? totalEvol;
+    if (prevTotal != null && prevTotal > 1e-6) {
+      final pt = prevTotal;
+      totalEvol = (curTotal - pt) / pt * 100.0;
+    }
+
+    final rows = <ExerciseSetComparisonRow>[];
+    for (var i = 0; i < performed.length; i++) {
+      final s = performed[i];
+      final curSetScore = scoring.perSetScoreContribution(
+        loadKg: s.loadKg ?? curLine.loadKg ?? 0,
+        reps: s.reps,
+      );
+      final curPct = (curSetScore / prescribedSafe) * 100.0;
+
+      double? prevSetScore;
+      double? prevPct;
+      double? evol;
+      if (i < prevPerformed.length) {
+        final ps = prevPerformed[i];
+        prevSetScore = scoring.perSetScoreContribution(
+          loadKg: ps.loadKg ?? prevLine!.loadKg ?? 0,
+          reps: ps.reps,
+        );
+        prevPct = (prevSetScore / prevPrescribedSafe) * 100.0;
+        if (prevSetScore > 1e-6) {
+          evol = (curSetScore - prevSetScore) / prevSetScore * 100.0;
+        }
+      }
+
+      final int? restAfterCur =
+          i < performed.length - 1 ? performed[i].restCountdownElapsedMs : null;
+      final int? restAfterPrev = i < prevPerformed.length - 1
+          ? prevPerformed[i].restCountdownElapsedMs
+          : null;
+      final int? restPrescribed =
+          i < performed.length - 1
+          ? (performed[i].restPrescribedSec ?? curLine.restBetweenSetsSec)
+          : null;
+
+      rows.add(
+        ExerciseSetComparisonRow(
+          setNumber: i + 1,
+          currentSetScore: curSetScore,
+          previousSetScore: prevSetScore,
+          currentPctOfPrescribed: curPct,
+          previousPctOfPrescribed: prevPct,
+          scoreEvolutionPctVsPrevious: evol,
+          restAfterCurrentCountdownMs: restAfterCur,
+          restAfterPreviousCountdownMs: restAfterPrev,
+          restPrescribedSec: restPrescribed,
+        ),
+      );
+    }
+
+    return ExerciseSessionComparison(
+      exerciseName: exerciseName,
+      sets: rows,
+      currentWallDuration: _wallSpanPerformed(performed),
+      previousWallDuration: prevWall,
+      currentTotalScore: curTotal,
+      previousTotalScore: prevTotal,
+      totalScoreEvolutionPctVsPrevious: totalEvol,
+      currentEstimatedKcal: currentKcal,
+      previousEstimatedKcal: previousKcal,
+      hasWorkoutWatchKcal: hasWatch,
+    );
   }
 
   /// Últimos [limit] treinos **concluídos**, ordenados do mais **antigo** ao mais **novo** (eixo X).
@@ -4486,6 +4759,8 @@ class AppDataRepository {
         : (next.last.loadKg ?? row.loadKg);
     final dayWorkoutId = row.dayWorkoutId;
     final now = DateTime.now();
+    final deviceId = await _syncDeviceId();
+    final workoutBefore = await _dayWorkoutRow(dayWorkoutId);
     final appendAuditId = _uuid.v4();
     final touchAuditId = _uuid.v4();
 
@@ -4498,11 +4773,23 @@ class AppDataRepository {
           exerciseScore: Value(exerciseScore),
           loadKg: Value(newLoadKg),
           updatedAt: Value(now),
+          revision: Value(_nextRevision(row.revision)),
+          lastModifiedByDeviceId: Value(deviceId),
+          syncStatus: const Value('pending'),
         ),
       );
-      await (_db.update(_db.dayWorkouts)
-            ..where((w) => w.id.equals(dayWorkoutId)))
-          .write(DayWorkoutsCompanion(updatedAt: Value(now)));
+      if (workoutBefore != null) {
+        await (_db.update(_db.dayWorkouts)
+              ..where((w) => w.id.equals(dayWorkoutId)))
+            .write(
+              DayWorkoutsCompanion(
+                updatedAt: Value(now),
+                revision: Value(_nextRevision(workoutBefore.revision)),
+                lastModifiedByDeviceId: Value(deviceId),
+                syncStatus: const Value('pending'),
+              ),
+            );
+      }
       await _db
           .into(_db.auditLogs)
           .insert(
@@ -4601,6 +4888,7 @@ class AppDataRepository {
     List<DayWorkoutPerformedSet> next, {
     bool syncParentWorkoutScore = true,
   }) async {
+    final deviceId = await _syncDeviceId();
     final exerciseScore = DayWorkoutPerformedSetCodec.totalExerciseScore(next);
     final newLoadKg = next.isEmpty
         ? row.loadKg
@@ -4613,6 +4901,9 @@ class AppDataRepository {
         exerciseScore: Value(exerciseScore),
         loadKg: Value(newLoadKg),
         updatedAt: Value(DateTime.now()),
+        revision: Value(_nextRevision(row.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     if (syncParentWorkoutScore) {
@@ -4625,8 +4916,17 @@ class AppDataRepository {
     required String reason,
   }) async {
     final now = DateTime.now();
+    final deviceId = await _syncDeviceId();
+    final current = await _dayWorkoutRow(dayWorkoutId);
     await (_db.update(_db.dayWorkouts)..where((w) => w.id.equals(dayWorkoutId)))
-        .write(DayWorkoutsCompanion(updatedAt: Value(now)));
+        .write(
+          DayWorkoutsCompanion(
+            updatedAt: Value(now),
+            revision: Value(_nextRevision(current?.revision ?? 0)),
+            lastModifiedByDeviceId: Value(deviceId),
+            syncStatus: const Value('pending'),
+          ),
+        );
     await _audit(
       'touch',
       'day_workout',
@@ -4772,11 +5072,16 @@ class AppDataRepository {
     final w = await _dayWorkoutRow(id);
     if (w == null) return false;
     if (w.status != 'programmed') return false;
+    final deviceId = await _syncDeviceId();
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
       DayWorkoutsCompanion(
         status: const Value('cancelled'),
         timerResumeAt: const Value(null),
         updatedAt: Value(DateTime.now()),
+        deletedAt: Value(DateTime.now()),
+        revision: Value(_nextRevision(w.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     await _audit('cancel', 'day_workout', entityId: id);
@@ -4792,12 +5097,16 @@ class AppDataRepository {
       throw ArgumentError('Treinos em datas passadas não podem ser iniciados.');
     }
     final now = DateTime.now();
+    final deviceId = await _syncDeviceId();
     await (_db.update(_db.dayWorkouts)..where((w) => w.id.equals(id))).write(
       DayWorkoutsCompanion(
         status: const Value('started'),
         startedAt: Value(now),
         timerResumeAt: Value(now),
         updatedAt: Value(now),
+        revision: Value(_nextRevision(cur.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     await _audit('start', 'day_workout', entityId: id);
@@ -4809,12 +5118,16 @@ class AppDataRepository {
     final w = await _dayWorkoutRow(id);
     if (w == null || w.status != 'started' || w.timerResumeAt == null) return;
     final add = DateTime.now().difference(w.timerResumeAt!).inSeconds;
+    final deviceId = await _syncDeviceId();
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
       DayWorkoutsCompanion(
         activeDurationSeconds: Value(w.activeDurationSeconds + add),
         // `Value.absent()` não altera a coluna; é preciso NULL para pausar o cronômetro.
         timerResumeAt: const Value(null),
         updatedAt: Value(DateTime.now()),
+        revision: Value(_nextRevision(w.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     await _audit('pause', 'day_workout', entityId: id);
@@ -4825,10 +5138,14 @@ class AppDataRepository {
     await _requireAccessForDayWorkoutId(id);
     final w = await _dayWorkoutRow(id);
     if (w == null || w.status != 'started' || w.timerResumeAt != null) return;
+    final deviceId = await _syncDeviceId();
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
       DayWorkoutsCompanion(
         timerResumeAt: Value(DateTime.now()),
         updatedAt: Value(DateTime.now()),
+        revision: Value(_nextRevision(w.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     await _audit('resume', 'day_workout', entityId: id);
@@ -4894,7 +5211,13 @@ class AppDataRepository {
     await (_db.update(
       _db.dayWorkouts,
     )..where((x) => x.id.equals(dayWorkoutId))).write(
-      DayWorkoutsCompanion(workoutScore: Value(ws), updatedAt: Value(now)),
+      DayWorkoutsCompanion(
+        workoutScore: Value(ws),
+        updatedAt: Value(now),
+        revision: Value(_nextRevision(w.revision)),
+        lastModifiedByDeviceId: Value(await _syncDeviceId()),
+        syncStatus: const Value('pending'),
+      ),
     );
     final prev = w.workoutScore;
     final changed = prev == null || (prev - ws).abs() > 0.0001;
@@ -4917,6 +5240,7 @@ class AppDataRepository {
     }
     final w = await _dayWorkoutRow(id);
     if (w == null) return;
+    final deviceId = await _syncDeviceId();
     final exercises = await getDayWorkoutExercises(id);
     for (final e in exercises) {
       final performed = DayWorkoutPerformedSetCodec.decode(e.performedSetsJson);
@@ -4933,6 +5257,9 @@ class AppDataRepository {
         DayWorkoutExercisesCompanion(
           exerciseScore: Value(exScore),
           updatedAt: Value(DateTime.now()),
+          revision: Value(_nextRevision(e.revision)),
+          lastModifiedByDeviceId: Value(deviceId),
+          syncStatus: const Value('pending'),
         ),
       );
     }
@@ -4950,6 +5277,9 @@ class AppDataRepository {
         completedAt: Value(now),
         updatedAt: Value(now),
         workoutScore: Value(ws),
+        revision: Value(_nextRevision(w.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     await _audit(
@@ -4973,6 +5303,7 @@ class AppDataRepository {
     }
     if (caloriesKcal == null && avgHeartRateBpm == null) return;
     final now = DateTime.now();
+    final deviceId = await _syncDeviceId();
     await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
       DayWorkoutsCompanion(
         watchCaloriesKcal: caloriesKcal != null
@@ -4982,6 +5313,9 @@ class AppDataRepository {
             ? Value(avgHeartRateBpm)
             : const Value.absent(),
         updatedAt: Value(now),
+        revision: Value(_nextRevision(w.revision)),
+        lastModifiedByDeviceId: Value(deviceId),
+        syncStatus: const Value('pending'),
       ),
     );
     await _audit(

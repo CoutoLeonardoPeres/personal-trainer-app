@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
@@ -14,6 +16,7 @@ import 'supabase_table_mappers.dart';
 
 class _QueuedAudit {
   _QueuedAudit({
+    required this.queueItemId,
     required this.auditLogId,
     required this.action,
     required this.entityType,
@@ -22,6 +25,7 @@ class _QueuedAudit {
     this.attempt = 0,
   });
 
+  final String queueItemId;
   final String auditLogId;
   final String action;
   final String entityType;
@@ -30,6 +34,7 @@ class _QueuedAudit {
   final int attempt;
 
   _QueuedAudit copyWith({int? attempt}) => _QueuedAudit(
+    queueItemId: queueItemId,
     auditLogId: auditLogId,
     action: action,
     entityType: entityType,
@@ -58,7 +63,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
 
   final List<_QueuedAudit> _priorityQueue = [];
   final List<_QueuedAudit> _queue = [];
-  final Set<String> _queuedAuditIds = <String>{};
+  final Set<String> _queuedItemIds = <String>{};
   bool _workerRunning = false;
   bool _recovering = false;
 
@@ -96,6 +101,115 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     return action == 'complete' && entityType == 'week_schedule_item';
   }
 
+  static int _priorityFor({
+    required String entityType,
+    required String action,
+  }) {
+    if (_isHighPriorityAudit(entityType: entityType, action: action)) {
+      return 0;
+    }
+    if (entityType == 'day_workout' || entityType == 'day_workout_exercise') {
+      return 0;
+    }
+    if (entityType == 'week_schedule' ||
+        entityType == 'week_schedule_item' ||
+        entityType == 'week_schedule_block') {
+      return 1;
+    }
+    return 2;
+  }
+
+  static String? _dedupeKeyFor({
+    required String action,
+    required String entityType,
+    required String? entityId,
+  }) {
+    if (entityId == null || entityId.isEmpty) return null;
+    if (entityType == 'day_workout_exercise') {
+      if (action == 'append_set' ||
+          action == 'remove_set' ||
+          action == 'update_set' ||
+          action == 'patch_set_rest') {
+        return 'line::$entityId::performed_sets';
+      }
+      return 'line::$entityId::$action';
+    }
+    if (entityType == 'day_workout') {
+      if (action == 'touch') return 'workout::$entityId::touch';
+      return 'workout::$entityId::$action';
+    }
+    if (action == 'update' || action == 'touch') {
+      return '$entityType::$entityId::state';
+    }
+    return '$entityType::$entityId::$action';
+  }
+
+  Future<String> _upsertSyncQueueItem({
+    required String auditLogId,
+    required String action,
+    required String entityType,
+    required String entityId,
+    Map<String, Object?>? payload,
+  }) async {
+    final now = DateTime.now();
+    var dedupeKey = _dedupeKeyFor(
+      action: action,
+      entityType: entityType,
+      entityId: entityId,
+    );
+    final encodedPayload = payload == null ? null : jsonEncode(payload);
+    if (dedupeKey != null) {
+      final nonNullDedupeKey = dedupeKey;
+      final existing =
+          await (_db.select(_db.syncQueue)
+                ..where((t) => t.dedupeKey.equals(nonNullDedupeKey)))
+              .getSingleOrNull();
+      if (existing != null && existing.status != 'syncing') {
+        await (_db.update(
+          _db.syncQueue,
+        )..where((t) => t.id.equals(existing.id))).write(
+          SyncQueueCompanion(
+            operation: Value(action),
+            payloadJson: Value(encodedPayload),
+            status: const Value('pending'),
+            retryCount: const Value(0),
+            nextRetryAt: const Value(null),
+            auditLogId: Value(auditLogId),
+            updatedAt: Value(now),
+            priority: Value(
+              _priorityFor(entityType: entityType, action: action),
+            ),
+          ),
+        );
+        return existing.id;
+      }
+      if (existing != null && existing.status == 'syncing') {
+        // Evita violação de unicidade quando a mesma entidade recebe novo evento
+        // durante um envio em progresso.
+        dedupeKey = null;
+      }
+    }
+    final id = const Uuid().v4();
+    await _db.into(_db.syncQueue).insert(
+          SyncQueueCompanion.insert(
+            id: id,
+            entityType: entityType,
+            entityId: entityId,
+            operation: action,
+            payloadJson: Value(encodedPayload),
+            priority: Value(_priorityFor(entityType: entityType, action: action)),
+            status: const Value('pending'),
+            retryCount: const Value(0),
+            nextRetryAt: const Value(null),
+            dedupeKey: Value(dedupeKey),
+            auditLogId: Value(auditLogId),
+            createdAt: Value(now),
+            updatedAt: Value(now),
+          ),
+        );
+    return id;
+  }
+
   @override
   Future<void> enqueueAudit({
     required String auditLogId,
@@ -104,18 +218,28 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     String? entityId,
     Map<String, Object?>? payload,
   }) async {
-    final q = _QueuedAudit(
+    final safeEntityId = entityId?.trim();
+    if (safeEntityId == null || safeEntityId.isEmpty) return;
+    final queueItemId = await _upsertSyncQueueItem(
       auditLogId: auditLogId,
       action: action,
       entityType: entityType,
-      entityId: entityId,
+      entityId: safeEntityId,
+      payload: payload,
+    );
+    final q = _QueuedAudit(
+      queueItemId: queueItemId,
+      auditLogId: auditLogId,
+      action: action,
+      entityType: entityType,
+      entityId: safeEntityId,
       payload: payload,
     );
     _enqueueInternal(q);
   }
 
   void _enqueueInternal(_QueuedAudit q) {
-    if (!_queuedAuditIds.add(q.auditLogId)) return;
+    if (!_queuedItemIds.add(q.queueItemId)) return;
     if (_isHighPriorityAudit(entityType: q.entityType, action: q.action)) {
       _priorityQueue.add(q);
     } else {
@@ -136,7 +260,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         try {
           ok = await _syncOneJob(job);
         } finally {
-          _queuedAuditIds.remove(job.auditLogId);
+          _queuedItemIds.remove(job.queueItemId);
         }
         if (!ok) {
           final nextAttempt = job.attempt + 1;
@@ -175,29 +299,68 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     if (_recovering || !supabaseAppEnabled) return;
     _recovering = true;
     try {
-      final rows =
+      // Compatibilidade: converte auditorias legadas sem item de fila.
+      final audits =
           await (_db.select(_db.auditLogs)..orderBy([
-                (t) => OrderingTerm.desc(t.at),
-                (t) => OrderingTerm.desc(t.id),
+                (t) => OrderingTerm.asc(t.at),
               ]))
               .get();
-
-      final seenEntityKeys = <String>{};
-      final recovered = <AuditLogEntity>[];
-      for (final row in rows) {
-        final entityId = row.entityId;
+      for (final row in audits) {
+        final entityId = row.entityId?.trim();
         if (entityId == null || entityId.isEmpty) continue;
-        final key = '${row.entityType}::$entityId';
-        if (!seenEntityKeys.add(key)) continue;
-        recovered.add(row);
-      }
-
-      for (final row in recovered.reversed) {
+        final existing =
+            await (_db.select(_db.syncQueue)
+                  ..where((q) => q.auditLogId.equals(row.id)))
+                .getSingleOrNull();
+        if (existing != null) continue;
+        Map<String, Object?>? payload;
+        final raw = row.payloadJson?.trim();
+        if (raw != null && raw.isNotEmpty) {
+          try {
+            payload = Map<String, Object?>.from(
+              jsonDecode(raw) as Map<dynamic, dynamic>,
+            );
+          } catch (_) {}
+        }
         await enqueueAudit(
           auditLogId: row.id,
           action: row.action,
           entityType: row.entityType,
-          entityId: row.entityId,
+          entityId: entityId,
+          payload: payload,
+        );
+      }
+
+      final now = DateTime.now();
+      final pending =
+          await (_db.select(_db.syncQueue)..where(
+                (q) =>
+                    q.status.isIn(const ['pending', 'failed']) &
+                    (q.nextRetryAt.isNull() | q.nextRetryAt.isSmallerThanValue(now)),
+              )..orderBy([
+                (q) => OrderingTerm.asc(q.priority),
+                (q) => OrderingTerm.asc(q.updatedAt),
+              ]))
+              .get();
+      for (final item in pending) {
+        Map<String, Object?>? payload;
+        final raw = item.payloadJson?.trim();
+        if (raw != null && raw.isNotEmpty) {
+          try {
+            payload = Map<String, Object?>.from(
+              jsonDecode(raw) as Map<dynamic, dynamic>,
+            );
+          } catch (_) {}
+        }
+        _enqueueInternal(
+          _QueuedAudit(
+            queueItemId: item.id,
+            auditLogId: item.auditLogId ?? item.id,
+            action: item.operation,
+            entityType: item.entityType,
+            entityId: item.entityId,
+            payload: payload,
+          ),
         );
       }
     } finally {
@@ -209,10 +372,46 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     if (!supabaseAppEnabled) return true;
 
     final client = Supabase.instance.client;
+    final queueItem = await (_db.select(
+      _db.syncQueue,
+    )..where((q) => q.id.equals(job.queueItemId))).getSingleOrNull();
+    if (queueItem == null) return true;
+    await (_db.update(_db.syncQueue)
+          ..where((q) => q.id.equals(queueItem.id)))
+        .write(
+          SyncQueueCompanion(
+            status: const Value('syncing'),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+    await _markLocalEntitySyncStatus(
+      entityType: job.entityType,
+      entityId: job.entityId,
+      status: 'syncing',
+    );
     final auditRow = await (_db.select(
       _db.auditLogs,
     )..where((a) => a.id.equals(job.auditLogId))).getSingleOrNull();
-    if (auditRow == null) return true;
+
+    // Blindagem contra "cancel" pendente antigo: só propaga cancel de treino
+    // quando o estado local atual desse treino ainda estiver cancelado.
+    if (job.entityType == 'day_workout' &&
+        job.action == 'cancel' &&
+        job.entityId != null) {
+      final local = await (_db.select(
+        _db.dayWorkouts,
+      )..where((w) => w.id.equals(job.entityId!))).getSingleOrNull();
+      if (local == null || local.status != 'cancelled') {
+        debugPrint(
+          'SupabaseRemoteSyncService: skip stale cancel '
+          'entity=day_workout/${job.entityId} audit=${job.auditLogId} '
+          '(local status=${local?.status ?? 'missing'})',
+        );
+        await _markQueueItemSynced(job.queueItemId);
+        await _discardAuditLog(job.auditLogId);
+        return true;
+      }
+    }
 
     _controller.beginUpload();
     try {
@@ -237,7 +436,9 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         await reconcileLocalCatalogWithCloud(_db, client);
       }
       try {
-        await client.from('audit_logs').upsert(supabaseAuditLog(auditRow));
+        if (auditRow != null) {
+          await client.from('audit_logs').upsert(supabaseAuditLog(auditRow));
+        }
       } catch (e, st) {
         debugPrint('SupabaseRemoteSyncService audit_logs (ignorado): $e\n$st');
       }
@@ -251,6 +452,12 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         payload: job.payload,
       );
       // ACK do job: este audit já foi espelhado com sucesso.
+      await _markQueueItemSynced(job.queueItemId);
+      await _markLocalEntitySyncStatus(
+        entityType: job.entityType,
+        entityId: job.entityId,
+        status: 'synced',
+      );
       await _discardAuditLog(job.auditLogId);
       if (job.entityType == 'day_workout_exercise' ||
           job.entityType == 'day_workout') {
@@ -275,6 +482,15 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       debugPrint('SupabaseRemoteSyncService: $e\n$st');
       _controller.noteDisconnected();
       _controller.noteBackgroundPushError(e);
+      await _markQueueItemFailed(
+        queueItemId: job.queueItemId,
+        attempt: job.attempt + 1,
+      );
+      await _markLocalEntitySyncStatus(
+        entityType: job.entityType,
+        entityId: job.entityId,
+        status: 'failed',
+      );
       return false;
     } finally {
       _controller.endUpload();
@@ -290,7 +506,40 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required Map<String, dynamic> map,
     required DateTime localUpdatedAt,
   }) async {
-    // LWW: só atualiza se a nuvem for mais antiga.
+    final localRevision = map['revision'];
+    if (localRevision is num) {
+      final rev = localRevision.toInt();
+      final byLowerRevision = await client
+          .from(table)
+          .update(map)
+          .eq('id', id)
+          .lt('revision', rev)
+          .select('id');
+      final updatedByRevision = byLowerRevision as List<dynamic>;
+      if (updatedByRevision.isNotEmpty) return true;
+
+      final bySameRevisionOlderTs = await client
+          .from(table)
+          .update(map)
+          .eq('id', id)
+          .eq('revision', rev)
+          .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
+          .select('id');
+      final updatedByTimestamp = bySameRevisionOlderTs as List<dynamic>;
+      if (updatedByTimestamp.isNotEmpty) return true;
+
+      final byNullRevision = await client
+          .from(table)
+          .update(map)
+          .eq('id', id)
+          .isFilter('revision', null)
+          .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
+          .select('id');
+      final updatedByNullRevision = byNullRevision as List<dynamic>;
+      return updatedByNullRevision.isNotEmpty;
+    }
+
+    // LWW fallback: só atualiza se a nuvem for mais antiga.
     final res = await client
         .from(table)
         .update(map)
@@ -322,6 +571,64 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     await (_db.delete(
       _db.auditLogs,
     )..where((a) => a.id.equals(auditLogId))).go();
+  }
+
+  Future<void> _markQueueItemSynced(String queueItemId) async {
+    await (_db.update(
+      _db.syncQueue,
+    )..where((q) => q.id.equals(queueItemId))).write(
+      SyncQueueCompanion(
+        status: const Value('synced'),
+        retryCount: const Value(0),
+        nextRetryAt: const Value(null),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> _markQueueItemFailed({
+    required String queueItemId,
+    required int attempt,
+  }) async {
+    final delay = _retryDelayForAttempt(attempt);
+    await (_db.update(
+      _db.syncQueue,
+    )..where((q) => q.id.equals(queueItemId))).write(
+      SyncQueueCompanion(
+        status: const Value('failed'),
+        retryCount: Value(attempt),
+        nextRetryAt: Value(DateTime.now().add(delay)),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> _markLocalEntitySyncStatus({
+    required String entityType,
+    required String? entityId,
+    required String status,
+  }) async {
+    final eid = entityId?.trim();
+    if (eid == null || eid.isEmpty) return;
+    if (entityType == 'day_workout') {
+      await (_db.update(
+        _db.dayWorkouts,
+      )..where((w) => w.id.equals(eid))).write(
+        DayWorkoutsCompanion(
+          syncStatus: Value(status),
+        ),
+      );
+      return;
+    }
+    if (entityType == 'day_workout_exercise') {
+      await (_db.update(
+        _db.dayWorkoutExercises,
+      )..where((x) => x.id.equals(eid))).write(
+        DayWorkoutExercisesCompanion(
+          syncStatus: Value(status),
+        ),
+      );
+    }
   }
 
   Future<void> _pullAfterConflict({
@@ -370,14 +677,6 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required Map<String, dynamic> map,
     required DateTime localUpdatedAt,
   }) async {
-    final hotRealtimeTables = {'day_workouts', 'day_workout_exercises'};
-    // Treinos/séries são colaboração em tempo real entre dispositivos.
-    // Não depender de relógio do dispositivo evita "registra e some" quando
-    // há drift entre iPhone/tablet e o servidor.
-    if (hotRealtimeTables.contains(table)) {
-      await client.from(table).upsert(map);
-      return true;
-    }
     final effectiveLocalUpdatedAt = localUpdatedAt;
     final ok = await _lwwUpdateById(
       client: client,
@@ -919,7 +1218,10 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             _db.dayWorkoutExercises,
           )..where((t) => t.id.equals(eid))).getSingleOrNull();
           if (row == null) return;
-          await _ensureExerciseDependenciesMirrored(client, row.exerciseId);
+          // Hot path de treino: não depender de reconcile de catálogo aqui.
+          // Se a FK do exercício já existe na nuvem (cenário normal), o upsert da
+          // linha deve seguir direto para reduzir latência e evitar falha em cascata
+          // por chamadas adicionais (ex.: muscle_groups) durante instabilidade de rede.
           await _lwwUpsertOrConflictPull(
             auditLogId: auditLogId,
             client: client,
@@ -1011,7 +1313,8 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     )..where((e) => e.dayWorkoutId.equals(workoutId))).get();
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
-      await _ensureExerciseDependenciesMirrored(client, line.exerciseId);
+      // Mesmo racional do hot path: evitar dependências de catálogo durante
+      // sincronização de treino em execução.
       if (auditLogId != null) {
         await _lwwUpsertOrConflictPull(
           auditLogId: auditLogId,

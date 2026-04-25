@@ -1,7 +1,7 @@
 name: app_personal
 description: Personal Gym — gestão para personal trainers e alunos (treinos planejados, agendados, programados e concluídos).
 publish_to: 'none'
-version: 1.0.0+10
+version: 1.0.0+11
 
 environment:
   sdk: ^3.10.1
