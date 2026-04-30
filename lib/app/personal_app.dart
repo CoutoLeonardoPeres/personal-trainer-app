@@ -2,14 +2,15 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/auth/app_session.dart';
 import '../core/diagnostic/launch_diagnostic.dart';
+import '../core/sync/workout_sync_service.dart';
 import '../core/supabase/supabase_app_init.dart';
 import '../core/supabase/supabase_auth_service.dart';
+import '../core/supabase/supabase_bootstrap.dart';
 import '../core/supabase/supabase_sync_controller.dart';
 import '../core/notifications/workout_activity_local_notifier.dart';
 import '../core/theme/app_colors.dart';
@@ -40,6 +41,7 @@ class _LoadedServices {
     required this.fidelity,
     required this.repo,
     required this.remoteSync,
+    required this.workoutSync,
     required this.deepLink,
   });
 
@@ -49,6 +51,7 @@ class _LoadedServices {
   final SupabaseCloudFidelityChecker fidelity;
   final AppDataRepository repo;
   final RemoteSyncService remoteSync;
+  final WorkoutSyncService workoutSync;
   final WorkoutLiveDeepLinkController deepLink;
 }
 
@@ -74,6 +77,8 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   String? _lastBootBuildMode;
   StreamSubscription<Uri>? _appLinkSubscription;
   SupabaseRealtimeSyncService? _realtimeSync;
+  Future<void> _cloudOp = Future<void>.value();
+  bool _cloudStarted = false;
   final Map<String, DateTime> _lastActivityToastByKey = <String, DateTime>{};
   bool _keepScreenOnApplied = false;
 
@@ -180,6 +185,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       final remoteSync = SupabaseRemoteSyncService(db, sync);
       final repo = AppDataRepository(db, session, remoteSync: remoteSync);
       final deepLink = WorkoutLiveDeepLinkController();
+      final workoutSync = WorkoutSyncService(db);
       final bundle = _LoadedServices(
         db: db,
         session: session,
@@ -187,6 +193,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         fidelity: fidelity,
         repo: repo,
         remoteSync: remoteSync,
+        workoutSync: workoutSync,
         deepLink: deepLink,
       );
       if (!mounted) return;
@@ -196,6 +203,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         _loadError = null;
       });
       unawaited(bundle.repo.applyPremiumTierExpiryDowngrades());
+      unawaited(bundle.workoutSync.start());
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _services != bundle) return;
         _startAppLinks(bundle);
@@ -234,10 +242,32 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       logLaunch('initializeSupabaseApp erro', error: e, stackTrace: st);
     }
     if (!mounted) return;
-    bootTrace('cloud', 'recover queue + startHeartbeat + fidelity');
+    bootTrace('cloud', 'recover queue + start cloud services');
     await s.remoteSync.recoverPendingWork();
-    s.sync.startHeartbeat();
-    s.fidelity.start();
+    unawaited(_runCloudExclusive(() => _startCloudLiveServices(fromResume: false)));
+    unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
+  }
+
+  Future<void> _runCloudExclusive(Future<void> Function() op) {
+    final next = _cloudOp.then((_) => op(), onError: (_) => op());
+    _cloudOp = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> _startCloudLiveServices({required bool fromResume}) async {
+    final s = _services;
+    if (!mounted || s == null) return;
+    if (!supabaseAppEnabled) return;
+    if (!_cloudStarted) {
+      s.sync.startHeartbeat();
+      s.fidelity.start();
+      _cloudStarted = true;
+    }
+
+    SupabaseAutoPushScheduler.cancelScheduledWork();
+    SupabaseAutoPullScheduler.cancelScheduledWork();
+    SupabaseAutoPullScheduler.stopForegroundPolling();
+
     SupabaseAutoPushScheduler.scheduleAfterResume(
       db: s.db,
       sync: s.sync,
@@ -255,16 +285,27 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       sync: s.sync,
       session: s.session,
     );
-    await _realtimeSync?.dispose();
-    final realtime = SupabaseRealtimeSyncService(
-      db: s.db,
-      sync: s.sync,
-      session: s.session,
-      onWorkoutActivity: _onWorkoutActivityEvent,
-    );
-    _realtimeSync = realtime;
-    await realtime.start();
-    unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
+
+    if (_realtimeSync == null) {
+      final realtime = SupabaseRealtimeSyncService(
+        db: s.db,
+        sync: s.sync,
+        session: s.session,
+        onWorkoutActivity: _onWorkoutActivityEvent,
+      );
+      _realtimeSync = realtime;
+      await realtime.start();
+      return;
+    }
+    if (fromResume) {
+      await _realtimeSync!.reconnectAfterResume();
+    }
+  }
+
+  Future<void> _stopCloudLiveServices() async {
+    SupabaseAutoPushScheduler.cancelScheduledWork();
+    SupabaseAutoPullScheduler.cancelScheduledWork();
+    SupabaseAutoPullScheduler.stopForegroundPolling();
   }
 
   bool _allowActivityToast(
@@ -410,9 +451,12 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       _loadStarted = false;
     });
     if (old != null) {
+      unawaited(_runCloudExclusive(_stopCloudLiveServices));
       unawaited(_realtimeSync?.dispose());
       _realtimeSync = null;
+      _cloudStarted = false;
       old.repo.dispose();
+      old.workoutSync.dispose();
       old.fidelity.dispose();
       old.sync.dispose();
       old.db.close();
@@ -432,9 +476,12 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     WidgetsBinding.instance.removeObserver(this);
     final s = _services;
     if (s != null) {
+      unawaited(_runCloudExclusive(_stopCloudLiveServices));
       unawaited(_realtimeSync?.dispose());
       _realtimeSync = null;
+      _cloudStarted = false;
       s.repo.dispose();
+      s.workoutSync.dispose();
       s.fidelity.dispose();
       s.sync.dispose();
       s.db.close();
@@ -483,50 +530,15 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       if (s == null) return;
       if (state == AppLifecycleState.resumed) {
         unawaited(_setKeepScreenOn(true));
-        if (_realtimeSync == null) {
-          final realtime = SupabaseRealtimeSyncService(
-            db: s.db,
-            sync: s.sync,
-            session: s.session,
-            onWorkoutActivity: _onWorkoutActivityEvent,
-          );
-          _realtimeSync = realtime;
-          unawaited(realtime.start());
-        } else {
-          unawaited(_realtimeSync!.reconnectAfterResume());
-        }
+        unawaited(_runCloudExclusive(() => _startCloudLiveServices(fromResume: true)));
         unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
         unawaited(s.repo.applyPremiumTierExpiryDowngrades());
-        SchedulerBinding.instance.scheduleTask(
-          () {
-            SupabaseAutoPushScheduler.scheduleAfterResume(
-              db: s.db,
-              sync: s.sync,
-              session: s.session,
-            );
-            SupabaseAutoPullScheduler.scheduleAfterResume(
-              db: s.db,
-              sync: s.sync,
-              session: s.session,
-              bypassMinInterval: true,
-            );
-            SupabaseAutoPullScheduler.startForegroundPolling(
-              db: s.db,
-              sync: s.sync,
-              session: s.session,
-            );
-          },
-          Priority.idle,
-          debugLabel: 'personalApp.supabaseAutoSyncAfterResume',
-        );
       } else if (state == AppLifecycleState.inactive ||
           state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
         unawaited(_setKeepScreenOn(false));
-        SupabaseAutoPushScheduler.cancelScheduledWork();
-        SupabaseAutoPullScheduler.cancelScheduledWork();
-        SupabaseAutoPullScheduler.stopForegroundPolling();
+        unawaited(_runCloudExclusive(_stopCloudLiveServices));
         // Mantém o Realtime ligado em pausa para o aluno continuar a “empurrar”
         // atualizações para personal/admin (SnackBar / notificação). O SO pode
         // suspender o socket; ao [resumed] fazemos [reconnectAfterResume].
@@ -572,6 +584,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         ChangeNotifierProvider<AppSession>.value(value: s.session),
         ChangeNotifierProvider<SupabaseSyncController>.value(value: s.sync),
         Provider<AppDataRepository>.value(value: s.repo),
+        ChangeNotifierProvider<WorkoutSyncService>.value(value: s.workoutSync),
         ChangeNotifierProvider<RestLiveActivityController>(
           create: (_) => RestLiveActivityController(),
         ),

@@ -56,6 +56,47 @@ bool _isDayWorkoutExerciseLineCompleted(DayWorkoutExerciseEntity e) {
   return performed.length >= e.sets;
 }
 
+int _performedSetCount(DayWorkoutExerciseEntity e) =>
+    DayWorkoutPerformedSetCodec.decode(e.performedSetsJson).length;
+
+String _dayWorkoutExerciseExecutionSlotKey(DayWorkoutExerciseEntity e) =>
+    '${e.sortOrder}::${e.exerciseId}';
+
+int _comparePreferredExerciseLine(
+  DayWorkoutExerciseEntity a,
+  DayWorkoutExerciseEntity b,
+) {
+  final ap = _performedSetCount(a);
+  final bp = _performedSetCount(b);
+  if (ap != bp) return ap.compareTo(bp);
+  if (a.revision != b.revision) return a.revision.compareTo(b.revision);
+  if (a.updatedAt != b.updatedAt) {
+    return a.updatedAt.compareTo(b.updatedAt);
+  }
+  return a.id.compareTo(b.id);
+}
+
+List<DayWorkoutExerciseEntity> _dedupeDayWorkoutExerciseLinesForDisplay(
+  List<DayWorkoutExerciseEntity> lines,
+) {
+  if (lines.length < 2) return lines;
+  final kept = <String, DayWorkoutExerciseEntity>{};
+  for (final line in lines) {
+    final key = _dayWorkoutExerciseExecutionSlotKey(line);
+    final prev = kept[key];
+    if (prev == null || _comparePreferredExerciseLine(line, prev) > 0) {
+      kept[key] = line;
+    }
+  }
+  final out = kept.values.toList()
+    ..sort((a, b) {
+      final byOrder = a.sortOrder.compareTo(b.sortOrder);
+      if (byOrder != 0) return byOrder;
+      return a.id.compareTo(b.id);
+    });
+  return out;
+}
+
 /// Soma dos scores e quantidade de linhas **concluídas** (séries registadas conforme planejado).
 ({double sumScores, int completedCount}) _completedExerciseScoreAgg(
   List<DayWorkoutExerciseEntity> exercises,
@@ -159,6 +200,69 @@ List<DayWorkoutExerciseEntity> _dayWorkoutExercisesInTemplateMultisetOrder(
   return out;
 }
 
+int _workoutStatusPriority(String status) {
+  switch (status.trim().toLowerCase()) {
+    case 'completed':
+      return 4;
+    case 'started':
+      return 3;
+    case 'programmed':
+      return 2;
+    case 'scheduled':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+List<DayWorkoutEntity> _dedupeDayWorkoutsByStudentAndDay(
+  List<DayWorkoutEntity> rows,
+) {
+  if (rows.length < 2) return rows;
+  final byKey = <String, DayWorkoutEntity>{};
+  for (final w in rows) {
+    final day = weekScheduleLocalCalendarDate(w.dayDate);
+    final key = '${w.studentId}|${day.toIso8601String()}';
+    final prev = byKey[key];
+    if (prev == null) {
+      byKey[key] = w;
+      continue;
+    }
+    final sp = _workoutStatusPriority(w.status);
+    final pp = _workoutStatusPriority(prev.status);
+    if (sp > pp) {
+      byKey[key] = w;
+      continue;
+    }
+    if (sp < pp) continue;
+    if (w.revision > prev.revision) {
+      byKey[key] = w;
+      continue;
+    }
+    if (w.revision < prev.revision) continue;
+    if (w.updatedAt.isAfter(prev.updatedAt)) {
+      byKey[key] = w;
+      continue;
+    }
+    if (w.updatedAt.isBefore(prev.updatedAt)) continue;
+    if (w.id.compareTo(prev.id) > 0) {
+      byKey[key] = w;
+    }
+  }
+  final out = byKey.values.toList()
+    ..sort((a, b) {
+      final ad = weekScheduleLocalCalendarDate(a.dayDate);
+      final bd = weekScheduleLocalCalendarDate(b.dayDate);
+      final byDay = ad.compareTo(bd);
+      if (byDay != 0) return byDay;
+      final byStatus =
+          _workoutStatusPriority(b.status) - _workoutStatusPriority(a.status);
+      if (byStatus != 0) return byStatus;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+  return out;
+}
+
 /// Repositório central: toda mutação relevante grava primeiro no SQLite e em seguida
 /// regista em [audit_logs] + [RemoteSyncService.enqueueAudit], que dispara o envio
 /// incremental ao Supabase em segundo plano ([SupabaseRemoteSyncService]).
@@ -192,6 +296,9 @@ class AppDataRepository {
   Stream<List<StudentEntity>>? _studentsRawBroadcast;
   List<StudentEntity>? _lastStudentsRaw;
 
+  Stream<List<MuscleGroupEntity>>? _muscleGroupsRawBroadcast;
+  List<MuscleGroupEntity>? _lastMuscleGroupsRaw;
+
   Stream<List<ExerciseEntity>>? _exercisesRawBroadcast;
   List<ExerciseEntity>? _lastExercisesRaw;
 
@@ -209,6 +316,7 @@ class AppDataRepository {
   final Map<String, Stream<List<DayWorkoutEntity>>>
   _studentWeekWorkoutsInnerByKey = {};
   final Map<String, List<DayWorkoutEntity>> _studentWeekWorkoutsLastByKey = {};
+  final Map<String, DateTime> _studentWeekWorkoutsLastCloudRefreshByKey = {};
 
   AppDatabase get db => _db;
   AppSession get session => _session;
@@ -220,8 +328,11 @@ class AppDataRepository {
     _weekScheduleLastByKey.clear();
     _studentWeekWorkoutsInnerByKey.clear();
     _studentWeekWorkoutsLastByKey.clear();
+    _studentWeekWorkoutsLastCloudRefreshByKey.clear();
     _studentsRawBroadcast = null;
     _lastStudentsRaw = null;
+    _muscleGroupsRawBroadcast = null;
+    _lastMuscleGroupsRaw = null;
     _exercisesRawBroadcast = null;
     _lastExercisesRaw = null;
     _workoutGroupsInnerBroadcast = null;
@@ -692,6 +803,9 @@ class AppDataRepository {
     )..where((s) => s.id.isIn(ids))).get();
     final byId = {for (final s in students) s.id: s};
     return raw.where((w) {
+      if (!_session.hasFullOrgAccess && w.status == 'cancelled') {
+        return false;
+      }
       final s = byId[w.studentId];
       if (s == null) return false;
       if (!_session.hasFullOrgAccess && !_session.canAccessStudent(s)) {
@@ -704,6 +818,13 @@ class AppDataRepository {
         workoutCalendarDay: cal,
       );
     }).toList();
+  }
+
+  Expression<bool> _dayWorkoutVisibleFilterForSession($DayWorkoutsTable t) {
+    if (_session.hasFullOrgAccess) {
+      return const Constant(true);
+    }
+    return _dayWorkoutNotCancelled(t);
   }
 
   Future<void> warmUp() async {
@@ -747,10 +868,57 @@ class AppDataRepository {
 
   int _nextRevision(int current) => current < 0 ? 1 : current + 1;
 
+  bool _isSqliteBusyError(Object e) {
+    final msg = e.toString().toLowerCase();
+    return msg.contains('database is locked') ||
+        msg.contains('database table is locked') ||
+        msg.contains('sqlite_busy') ||
+        msg.contains('busy');
+  }
+
+  Future<T> _runWithDbRetry<T>(
+    Future<T> Function() task, {
+    int maxAttempts = 4,
+    Duration baseDelay = const Duration(milliseconds: 90),
+  }) async {
+    Object? lastError;
+    for (var i = 0; i < maxAttempts; i++) {
+      try {
+        return await task();
+      } catch (e) {
+        lastError = e;
+        if (!_isSqliteBusyError(e) || i == maxAttempts - 1) rethrow;
+        await Future<void>.delayed(
+          Duration(milliseconds: baseDelay.inMilliseconds * (i + 1)),
+        );
+      }
+    }
+    throw lastError ?? Exception('Falha de escrita no banco local.');
+  }
+
   Stream<List<MuscleGroupEntity>> watchMuscleGroupsAlphabetical() {
-    return (_db.select(
-      _db.muscleGroups,
-    )..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
+    _muscleGroupsRawBroadcast ??=
+        (_db.select(
+          _db.muscleGroups,
+        )..orderBy([(t) => OrderingTerm.asc(t.name)])).watch().map((list) {
+          if (list.isEmpty) {
+            _triggerCatalogRefreshIfNeeded();
+            final last = _lastMuscleGroupsRaw;
+            if (last != null && last.isNotEmpty) {
+              return last;
+            }
+          }
+          _lastMuscleGroupsRaw = list;
+          return list;
+        }).asBroadcastStream();
+
+    return Stream.multi((controller) async {
+      final last = _lastMuscleGroupsRaw;
+      if (last != null) {
+        controller.add(last);
+      }
+      await controller.addStream(_muscleGroupsRawBroadcast!);
+    });
   }
 
   Future<void> upsertMuscleGroup({String? id, required String name}) async {
@@ -796,17 +964,18 @@ class AppDataRepository {
   Stream<List<ExerciseEntity>> _exercisesRawStreamWithReplay() {
     _exercisesRawBroadcast ??=
         (_db.select(
-              _db.exercises,
-            )..orderBy([(t) => OrderingTerm.asc(t.name)]))
-            .watch()
-            .map((list) {
-              if (list.isEmpty) {
-                _triggerCatalogRefreshIfNeeded();
-              }
-              _lastExercisesRaw = list;
-              return list;
-            })
-            .asBroadcastStream();
+          _db.exercises,
+        )..orderBy([(t) => OrderingTerm.asc(t.name)])).watch().map((list) {
+          if (list.isEmpty) {
+            _triggerCatalogRefreshIfNeeded();
+            final last = _lastExercisesRaw;
+            if (last != null && last.isNotEmpty) {
+              return last;
+            }
+          }
+          _lastExercisesRaw = list;
+          return list;
+        }).asBroadcastStream();
 
     return Stream.multi((controller) async {
       final last = _lastExercisesRaw;
@@ -838,10 +1007,17 @@ class AppDataRepository {
     _catalogRefreshInFlight = true;
     Future<void>.microtask(() async {
       try {
-        await refreshExercisesCatalogFromCloud().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () {},
-        );
+        await Future.wait([
+          refreshExercisesCatalogFromCloud().timeout(
+            const Duration(seconds: 4),
+            onTimeout: () {},
+          ),
+          _remote.refreshWorkoutGroupsCatalogFromCloud().timeout(
+            const Duration(seconds: 4),
+            onTimeout: () {},
+          ),
+        ]);
+        unawaited(_remote.recoverPendingWork());
       } finally {
         _catalogRefreshInFlight = false;
       }
@@ -1533,6 +1709,13 @@ class AppDataRepository {
               ..orderBy([(t) => OrderingTerm.asc(t.name)]))
             .watch()
             .map((list) {
+              if (list.isEmpty) {
+                _triggerCatalogRefreshIfNeeded();
+                final last = _lastWorkoutGroups;
+                if (last != null && last.isNotEmpty) {
+                  return last;
+                }
+              }
               _lastWorkoutGroups = list;
               return list;
             })
@@ -2708,7 +2891,7 @@ class AppDataRepository {
           (t) =>
               t.dayDate.isBiggerOrEqualValue(startPad) &
               t.dayDate.isSmallerThanValue(endPad) &
-              _dayWorkoutNotCancelled(t),
+              _dayWorkoutVisibleFilterForSession(t),
         ))
         .watch()
         .map(
@@ -2717,7 +2900,16 @@ class AppDataRepository {
             return !d.isBefore(start) && d.isBefore(end);
           }).toList(),
         )
-        .asyncMap(_visibleDayWorkouts);
+        .asyncMap(_visibleDayWorkouts)
+        .map(_dedupeDayWorkoutsByStudentAndDay)
+        .map((rows) {
+          for (final w in rows) {
+            if (w.status == 'started') {
+              unawaited(_remote.refreshDayWorkoutFromCloud(w.id));
+            }
+          }
+          return rows;
+        });
   }
 
   /// Snapshot imediato dos treinos do dia (mesma regra de dia civil local do calendário).
@@ -2731,14 +2923,15 @@ class AppDataRepository {
               (t) =>
                   t.dayDate.isBiggerOrEqualValue(startPad) &
                   t.dayDate.isSmallerThanValue(endPad) &
-                  _dayWorkoutNotCancelled(t),
+                  _dayWorkoutVisibleFilterForSession(t),
             ))
             .get();
     final filtered = rows.where((w) {
       final d = weekScheduleLocalCalendarDate(w.dayDate);
       return !d.isBefore(start) && d.isBefore(end);
     }).toList();
-    return _visibleDayWorkouts(filtered);
+    final visible = await _visibleDayWorkouts(filtered);
+    return _dedupeDayWorkoutsByStudentAndDay(visible);
   }
 
   /// Treinos visíveis no intervalo **[fromInclusive, toExclusive)** por **dia civil local**
@@ -2753,7 +2946,7 @@ class AppDataRepository {
           (t) =>
               t.dayDate.isBiggerOrEqualValue(startPad) &
               t.dayDate.isSmallerThanValue(endPad) &
-              _dayWorkoutNotCancelled(t),
+              _dayWorkoutVisibleFilterForSession(t),
         ))
         .watch()
         .map(
@@ -2762,7 +2955,8 @@ class AppDataRepository {
             return !d.isBefore(fromInclusive) && d.isBefore(toExclusive);
           }).toList(),
         )
-        .asyncMap(_visibleDayWorkouts);
+        .asyncMap(_visibleDayWorkouts)
+        .map(_dedupeDayWorkoutsByStudentAndDay);
   }
 
   // ——— Planejamento: semana (bloco + itens agendados) ———
@@ -2919,7 +3113,7 @@ class AppDataRepository {
               w.studentId.equals(studentId) &
               w.dayDate.isBiggerOrEqualValue(startPad) &
               w.dayDate.isSmallerThanValue(endPad) &
-              _dayWorkoutNotCancelled(w),
+              _dayWorkoutVisibleFilterForSession(w),
         )
         ..orderBy([(w) => OrderingTerm.asc(w.dayDate)]);
 
@@ -2932,8 +3126,37 @@ class AppDataRepository {
                 final d = weekScheduleLocalCalendarDate(w.dayDate);
                 return !d.isBefore(start) && d.isBefore(end);
               }).toList();
-              _studentWeekWorkoutsLastByKey[key] = filtered;
-              return filtered;
+              final deduped = _dedupeDayWorkoutsByStudentAndDay(filtered);
+              // Convergência iPhone <-> tablet: mesmo que um evento realtime
+              // falhe, o calendário força pull leve da semana visível.
+              final now = DateTime.now();
+              final last = _studentWeekWorkoutsLastCloudRefreshByKey[key];
+              if (last == null ||
+                  now.difference(last) > const Duration(seconds: 10)) {
+                _studentWeekWorkoutsLastCloudRefreshByKey[key] = now;
+                unawaited(
+                  _remote.refreshStudentWeekScheduleFromCloud(
+                    studentId,
+                    weekMonday: start,
+                  ),
+                );
+                // Reforço de convergência: também puxa concluídos recentes.
+                // Cobre casos em que o treino foi concluído em outro dispositivo
+                // e ainda não entrou no recorte semanal local por atraso/offset.
+                unawaited(
+                  _remote.refreshRecentCompletedHistoryForStudent(
+                    studentId,
+                    limit: 40,
+                  ),
+                );
+                for (final w in deduped) {
+                  if (w.status == 'started') {
+                    unawaited(_remote.refreshDayWorkoutFromCloud(w.id));
+                  }
+                }
+              }
+              _studentWeekWorkoutsLastByKey[key] = deduped;
+              return deduped;
             }),
           )
           .asBroadcastStream();
@@ -3851,7 +4074,10 @@ class AppDataRepository {
     final existing = await (_db.select(
       _db.dayWorkoutExercises,
     )..where((e) => e.dayWorkoutId.equals(dayWorkoutId))).get();
-    if (existing.isNotEmpty) return 0;
+    if (existing.isNotEmpty) {
+      await _normalizeDuplicateDayWorkoutExercises(dayWorkoutId);
+      return 0;
+    }
 
     final gid = w.sourceWorkoutGroupId?.trim();
     if (gid == null || gid.isEmpty) return 0;
@@ -4066,20 +4292,78 @@ class AppDataRepository {
     //
     // As operações mutáveis (append/edit/delete) continuam exigindo acesso via
     // [_requireAccessForDayWorkoutLineId] e [_requireAccessForDayWorkoutId].
+    unawaited(_normalizeDuplicateDayWorkoutExercises(dayWorkoutId));
     yield* (_db.select(_db.dayWorkoutExercises)
           ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-        .watch();
+        .watch()
+        .map(_dedupeDayWorkoutExerciseLinesForDisplay);
   }
 
   Future<List<DayWorkoutExerciseEntity>> getDayWorkoutExercises(
     String dayWorkoutId,
   ) async {
     await _requireAccessForDayWorkoutId(dayWorkoutId);
-    return (_db.select(_db.dayWorkoutExercises)
-          ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
-          ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-        .get();
+    await _normalizeDuplicateDayWorkoutExercises(dayWorkoutId);
+    final rows =
+        await (_db.select(_db.dayWorkoutExercises)
+              ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
+              ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
+            .get();
+    return _dedupeDayWorkoutExerciseLinesForDisplay(rows);
+  }
+
+  Future<int> _normalizeDuplicateDayWorkoutExercises(
+    String dayWorkoutId,
+  ) async {
+    final lines =
+        await (_db.select(_db.dayWorkoutExercises)
+              ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
+              ..orderBy([
+                (e) => OrderingTerm.asc(e.sortOrder),
+                (e) => OrderingTerm.desc(e.updatedAt),
+              ]))
+            .get();
+    if (lines.length < 2) return 0;
+
+    final bySlot = <String, List<DayWorkoutExerciseEntity>>{};
+    for (final line in lines) {
+      final key = _dayWorkoutExerciseExecutionSlotKey(line);
+      bySlot.putIfAbsent(key, () => <DayWorkoutExerciseEntity>[]).add(line);
+    }
+
+    final duplicateIdsToDelete = <String>[];
+    for (final bucket in bySlot.values) {
+      if (bucket.length < 2) continue;
+      final sorted = [...bucket]
+        ..sort((a, b) => _comparePreferredExerciseLine(b, a));
+      for (var i = 1; i < sorted.length; i++) {
+        duplicateIdsToDelete.add(sorted[i].id);
+      }
+    }
+    if (duplicateIdsToDelete.isEmpty) return 0;
+
+    await _db.transaction(() async {
+      for (final id in duplicateIdsToDelete) {
+        await (_db.delete(
+          _db.dayWorkoutExercises,
+        )..where((e) => e.id.equals(id))).go();
+      }
+      await (_db.update(_db.dayWorkouts)
+            ..where((w) => w.id.equals(dayWorkoutId)))
+          .write(DayWorkoutsCompanion(updatedAt: Value(DateTime.now())));
+    });
+
+    for (final id in duplicateIdsToDelete) {
+      await _audit('delete', 'day_workout_exercise', entityId: id);
+    }
+    await _audit(
+      'dedupe_day_workout_exercises',
+      'day_workout',
+      entityId: dayWorkoutId,
+      payload: {'deleted_duplicate_line_ids': duplicateIdsToDelete},
+    );
+    return duplicateIdsToDelete.length;
   }
 
   /// Busca uma linha de exercício por id para validação de persistência local
@@ -4210,19 +4494,20 @@ class AppDataRepository {
     if (current == null) return null;
 
     final cutoff = current.completedAt ?? DateTime.now();
-    final prev = await (_db.select(_db.dayWorkouts)
-          ..where(
-            (w) =>
-                w.studentId.equals(current.studentId) &
-                w.status.equals('completed') &
-                w.id.equals(dayWorkoutId).not() &
-                w.completedAt.isSmallerThanValue(cutoff),
-          )
-          ..orderBy([
-            (w) => OrderingTerm.desc(w.completedAt),
-            (w) => OrderingTerm.desc(w.dayDate),
-          ]))
-        .getSingleOrNull();
+    final prev =
+        await (_db.select(_db.dayWorkouts)
+              ..where(
+                (w) =>
+                    w.studentId.equals(current.studentId) &
+                    w.status.equals('completed') &
+                    w.id.equals(dayWorkoutId).not() &
+                    w.completedAt.isSmallerThanValue(cutoff),
+              )
+              ..orderBy([
+                (w) => OrderingTerm.desc(w.completedAt),
+                (w) => OrderingTerm.desc(w.dayDate),
+              ]))
+            .getSingleOrNull();
     return prev?.workoutScore;
   }
 
@@ -4340,22 +4625,18 @@ class AppDataRepository {
     String dayWorkoutExerciseLineId,
   ) async {
     await _requireAccessForDayWorkoutLineId(dayWorkoutExerciseLineId);
-    final curLine =
-        await (_db.select(
-              _db.dayWorkoutExercises,
-            )..where((e) => e.id.equals(dayWorkoutExerciseLineId)))
-            .getSingleOrNull();
+    final curLine = await (_db.select(
+      _db.dayWorkoutExercises,
+    )..where((e) => e.id.equals(dayWorkoutExerciseLineId))).getSingleOrNull();
     if (curLine == null) return null;
     final performed = DayWorkoutPerformedSetCodec.decode(
       curLine.performedSetsJson,
     );
     if (curLine.sets <= 0 || performed.length < curLine.sets) return null;
 
-    final exRow =
-        await (_db.select(
-              _db.exercises,
-            )..where((e) => e.id.equals(curLine.exerciseId)))
-            .getSingleOrNull();
+    final exRow = await (_db.select(
+      _db.exercises,
+    )..where((e) => e.id.equals(curLine.exerciseId))).getSingleOrNull();
     final exerciseName = (exRow?.name ?? '').trim().isEmpty
         ? 'Exercício'
         : exRow!.name.trim();
@@ -4364,8 +4645,7 @@ class AppDataRepository {
       loadKg: curLine.loadKg ?? 0,
       reps: curLine.reps,
     );
-    final prescribedSafe =
-        prescribedContrib <= 1e-9 ? 1e-6 : prescribedContrib;
+    final prescribedSafe = prescribedContrib <= 1e-9 ? 1e-6 : prescribedContrib;
 
     final curDw = await _dayWorkoutRow(curLine.dayWorkoutId);
     if (curDw == null) return null;
@@ -4418,16 +4698,15 @@ class AppDataRepository {
             loadKg: prevLine.loadKg ?? 0,
             reps: prevLine.reps,
           );
-    final prevPrescribedSafe =
-        prevPrescribedContrib <= 1e-9 ? 1e-6 : prevPrescribedContrib;
+    final prevPrescribedSafe = prevPrescribedContrib <= 1e-9
+        ? 1e-6
+        : prevPrescribedContrib;
 
     double? prevTotal;
     Duration? prevWall;
     double? previousKcal;
     if (prevLine != null && prevPerformed.isNotEmpty) {
-      prevTotal = DayWorkoutPerformedSetCodec.totalExerciseScore(
-        prevPerformed,
-      );
+      prevTotal = DayWorkoutPerformedSetCodec.totalExerciseScore(prevPerformed);
       prevWall = _wallSpanPerformed(prevPerformed);
       final pk = prevDw?.watchCaloriesKcal;
       if (pk != null && pk > 0) {
@@ -4470,13 +4749,13 @@ class AppDataRepository {
         }
       }
 
-      final int? restAfterCur =
-          i < performed.length - 1 ? performed[i].restCountdownElapsedMs : null;
+      final int? restAfterCur = i < performed.length - 1
+          ? performed[i].restCountdownElapsedMs
+          : null;
       final int? restAfterPrev = i < prevPerformed.length - 1
           ? prevPerformed[i].restCountdownElapsedMs
           : null;
-      final int? restPrescribed =
-          i < performed.length - 1
+      final int? restPrescribed = i < performed.length - 1
           ? (performed[i].restPrescribedSec ?? curLine.restBetweenSetsSec)
           : null;
 
@@ -4725,7 +5004,7 @@ class AppDataRepository {
     _syncTrace(
       'append_set/start line=$lineId reps=$reps load=${loadKg ?? 'null'}',
     );
-    muteDayWorkoutCloudPullFor(const Duration(seconds: 3));
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
     await _requireAccessForDayWorkoutLineId(lineId);
     final row = await (_db.select(
       _db.dayWorkoutExercises,
@@ -4760,86 +5039,181 @@ class AppDataRepository {
     final dayWorkoutId = row.dayWorkoutId;
     final now = DateTime.now();
     final deviceId = await _syncDeviceId();
-    final workoutBefore = await _dayWorkoutRow(dayWorkoutId);
+    var workoutBefore = await _dayWorkoutRow(dayWorkoutId);
+    if (workoutBefore == null) {
+      // Evita falso positivo de gravação em linha órfã (sem treino pai local):
+      // nesses casos a série podia "salvar" e depois sumir por descarte na fila.
+      await _remote.refreshDayWorkoutFromCloud(dayWorkoutId);
+      workoutBefore = await _dayWorkoutRow(dayWorkoutId);
+      if (workoutBefore == null) {
+        throw ArgumentError(
+          'Treino indisponível para este exercício. Reabra o treino e tente novamente.',
+        );
+      }
+    }
     final appendAuditId = _uuid.v4();
     final touchAuditId = _uuid.v4();
+    final setEventId = _uuid.v4();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final createdByRole = _session.isStudent ? 'student' : 'personal';
 
-    await _db.transaction(() async {
-      await (_db.update(
-        _db.dayWorkoutExercises,
-      )..where((x) => x.id.equals(lineId))).write(
-        DayWorkoutExercisesCompanion(
-          performedSetsJson: Value(DayWorkoutPerformedSetCodec.encode(next)),
-          exerciseScore: Value(exerciseScore),
-          loadKg: Value(newLoadKg),
-          updatedAt: Value(now),
-          revision: Value(_nextRevision(row.revision)),
-          lastModifiedByDeviceId: Value(deviceId),
-          syncStatus: const Value('pending'),
-        ),
-      );
-      if (workoutBefore != null) {
-        await (_db.update(_db.dayWorkouts)
-              ..where((w) => w.id.equals(dayWorkoutId)))
-            .write(
-              DayWorkoutsCompanion(
-                updatedAt: Value(now),
-                revision: Value(_nextRevision(workoutBefore.revision)),
-                lastModifiedByDeviceId: Value(deviceId),
-                syncStatus: const Value('pending'),
+    await _runWithDbRetry(() async {
+      await _db.transaction(() async {
+        await (_db.update(
+          _db.dayWorkoutExercises,
+        )..where((x) => x.id.equals(lineId))).write(
+          DayWorkoutExercisesCompanion(
+            performedSetsJson: Value(DayWorkoutPerformedSetCodec.encode(next)),
+            exerciseScore: Value(exerciseScore),
+            loadKg: Value(newLoadKg),
+            updatedAt: Value(now),
+            revision: Value(_nextRevision(row.revision)),
+            lastModifiedByDeviceId: Value(deviceId),
+            syncStatus: const Value('pending'),
+          ),
+        );
+        if (workoutBefore != null) {
+          await (_db.update(
+            _db.dayWorkouts,
+          )..where((w) => w.id.equals(dayWorkoutId))).write(
+            DayWorkoutsCompanion(
+              updatedAt: Value(now),
+              revision: Value(_nextRevision(workoutBefore.revision)),
+              lastModifiedByDeviceId: Value(deviceId),
+              syncStatus: const Value('pending'),
+            ),
+          );
+        }
+        await _db
+            .into(_db.auditLogs)
+            .insert(
+              AuditLogsCompanion.insert(
+                id: appendAuditId,
+                action: 'append_set',
+                entityType: 'day_workout_exercise',
+                entityId: Value(lineId),
               ),
             );
-      }
-      await _db
-          .into(_db.auditLogs)
-          .insert(
-            AuditLogsCompanion.insert(
-              id: appendAuditId,
-              action: 'append_set',
-              entityType: 'day_workout_exercise',
-              entityId: Value(lineId),
-            ),
-          );
-      await _db
-          .into(_db.auditLogs)
-          .insert(
-            AuditLogsCompanion.insert(
-              id: touchAuditId,
-              action: 'touch',
-              entityType: 'day_workout',
-              entityId: Value(dayWorkoutId),
-              payloadJson: Value(jsonEncode({'reason': 'append_set'})),
-            ),
-          );
+        await _db
+            .into(_db.auditLogs)
+            .insert(
+              AuditLogsCompanion.insert(
+                id: touchAuditId,
+                action: 'touch',
+                entityType: 'day_workout',
+                entityId: Value(dayWorkoutId),
+                payloadJson: Value(jsonEncode({'reason': 'append_set'})),
+              ),
+            );
+        await _db.customStatement(
+          'INSERT OR REPLACE INTO day_workout_set_events_local '
+          '(event_id, day_workout_id, day_workout_exercise_id, student_id, reps, load_kg, '
+          'logged_at_ms, created_by_role, created_at_ms, sync_status) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          <Object?>[
+            setEventId,
+            dayWorkoutId,
+            lineId,
+            workoutBefore?.studentId ?? '',
+            reps,
+            loadKg,
+            nowMs,
+            createdByRole,
+            nowMs,
+            'pending',
+          ],
+        );
+        await _enqueueSyncOutbox(
+          entityId: setEventId,
+          op: 'upsert_set_event',
+          dayWorkoutId: dayWorkoutId,
+          dayWorkoutExerciseId: lineId,
+          payload: <String, dynamic>{
+            'event_id': setEventId,
+            'day_workout_id': dayWorkoutId,
+            'day_workout_exercise_id': lineId,
+            'student_id': workoutBefore?.studentId ?? '',
+            'reps': reps,
+            'load_kg': loadKg,
+            'logged_at_ms': nowMs,
+            'created_by_role': createdByRole,
+          },
+        );
+      });
     });
 
     _syncTrace(
       'append_set/local_commit_ok line=$lineId dayWorkout=$dayWorkoutId sets_now=${next.length}/${row.sets} score=$exerciseScore',
     );
 
-    await _refreshWorkoutScoreForDayWorkoutAtNow(dayWorkoutId);
-
-    unawaited(
-      _remote.enqueueAudit(
+    // Primeiro garante enqueue crítico (série + touch do treino) para não perder
+    // sincronização entre dispositivos caso algum passo derivado falhe depois.
+    var appendEnqueued = false;
+    var touchEnqueued = false;
+    try {
+      await _remote.enqueueAudit(
         auditLogId: appendAuditId,
         action: 'append_set',
         entityType: 'day_workout_exercise',
         entityId: lineId,
-      ),
-    );
-    unawaited(
-      _remote.enqueueAudit(
+      );
+      appendEnqueued = true;
+    } catch (e, st) {
+      developer.log(
+        'append_set enqueue failed (line)',
+        name: 'sync.trace',
+        error: e,
+        stackTrace: st,
+      );
+    }
+    try {
+      await _remote.enqueueAudit(
         auditLogId: touchAuditId,
         action: 'touch',
         entityType: 'day_workout',
         entityId: dayWorkoutId,
         payload: {'reason': 'append_set'},
-      ),
-    );
-    unawaited(_remote.recoverPendingWork());
+      );
+      touchEnqueued = true;
+    } catch (e, st) {
+      developer.log(
+        'append_set enqueue failed (touch)',
+        name: 'sync.trace',
+        error: e,
+        stackTrace: st,
+      );
+    }
+    try {
+      // Garantia forte: mesmo que o enqueue imediato falhe por condição transitória,
+      // recupera auditorias pendentes e volta a enfileirar no mesmo fluxo.
+      await _remote.recoverPendingWork();
+    } catch (e, st) {
+      developer.log(
+        'append_set recoverPendingWork failed',
+        name: 'sync.trace',
+        error: e,
+        stackTrace: st,
+      );
+    }
     _syncTrace(
-      'append_set/enqueued line=$lineId audit_append=$appendAuditId audit_touch=$touchAuditId',
+      'append_set/enqueued line=$lineId audit_append=$appendAuditId '
+      'ok_append=$appendEnqueued audit_touch=$touchAuditId ok_touch=$touchEnqueued',
     );
+    // Recalcula score de treino após garantir enqueue; falha aqui não pode
+    // impedir propagação da série para nuvem/outros dispositivos.
+    try {
+      await _refreshWorkoutScoreForDayWorkoutAtNow(dayWorkoutId);
+    } catch (e, st) {
+      _syncTrace(
+        'append_set/score_refresh_non_fatal line=$lineId dayWorkout=$dayWorkoutId error=$e',
+      );
+      developer.log(
+        'append_set score refresh failed',
+        name: 'sync.trace',
+        error: e,
+        stackTrace: st,
+      );
+    }
   }
 
   /// Grava tempos de descanso na **última** série da linha (após modal entre séries).
@@ -4874,6 +5248,49 @@ class AppDataRepository {
       next,
       syncParentWorkoutScore: false,
     );
+    final setEventId = await _resolveLastActiveSetEventId(lineId);
+    if (setEventId != null) {
+      final restEventId = _uuid.v4();
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final role = _session.isStudent ? 'student' : 'personal';
+      await _db.customStatement(
+        'INSERT OR REPLACE INTO day_workout_set_rest_events_local '
+        '(rest_event_id, set_event_id, day_workout_id, day_workout_exercise_id, '
+        'rest_prescribed_sec, rest_countdown_elapsed_ms, post_rest_modal_ms, '
+        'recorded_at_ms, recorded_by_role, created_at_ms, sync_status) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        <Object?>[
+          restEventId,
+          setEventId,
+          row.dayWorkoutId,
+          lineId,
+          prescribedSec,
+          countdownElapsedMs,
+          postPhaseMs,
+          nowMs,
+          role,
+          nowMs,
+          'pending',
+        ],
+      );
+      await _enqueueSyncOutbox(
+        entityId: restEventId,
+        op: 'upsert_rest_event',
+        dayWorkoutId: row.dayWorkoutId,
+        dayWorkoutExerciseId: lineId,
+        payload: <String, dynamic>{
+          'rest_event_id': restEventId,
+          'set_event_id': setEventId,
+          'day_workout_id': row.dayWorkoutId,
+          'day_workout_exercise_id': lineId,
+          'rest_prescribed_sec': prescribedSec,
+          'rest_countdown_elapsed_ms': countdownElapsedMs,
+          'post_rest_modal_ms': postPhaseMs,
+          'recorded_at_ms': nowMs,
+          'recorded_by_role': role,
+        },
+      );
+    }
     await _audit('patch_set_rest', 'day_workout_exercise', entityId: lineId);
     await _touchDayWorkoutAfterLineMutation(
       row.dayWorkoutId,
@@ -4893,19 +5310,21 @@ class AppDataRepository {
     final newLoadKg = next.isEmpty
         ? row.loadKg
         : (next.last.loadKg ?? row.loadKg);
-    await (_db.update(
-      _db.dayWorkoutExercises,
-    )..where((x) => x.id.equals(lineId))).write(
-      DayWorkoutExercisesCompanion(
-        performedSetsJson: Value(DayWorkoutPerformedSetCodec.encode(next)),
-        exerciseScore: Value(exerciseScore),
-        loadKg: Value(newLoadKg),
-        updatedAt: Value(DateTime.now()),
-        revision: Value(_nextRevision(row.revision)),
-        lastModifiedByDeviceId: Value(deviceId),
-        syncStatus: const Value('pending'),
-      ),
-    );
+    await _runWithDbRetry(() async {
+      await (_db.update(
+        _db.dayWorkoutExercises,
+      )..where((x) => x.id.equals(lineId))).write(
+        DayWorkoutExercisesCompanion(
+          performedSetsJson: Value(DayWorkoutPerformedSetCodec.encode(next)),
+          exerciseScore: Value(exerciseScore),
+          loadKg: Value(newLoadKg),
+          updatedAt: Value(DateTime.now()),
+          revision: Value(_nextRevision(row.revision)),
+          lastModifiedByDeviceId: Value(deviceId),
+          syncStatus: const Value('pending'),
+        ),
+      );
+    });
     if (syncParentWorkoutScore) {
       await _refreshWorkoutScoreForDayWorkoutAtNow(row.dayWorkoutId);
     }
@@ -4918,15 +5337,18 @@ class AppDataRepository {
     final now = DateTime.now();
     final deviceId = await _syncDeviceId();
     final current = await _dayWorkoutRow(dayWorkoutId);
-    await (_db.update(_db.dayWorkouts)..where((w) => w.id.equals(dayWorkoutId)))
-        .write(
-          DayWorkoutsCompanion(
-            updatedAt: Value(now),
-            revision: Value(_nextRevision(current?.revision ?? 0)),
-            lastModifiedByDeviceId: Value(deviceId),
-            syncStatus: const Value('pending'),
-          ),
-        );
+    await _runWithDbRetry(() async {
+      await (_db.update(
+        _db.dayWorkouts,
+      )..where((w) => w.id.equals(dayWorkoutId))).write(
+        DayWorkoutsCompanion(
+          updatedAt: Value(now),
+          revision: Value(_nextRevision(current?.revision ?? 0)),
+          lastModifiedByDeviceId: Value(deviceId),
+          syncStatus: const Value('pending'),
+        ),
+      );
+    });
     await _audit(
       'touch',
       'day_workout',
@@ -4941,6 +5363,7 @@ class AppDataRepository {
     required String lineId,
     required int performedIndex,
   }) async {
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
     await _requireAccessForDayWorkoutLineId(lineId);
     final row = await (_db.select(
       _db.dayWorkoutExercises,
@@ -4953,13 +5376,113 @@ class AppDataRepository {
       throw ArgumentError('Índice de série inválido.');
     }
     final next = [...existing]..removeAt(performedIndex);
+    final targetEventId = await _resolveActiveSetEventIdAtIndex(
+      lineId: lineId,
+      index: performedIndex,
+    );
     await _persistDayWorkoutPerformedSets(lineId, row, next);
+    if (targetEventId != null) {
+      final tombstoneId = _uuid.v4();
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final role = _session.isStudent ? 'student' : 'personal';
+      await _db.customStatement(
+        'INSERT OR REPLACE INTO day_workout_set_event_tombstones_local '
+        '(tombstone_id, event_id, day_workout_id, day_workout_exercise_id, '
+        'deleted_at_ms, deleted_by_role, created_at_ms, sync_status) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        <Object?>[
+          tombstoneId,
+          targetEventId,
+          row.dayWorkoutId,
+          lineId,
+          nowMs,
+          role,
+          nowMs,
+          'pending',
+        ],
+      );
+      await _enqueueSyncOutbox(
+        entityId: tombstoneId,
+        op: 'insert_set_tombstone',
+        dayWorkoutId: row.dayWorkoutId,
+        dayWorkoutExerciseId: lineId,
+        payload: <String, dynamic>{
+          'tombstone_id': tombstoneId,
+          'event_id': targetEventId,
+          'day_workout_id': row.dayWorkoutId,
+          'day_workout_exercise_id': lineId,
+          'deleted_at_ms': nowMs,
+          'deleted_by_role': role,
+        },
+      );
+    }
     await _audit('remove_set', 'day_workout_exercise', entityId: lineId);
     await _touchDayWorkoutAfterLineMutation(
       row.dayWorkoutId,
       reason: 'remove_set',
     );
     unawaited(_remote.recoverPendingWork());
+  }
+
+  Future<void> _enqueueSyncOutbox({
+    required String entityId,
+    required String op,
+    required String dayWorkoutId,
+    required String dayWorkoutExerciseId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.customStatement(
+      'INSERT OR REPLACE INTO sync_outbox '
+      '(entity_id, op, day_workout_id, day_workout_exercise_id, payload_json, '
+      'status, attempts, next_retry_at_ms, last_error, created_at_ms, updated_at_ms) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '
+      'COALESCE((SELECT created_at_ms FROM sync_outbox WHERE entity_id = ?), ?), ?)',
+      <Object?>[
+        entityId,
+        op,
+        dayWorkoutId,
+        dayWorkoutExerciseId,
+        jsonEncode(payload),
+        'pending',
+        0,
+        null,
+        null,
+        entityId,
+        nowMs,
+        nowMs,
+      ],
+    );
+  }
+
+  Future<String?> _resolveLastActiveSetEventId(String lineId) async {
+    final rows = await _db.customSelect(
+      'SELECT e.event_id '
+      'FROM day_workout_set_events_local e '
+      'LEFT JOIN day_workout_set_event_tombstones_local t ON t.event_id = e.event_id '
+      'WHERE e.day_workout_exercise_id = ? AND t.event_id IS NULL '
+      'ORDER BY e.logged_at_ms DESC, e.created_at_ms DESC, e.event_id DESC '
+      'LIMIT 1',
+      variables: <Variable<Object>>[Variable<String>(lineId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.read<String>('event_id');
+  }
+
+  Future<String?> _resolveActiveSetEventIdAtIndex({
+    required String lineId,
+    required int index,
+  }) async {
+    final rows = await _db.customSelect(
+      'SELECT e.event_id '
+      'FROM day_workout_set_events_local e '
+      'LEFT JOIN day_workout_set_event_tombstones_local t ON t.event_id = e.event_id '
+      'WHERE e.day_workout_exercise_id = ? AND t.event_id IS NULL '
+      'ORDER BY e.logged_at_ms ASC, e.created_at_ms ASC, e.event_id ASC',
+      variables: <Variable<Object>>[Variable<String>(lineId)],
+    ).get();
+    if (index < 0 || index >= rows.length) return null;
+    return rows[index].read<String>('event_id');
   }
 
   /// Atualiza carga/reps da série executada no índice [performedIndex] (0-based).
@@ -4969,6 +5492,7 @@ class AppDataRepository {
     double? loadKg,
     required int reps,
   }) async {
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
     if (reps < 1) {
       throw ArgumentError('Repetições deve ser ≥ 1.');
     }
@@ -5288,6 +5812,7 @@ class AppDataRepository {
       entityId: id,
       payload: {'workoutScore': ws, 'activeSeconds': w.activeDurationSeconds},
     );
+    unawaited(_remote.recoverPendingWork());
   }
 
   /// Opcional: calorias (kcal) e FC média (bpm) do relógio após concluir o treino.
