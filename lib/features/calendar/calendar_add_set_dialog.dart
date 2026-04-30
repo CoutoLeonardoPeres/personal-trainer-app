@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../core/widgets/inter_set_rest_modal.dart';
+import '../../core/preferences/workout_runtime_prefs.dart';
 import '../../data/local/app_database.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
@@ -25,7 +26,7 @@ Future<void> showCalendarAddSetDialog({
   bool requireAllMetricFields = false,
 }) {
   // Evita pull da nuvem a competir com o commit da série (loading infinito no modal).
-  repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 40));
+  repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -51,7 +52,7 @@ Future<void> showCalendarEditPerformedSetDialog({
   required String exerciseName,
   bool requireAllMetricFields = false,
 }) {
-  repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 40));
+  repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -676,8 +677,9 @@ class _AddSetDialogState extends State<_AddSetDialog> {
       }
     }
 
-    final performedBefore =
-        DayWorkoutPerformedSetCodec.decode(widget.line.performedSetsJson).length;
+    final performedBefore = DayWorkoutPerformedSetCodec.decode(
+      widget.line.performedSetsJson,
+    ).length;
     final willCompleteExercise =
         widget.line.sets > 0 && performedBefore + 1 >= widget.line.sets;
 
@@ -687,6 +689,8 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final planned = widget.line.sets;
     final restSec = widget.line.restBetweenSetsSec;
     var saved = false;
+    var appendCompleted = false;
+    Object? saveError;
     try {
       debugPrint(
         '[add_set] submit start line=$lineId reps=$reps load=${loadKg?.toString() ?? 'null'}',
@@ -696,32 +700,59 @@ class _AddSetDialogState extends State<_AddSetDialog> {
         loadKg: loadKg,
         reps: reps,
       );
+      appendCompleted = true;
       debugPrint('[add_set] submit local_saved line=$lineId');
+    } on ArgumentError catch (e) {
+      saveError = e;
+      debugPrint('[add_set] submit argument_error line=$lineId error=$e');
+    } catch (e) {
+      saveError = e;
+      debugPrint('[add_set] submit error line=$lineId error=$e');
+    }
+
+    final committed = appendCompleted
+        ? true
+        : await _waitForLocalSetCommit(
+            lineId: lineId,
+            expectedMinSets: performedBefore + 1,
+          );
+    if (committed || appendCompleted) {
       saved = true;
       if (mounted) {
         final messenger = ScaffoldMessenger.of(context);
         Navigator.of(context).pop();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Série registrada.')),
-        );
+        if (appendCompleted) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Série registrada.')),
+          );
+        } else {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Registrado localmente; pendente de sincronização.'),
+            ),
+          );
+        }
       }
-    } on ArgumentError catch (e) {
-      debugPrint('[add_set] submit argument_error line=$lineId error=$e');
-      if (mounted) {
+    } else if (mounted) {
+      if (saveError case final ArgumentError ae) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? 'Não foi possível salvar.')),
+          SnackBar(content: Text(ae.message ?? 'Não foi possível salvar.')),
         );
-      }
-    } catch (e) {
-      debugPrint('[add_set] submit error line=$lineId error=$e');
-      if (mounted) {
+      } else if (saveError != null) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_friendlySaveError(e))));
+        ).showSnackBar(SnackBar(content: Text(_friendlySaveError(saveError))));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'A série não foi gravada localmente. Tente confirmar novamente.',
+            ),
+          ),
+        );
       }
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
+    if (mounted) setState(() => _saving = false);
 
     if (!saved) return;
     final restCtx = widget.restFlowContext;
@@ -752,7 +783,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     required int reps,
   }) async {
     Object? lastError;
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < 3; i++) {
       try {
         debugPrint('[add_set] append try=${i + 1} line=$lineId');
         await widget.repo
@@ -760,25 +791,53 @@ class _AddSetDialogState extends State<_AddSetDialog> {
               lineId: lineId,
               loadKg: loadKg,
               reps: reps,
-            )
-            .timeout(const Duration(seconds: 12));
+            );
         debugPrint('[add_set] append ok line=$lineId try=${i + 1}');
         return;
       } catch (e) {
         lastError = e;
         debugPrint('[add_set] append fail line=$lineId try=${i + 1} error=$e');
-        final msg = e.toString().toLowerCase();
-        final retryable =
-            msg.contains('database is locked') ||
-            msg.contains('database table is locked') ||
-            msg.contains('sqlite_busy') ||
-            msg.contains('busy') ||
-            msg.contains('timeout');
-        if (!retryable || i == 3) rethrow;
+        final retryable = _isRetryableSetSaveError(e);
+        if (!retryable || i == 2) rethrow;
         await Future<void>.delayed(Duration(milliseconds: 150 * (i + 1)));
       }
     }
     throw lastError ?? Exception('Falha ao registrar série.');
+  }
+
+  bool _isRetryableSetSaveError(Object e) {
+    if (e is TimeoutException) return true;
+    final msg = e.toString().toLowerCase();
+    return msg.contains('database is locked') ||
+        msg.contains('database table is locked') ||
+        msg.contains('sqlite_busy') ||
+        msg.contains('busy') ||
+        msg.contains('timeout');
+  }
+
+  Future<bool> _waitForLocalSetCommit({
+    required String lineId,
+    required int expectedMinSets,
+    Duration timeout = const Duration(milliseconds: 3200),
+  }) async {
+    final startedAt = DateTime.now();
+    while (DateTime.now().difference(startedAt) < timeout) {
+      try {
+        final row = await widget.repo
+            .getDayWorkoutExerciseById(lineId)
+            .timeout(const Duration(milliseconds: 500));
+        if (row != null) {
+          final sets = DayWorkoutPerformedSetCodec.decode(
+            row.performedSetsJson,
+          ).length;
+          if (sets >= expectedMinSets) return true;
+        }
+      } catch (_) {
+        // best effort, tenta novamente dentro da janela.
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    return false;
   }
 
   String _friendlySaveError(Object e) {
@@ -805,6 +864,9 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     required int restSec,
   }) async {
     try {
+      final restIntervalEnabled =
+          await WorkoutRuntimePrefs.isRestIntervalEnabled();
+      if (!restIntervalEnabled) return;
       final lines = await repo.getDayWorkoutExercises(dayWorkoutId);
       DayWorkoutExerciseEntity? current;
       for (final l in lines) {
