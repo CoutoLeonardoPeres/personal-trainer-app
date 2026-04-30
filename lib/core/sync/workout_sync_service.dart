@@ -9,11 +9,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase/supabase_auth_service.dart';
 import '../supabase/supabase_bootstrap.dart';
 import '../../data/local/app_database.dart';
+import '../../data/repositories/app_data_repository.dart';
 
 class WorkoutSyncService extends ChangeNotifier {
-  WorkoutSyncService(this._db);
+  WorkoutSyncService(this._db, this._repo);
 
   final AppDatabase _db;
+  final AppDataRepository _repo;
   Timer? _timer;
   StreamSubscription<AuthState>? _authSub;
   bool _running = false;
@@ -145,5 +147,44 @@ class WorkoutSyncService extends ChangeNotifier {
     } finally {
       _syncing = false;
     }
+  }
+
+  Future<void> logSet({
+    required String lineId,
+    required int reps,
+    double? loadKg,
+  }) async {
+    await _repo.appendDayWorkoutExercisePerformedSet(
+      lineId: lineId,
+      loadKg: loadKg,
+      reps: reps,
+    );
+    unawaited(drainOutbox());
+  }
+
+  Future<void> logRestTelemetryForLastSet({
+    required String lineId,
+    required int prescribedSec,
+    required int countdownElapsedMs,
+    required int postPhaseMs,
+  }) async {
+    await _repo.patchLastPerformedSetRestTelemetry(
+      lineId: lineId,
+      prescribedSec: prescribedSec,
+      countdownElapsedMs: countdownElapsedMs,
+      postPhaseMs: postPhaseMs,
+    );
+    unawaited(drainOutbox());
+  }
+
+  Future<void> deleteSet({
+    required String lineId,
+    required int performedIndex,
+  }) async {
+    await _repo.removeDayWorkoutExercisePerformedSetAt(
+      lineId: lineId,
+      performedIndex: performedIndex,
+    );
+    unawaited(drainOutbox());
   }
 }

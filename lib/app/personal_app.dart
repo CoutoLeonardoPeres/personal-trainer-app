@@ -185,7 +185,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       final remoteSync = SupabaseRemoteSyncService(db, sync);
       final repo = AppDataRepository(db, session, remoteSync: remoteSync);
       final deepLink = WorkoutLiveDeepLinkController();
-      final workoutSync = WorkoutSyncService(db);
+      final workoutSync = WorkoutSyncService(db, repo);
       final bundle = _LoadedServices(
         db: db,
         session: session,

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/sync/workout_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../core/widgets/inter_set_rest_modal.dart';
@@ -786,12 +788,8 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     for (var i = 0; i < 3; i++) {
       try {
         debugPrint('[add_set] append try=${i + 1} line=$lineId');
-        await widget.repo
-            .appendDayWorkoutExercisePerformedSet(
-              lineId: lineId,
-              loadKg: loadKg,
-              reps: reps,
-            );
+        final sync = context.read<WorkoutSyncService>();
+        await sync.logSet(lineId: lineId, loadKg: loadKg, reps: reps);
         debugPrint('[add_set] append ok line=$lineId try=${i + 1}');
         return;
       } catch (e) {
@@ -889,7 +887,8 @@ class _AddSetDialogState extends State<_AddSetDialog> {
           prescribedSec: restSec,
         );
         if (metrics != null && restFlowContext.mounted) {
-          await repo.patchLastPerformedSetRestTelemetry(
+          final sync = restFlowContext.read<WorkoutSyncService>();
+          await sync.logRestTelemetryForLastSet(
             lineId: lineId,
             prescribedSec: metrics.prescribedSec,
             countdownElapsedMs: metrics.countdownElapsedMs,
