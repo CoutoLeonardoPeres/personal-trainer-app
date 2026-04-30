@@ -430,7 +430,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 28;
+  int get schemaVersion => 29;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -457,6 +457,7 @@ class AppDatabase extends _$AppDatabase {
         'CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_dedupe_key_uidx '
         'ON sync_queue(dedupe_key) WHERE dedupe_key IS NOT NULL',
       );
+      await _createWorkoutSyncLocalTables();
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
@@ -655,11 +656,92 @@ class AppDatabase extends _$AppDatabase {
           'ON sync_queue(dedupe_key) WHERE dedupe_key IS NOT NULL',
         );
       }
+      if (from < 29) {
+        await _createWorkoutSyncLocalTables();
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON;');
     },
   );
+
+  Future<void> _createWorkoutSyncLocalTables() async {
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS day_workout_set_events_local ('
+      'event_id TEXT PRIMARY KEY,'
+      'day_workout_id TEXT NOT NULL,'
+      'day_workout_exercise_id TEXT NOT NULL,'
+      'student_id TEXT NOT NULL,'
+      'reps INTEGER NOT NULL,'
+      'load_kg REAL NULL,'
+      'logged_at_ms INTEGER NOT NULL,'
+      'created_by_user_id TEXT NULL,'
+      'created_by_role TEXT NOT NULL,'
+      'created_at_ms INTEGER NOT NULL,'
+      'sync_status TEXT NOT NULL DEFAULT \'pending\''
+      ')',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS day_workout_set_rest_events_local ('
+      'rest_event_id TEXT PRIMARY KEY,'
+      'set_event_id TEXT NOT NULL,'
+      'day_workout_id TEXT NOT NULL,'
+      'day_workout_exercise_id TEXT NOT NULL,'
+      'rest_prescribed_sec INTEGER NULL,'
+      'rest_countdown_elapsed_ms INTEGER NULL,'
+      'post_rest_modal_ms INTEGER NULL,'
+      'recorded_at_ms INTEGER NOT NULL,'
+      'recorded_by_user_id TEXT NULL,'
+      'recorded_by_role TEXT NOT NULL,'
+      'created_at_ms INTEGER NOT NULL,'
+      'sync_status TEXT NOT NULL DEFAULT \'pending\''
+      ')',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS day_workout_set_event_tombstones_local ('
+      'tombstone_id TEXT PRIMARY KEY,'
+      'event_id TEXT NOT NULL,'
+      'day_workout_id TEXT NOT NULL,'
+      'day_workout_exercise_id TEXT NOT NULL,'
+      'deleted_at_ms INTEGER NOT NULL,'
+      'deleted_by_user_id TEXT NULL,'
+      'deleted_by_role TEXT NOT NULL,'
+      'created_at_ms INTEGER NOT NULL,'
+      'sync_status TEXT NOT NULL DEFAULT \'pending\''
+      ')',
+    );
+    await customStatement(
+      'CREATE TABLE IF NOT EXISTS sync_outbox ('
+      'entity_id TEXT PRIMARY KEY,'
+      'op TEXT NOT NULL,'
+      'day_workout_id TEXT NULL,'
+      'day_workout_exercise_id TEXT NULL,'
+      'payload_json TEXT NOT NULL,'
+      'status TEXT NOT NULL DEFAULT \'pending\','
+      'attempts INTEGER NOT NULL DEFAULT 0,'
+      'next_retry_at_ms INTEGER NULL,'
+      'last_error TEXT NULL,'
+      'created_at_ms INTEGER NOT NULL,'
+      'updated_at_ms INTEGER NOT NULL'
+      ')',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_set_events_local_workout '
+      'ON day_workout_set_events_local(day_workout_id, logged_at_ms)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_rest_events_local_workout '
+      'ON day_workout_set_rest_events_local(day_workout_id, recorded_at_ms)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tombstones_local_workout '
+      'ON day_workout_set_event_tombstones_local(day_workout_id, deleted_at_ms)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sync_outbox_status_retry '
+      'ON sync_outbox(status, next_retry_at_ms, created_at_ms)',
+    );
+  }
 
   /// Alinha datas legadas ao dia civil local (mesma regra do pull Supabase / planejamento).
   Future<void> _normalizeWeekBlocksAndDayWorkoutDatesV19() async {
