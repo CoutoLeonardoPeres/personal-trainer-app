@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 
-import '../../core/sync/workout_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../core/widgets/inter_set_rest_modal.dart';
 import '../../core/preferences/workout_runtime_prefs.dart';
 import '../../data/local/app_database.dart';
+import '../../data/models/exercise_session_comparison.dart';
 import '../../data/models/day_workout_performed_set.dart';
 import '../../data/repositories/app_data_repository.dart';
 import 'exercise_completion_comparison_dialog.dart';
@@ -29,19 +28,31 @@ Future<void> showCalendarAddSetDialog({
 }) {
   // Evita pull da nuvem a competir com o commit da série (loading infinito no modal).
   repo.muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
-  return showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    useRootNavigator: true,
-    barrierColor: Colors.black.withValues(alpha: 0.72),
-    builder: (ctx) => _AddSetDialog(
-      repo: repo,
-      line: line,
-      exerciseName: exerciseName,
-      restFlowContext: restFlowContext,
-      requireAllMetricFields: requireAllMetricFields,
-    ),
-  );
+  return Future<DayWorkoutPerformedSet?>(() async {
+    try {
+      return await repo
+          .lastPerformedSetSeedForLine(line.id)
+          .timeout(const Duration(milliseconds: 220), onTimeout: () => null);
+    } catch (_) {
+      return null;
+    }
+  }).then((seed) async {
+    if (!context.mounted) return;
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black.withValues(alpha: 0.72),
+      builder: (ctx) => _AddSetDialog(
+        repo: repo,
+        line: line,
+        exerciseName: exerciseName,
+        restFlowContext: restFlowContext,
+        requireAllMetricFields: requireAllMetricFields,
+        initialSeed: seed,
+      ),
+    );
+  });
 }
 
 /// Edita carga/reps de uma série já registrada (índice na lista JSON).
@@ -560,6 +571,7 @@ class _AddSetDialog extends StatefulWidget {
     required this.exerciseName,
     required this.restFlowContext,
     this.requireAllMetricFields = false,
+    this.initialSeed,
   });
 
   final AppDataRepository repo;
@@ -567,6 +579,7 @@ class _AddSetDialog extends StatefulWidget {
   final String exerciseName;
   final BuildContext restFlowContext;
   final bool requireAllMetricFields;
+  final DayWorkoutPerformedSet? initialSeed;
 
   @override
   State<_AddSetDialog> createState() => _AddSetDialogState();
@@ -591,11 +604,16 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final currentPerformed = DayWorkoutPerformedSetCodec.decode(
       widget.line.performedSetsJson,
     );
-    if (currentPerformed.isNotEmpty) return;
+    if (currentPerformed.isNotEmpty || widget.initialSeed != null) return;
 
-    final previous = await widget.repo.lastPerformedSetSeedForLine(
-      widget.line.id,
-    );
+    DayWorkoutPerformedSet? previous;
+    try {
+      previous = await widget.repo
+          .lastPerformedSetSeedForLine(widget.line.id)
+          .timeout(const Duration(milliseconds: 420));
+    } catch (_) {
+      previous = null;
+    }
     if (!mounted || previous == null) return;
 
     final canApplyLoad = _cargaCtrl.text.trim() == _initialLoadText.trim();
@@ -615,8 +633,9 @@ class _AddSetDialogState extends State<_AddSetDialog> {
       widget.line.performedSetsJson,
     );
     final last = performed.isNotEmpty ? performed.last : null;
-    final loadSeed = last?.loadKg ?? widget.line.loadKg;
-    final repsSeed = last?.reps ?? widget.line.reps;
+    final seed = widget.initialSeed;
+    final loadSeed = last?.loadKg ?? seed?.loadKg ?? widget.line.loadKg;
+    final repsSeed = last?.reps ?? seed?.reps ?? widget.line.reps;
     _cargaCtrl = TextEditingController(text: _formatLoadText(loadSeed));
     _repsCtrl = TextEditingController(text: '$repsSeed');
     _initialLoadText = _cargaCtrl.text;
@@ -682,14 +701,14 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final performedBefore = DayWorkoutPerformedSetCodec.decode(
       widget.line.performedSetsJson,
     ).length;
-    final willCompleteExercise =
-        widget.line.sets > 0 && performedBefore + 1 >= widget.line.sets;
 
     setState(() => _saving = true);
     final dayWorkoutId = widget.line.dayWorkoutId;
     final lineId = widget.line.id;
     final planned = widget.line.sets;
     final restSec = widget.line.restBetweenSetsSec;
+    final clientEventId =
+        'set_${lineId}_${DateTime.now().microsecondsSinceEpoch}';
     var saved = false;
     var appendCompleted = false;
     Object? saveError;
@@ -701,6 +720,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
         lineId: lineId,
         loadKg: loadKg,
         reps: reps,
+        clientEventId: clientEventId,
       );
       appendCompleted = true;
       debugPrint('[add_set] submit local_saved line=$lineId');
@@ -712,18 +732,20 @@ class _AddSetDialogState extends State<_AddSetDialog> {
       debugPrint('[add_set] submit error line=$lineId error=$e');
     }
 
-    final committed = appendCompleted
+    final committedByEvent = await widget.repo.hasLocalSetEvent(clientEventId);
+    final committed = appendCompleted || committedByEvent
         ? true
         : await _waitForLocalSetCommit(
             lineId: lineId,
             expectedMinSets: performedBefore + 1,
+            timeout: const Duration(seconds: 8),
           );
     if (committed || appendCompleted) {
       saved = true;
       if (mounted) {
         final messenger = ScaffoldMessenger.of(context);
         Navigator.of(context).pop();
-        if (appendCompleted) {
+        if (appendCompleted || committedByEvent) {
           messenger.showSnackBar(
             const SnackBar(content: Text('Série registrada.')),
           );
@@ -757,60 +779,73 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     if (mounted) setState(() => _saving = false);
 
     if (!saved) return;
+    final currentRow = await widget.repo.getDayWorkoutExerciseById(lineId);
+    final currentDoneCount = currentRow == null
+        ? performedBefore + 1
+        : DayWorkoutPerformedSetCodec.decode(currentRow.performedSetsJson).length;
+    final currentPlannedSets = currentRow?.sets ?? planned;
+    final isExerciseNowCompleted =
+        currentPlannedSets > 0 && currentDoneCount >= currentPlannedSets;
+    // Última série: vai direto para o relatório (sem abrir timer de descanso).
+    if (!isExerciseNowCompleted) {
+      final restCtx = widget.restFlowContext;
+      if (!restCtx.mounted) return;
+      await _runPostSaveRestFlow(
+        repo: widget.repo,
+        restFlowContext: restCtx,
+        dayWorkoutId: dayWorkoutId,
+        lineId: lineId,
+        plannedSets: planned,
+        restSec: restSec,
+      );
+    }
     final restCtx = widget.restFlowContext;
     if (!restCtx.mounted) return;
-    await _runPostSaveRestFlow(
-      repo: widget.repo,
-      restFlowContext: restCtx,
-      dayWorkoutId: dayWorkoutId,
-      lineId: lineId,
-      plannedSets: planned,
-      restSec: restSec,
-    );
-    if (!restCtx.mounted) return;
-    if (willCompleteExercise) {
-      final summary = await widget.repo.getExerciseSessionComparison(lineId);
-      if (summary != null && restCtx.mounted) {
+    if (isExerciseNowCompleted) {
+      final summary = await _fetchExerciseSummaryWithRetry(lineId);
+      if (summary != null && mounted) {
         await showExerciseCompletionComparisonDialog(
-          context: restCtx,
+          context: context,
           data: summary,
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Exercício concluído.')),
         );
       }
     }
+  }
+
+  Future<ExerciseSessionComparison?> _fetchExerciseSummaryWithRetry(
+    String lineId,
+  ) async {
+    for (var i = 0; i < 5; i++) {
+      try {
+        final summary = await widget.repo
+            .getExerciseSessionComparison(lineId)
+            .timeout(const Duration(milliseconds: 700), onTimeout: () => null);
+        if (summary != null) return summary;
+      } catch (_) {
+        // best effort
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+    }
+    return null;
   }
 
   Future<void> _appendPerformedSetWithRetry({
     required String lineId,
     required double? loadKg,
     required int reps,
+    required String clientEventId,
   }) async {
-    Object? lastError;
-    for (var i = 0; i < 3; i++) {
-      try {
-        debugPrint('[add_set] append try=${i + 1} line=$lineId');
-        final sync = context.read<WorkoutSyncService>();
-        await sync.logSet(lineId: lineId, loadKg: loadKg, reps: reps);
-        debugPrint('[add_set] append ok line=$lineId try=${i + 1}');
-        return;
-      } catch (e) {
-        lastError = e;
-        debugPrint('[add_set] append fail line=$lineId try=${i + 1} error=$e');
-        final retryable = _isRetryableSetSaveError(e);
-        if (!retryable || i == 2) rethrow;
-        await Future<void>.delayed(Duration(milliseconds: 150 * (i + 1)));
-      }
-    }
-    throw lastError ?? Exception('Falha ao registrar série.');
-  }
-
-  bool _isRetryableSetSaveError(Object e) {
-    if (e is TimeoutException) return true;
-    final msg = e.toString().toLowerCase();
-    return msg.contains('database is locked') ||
-        msg.contains('database table is locked') ||
-        msg.contains('sqlite_busy') ||
-        msg.contains('busy') ||
-        msg.contains('timeout');
+    // Prioriza commit local sem timeout agressivo (UI não deve depender de nuvem).
+    await widget.repo.appendDayWorkoutExercisePerformedSet(
+      lineId: lineId,
+      loadKg: loadKg,
+      reps: reps,
+      clientEventId: clientEventId,
+    );
   }
 
   Future<bool> _waitForLocalSetCommit({
@@ -887,8 +922,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
           prescribedSec: restSec,
         );
         if (metrics != null && restFlowContext.mounted) {
-          final sync = restFlowContext.read<WorkoutSyncService>();
-          await sync.logRestTelemetryForLastSet(
+          await repo.patchLastPerformedSetRestTelemetry(
             lineId: lineId,
             prescribedSec: metrics.prescribedSec,
             countdownElapsedMs: metrics.countdownElapsedMs,

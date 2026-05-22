@@ -232,9 +232,19 @@ String _formatReferenceLoadKg(double kg) {
 }
 
 String _lastWorkoutSeriesReferenceLabel({
+  DayWorkoutPerformedSet? referenceLastSet,
   required double? referenceLastMaxLoadKg,
   required int? referenceLastReps,
 }) {
+  final set = referenceLastSet;
+  if (set != null) {
+    final repsTxt = '${set.reps} reps';
+    final kg = set.loadKg;
+    if (kg != null) {
+      return 'últ. treino · ${_formatReferenceLoadKg(kg)} kg · $repsTxt';
+    }
+    return 'últ. treino · $repsTxt';
+  }
   final kg = referenceLastMaxLoadKg;
   final reps = referenceLastReps;
   if (kg != null) {
@@ -259,6 +269,7 @@ class _SeriePrescribedRow extends StatelessWidget {
     this.tooltip,
     this.referenceLastMaxLoadKg,
     this.referenceLastReps,
+    this.referenceLastSet,
   });
 
   final int index;
@@ -267,6 +278,7 @@ class _SeriePrescribedRow extends StatelessWidget {
   final String? tooltip;
   final double? referenceLastMaxLoadKg;
   final int? referenceLastReps;
+  final DayWorkoutPerformedSet? referenceLastSet;
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +344,7 @@ class _SeriePrescribedRow extends StatelessWidget {
             const Spacer(),
             Text(
               _lastWorkoutSeriesReferenceLabel(
+                referenceLastSet: referenceLastSet,
                 referenceLastMaxLoadKg: referenceLastMaxLoadKg,
                 referenceLastReps: referenceLastReps,
               ),
@@ -575,10 +588,7 @@ class _PerformedSerieSlidableRow extends StatelessWidget {
         performedIndex: performedIndex,
       );
       final expected = beforeCount > 0 ? beforeCount - 1 : 0;
-      final okPersist = await _waitLocalSeriesCount(expectedCount: expected);
-      if (!okPersist) {
-        throw StateError('remove_not_confirmed_locally');
-      }
+      unawaited(_waitLocalSeriesCount(expectedCount: expected));
       if (snackAnchor.mounted) {
         ScaffoldMessenger.of(
           snackAnchor,
@@ -722,6 +732,8 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   String? _referenceLoadKey;
   Future<DayWorkoutPerformedSet?>? _referenceLastPerformedSetFuture;
   String? _referenceLastPerformedSetKey;
+  Future<List<DayWorkoutPerformedSet>>? _referenceLastPerformedSetsFuture;
+  String? _referenceLastPerformedSetsKey;
 
   bool get _usesSlidable =>
       widget.onToggleAlternative != null && widget.workoutStatus != 'completed';
@@ -804,9 +816,34 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
     return _referenceLastPerformedSetFuture!;
   }
 
+  Future<List<DayWorkoutPerformedSet>> _referenceLastPerformedSetsSeed() {
+    final key = widget.line.id;
+    if (_referenceLastPerformedSetsFuture != null &&
+        _referenceLastPerformedSetsKey == key) {
+      return _referenceLastPerformedSetsFuture!;
+    }
+    _referenceLastPerformedSetsKey = key;
+    final repo = widget.performedSetsRepo;
+    if (repo == null) {
+      _referenceLastPerformedSetsFuture =
+          Future<List<DayWorkoutPerformedSet>>.value(
+            const <DayWorkoutPerformedSet>[],
+          );
+    } else {
+      _referenceLastPerformedSetsFuture = repo.lastPerformedSetsSeedForLine(
+        widget.line.id,
+      );
+    }
+    return _referenceLastPerformedSetsFuture!;
+  }
+
   _ExerciseScoreTrend _scoreTrend(double current, double? previous) {
-    if (previous == null) return _ExerciseScoreTrend.noPrevious;
+    // Estado neutro: score zerado não deve aparecer como regressão (-100%)
+    // no card da modal; mantém leitura estável para exercícios já executados
+    // em histórico, mas ainda sem score efetivo na linha atual.
     const eps = 0.0001;
+    if (current.abs() <= eps) return _ExerciseScoreTrend.same;
+    if (previous == null) return _ExerciseScoreTrend.noPrevious;
     final diff = current - previous;
     if (diff > eps) return _ExerciseScoreTrend.better;
     if (diff < -eps) return _ExerciseScoreTrend.worse;
@@ -835,8 +872,9 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
   }
 
   String _scoreDeltaPercentLabel(double current, double? previous) {
-    if (previous == null) return '--';
     const eps = 0.0001;
+    if (current.abs() <= eps) return '0%';
+    if (previous == null) return '--';
     final diff = current - previous;
     if (diff.abs() <= eps) return '0%';
     if (previous.abs() <= eps) {
@@ -864,6 +902,8 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
       _referenceLastMaxLoadFuture = null;
       _referenceLastPerformedSetKey = null;
       _referenceLastPerformedSetFuture = null;
+      _referenceLastPerformedSetsKey = null;
+      _referenceLastPerformedSetsFuture = null;
     }
     if (oldWidget.collapseSignal != widget.collapseSignal) {
       _expanded = false;
@@ -1264,59 +1304,68 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                         builder: (context, refSnap) {
                           final refKg = refSnap.data?.refKg;
                           final refReps = refSnap.data?.refReps;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Séries:',
-                                style: TextStyle(
-                                  color: titleAccent,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14 * _kSerieScale,
-                                ),
-                              ),
-                              SizedBox(height: 10 * _kSerieScale),
-                              for (var i = 0; i < line.sets; i++) ...[
-                                _SeriePrescribedRow(
-                                  index: i + 1,
-                                  prescribedRepsLabel: _dweRepsCompact(line),
-                                  referenceLastMaxLoadKg: refKg,
-                                  referenceLastReps: refReps,
-                                  onTap:
-                                      i == _performed.length &&
-                                          canAddMoreSeries &&
-                                          _canMutatePerformedSets
-                                      ? widget.onAdicionar
-                                      : null,
-                                  tooltip:
-                                      i == _performed.length &&
-                                          canAddMoreSeries &&
-                                          _canMutatePerformedSets
-                                      ? _addSeriesTooltip
-                                      : null,
-                                ),
-                                if (i < _performed.length) ...[
-                                  SizedBox(height: 6 * _kSerieScale),
-                                  if (_repoForPerformedSlidable != null)
-                                    _PerformedSerieSlidableRow(
-                                      repo: _repoForPerformedSlidable!,
-                                      lineId: line.id,
-                                      performedIndex: i,
-                                      displayIndex: i + 1,
-                                      entry: _performed[i],
-                                      exerciseLabel: displayName,
-                                      requireAllMetricFields:
-                                          widget.workoutStatus == 'started',
-                                    )
-                                  else
-                                    _SerieLoggedRow(
-                                      index: i + 1,
-                                      entry: _performed[i],
+                          return FutureBuilder<List<DayWorkoutPerformedSet>>(
+                            future: _referenceLastPerformedSetsSeed(),
+                            builder: (context, setsSnap) {
+                              final lastSets =
+                                  setsSnap.data ?? const <DayWorkoutPerformedSet>[];
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Séries:',
+                                    style: TextStyle(
+                                      color: titleAccent,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14 * _kSerieScale,
                                     ),
+                                  ),
+                                  SizedBox(height: 10 * _kSerieScale),
+                                  for (var i = 0; i < line.sets; i++) ...[
+                                    _SeriePrescribedRow(
+                                      index: i + 1,
+                                      prescribedRepsLabel: _dweRepsCompact(line),
+                                      referenceLastMaxLoadKg: refKg,
+                                      referenceLastReps: refReps,
+                                      referenceLastSet:
+                                          i < lastSets.length ? lastSets[i] : null,
+                                      onTap:
+                                          i == _performed.length &&
+                                              canAddMoreSeries &&
+                                              _canMutatePerformedSets
+                                          ? widget.onAdicionar
+                                          : null,
+                                      tooltip:
+                                          i == _performed.length &&
+                                              canAddMoreSeries &&
+                                              _canMutatePerformedSets
+                                          ? _addSeriesTooltip
+                                          : null,
+                                    ),
+                                    if (i < _performed.length) ...[
+                                      SizedBox(height: 6 * _kSerieScale),
+                                      if (_repoForPerformedSlidable != null)
+                                        _PerformedSerieSlidableRow(
+                                          repo: _repoForPerformedSlidable!,
+                                          lineId: line.id,
+                                          performedIndex: i,
+                                          displayIndex: i + 1,
+                                          entry: _performed[i],
+                                          exerciseLabel: displayName,
+                                          requireAllMetricFields:
+                                              widget.workoutStatus == 'started',
+                                        )
+                                      else
+                                        _SerieLoggedRow(
+                                          index: i + 1,
+                                          entry: _performed[i],
+                                        ),
+                                    ],
+                                    SizedBox(height: 10 * _kSerieScale),
+                                  ],
                                 ],
-                                SizedBox(height: 10 * _kSerieScale),
-                              ],
-                            ],
+                              );
+                            },
                           );
                         },
                       ),
@@ -1601,6 +1650,9 @@ class _DayExercisesSheetScaffoldState
   var _refreshKey = 0;
   final Map<String, bool> _useAlternativeByLineId = {};
   Timer? _tick;
+  final ValueNotifier<DateTime> _timerNow = ValueNotifier<DateTime>(
+    DateTime.now(),
+  );
   Timer? _liveWorkoutCloudRefreshTimer;
   var _tickerRunning = false;
   var _restPopupOpenAttempted = false;
@@ -1610,20 +1662,47 @@ class _DayExercisesSheetScaffoldState
   var _cloudHydrationInFlight = false;
   var _cloudHydrationDone = false;
   var _cloudRefreshRequestInFlight = false;
+  var _activeWorkoutRescueInFlight = false;
+  var _activeWorkoutRescueTriggered = false;
   var _catalogHydrationInFlight = false;
   DateTime? _lastCatalogHydrationAttemptAt;
   final Map<String, String> _exerciseNameCacheById = <String, String>{};
+  final Map<String, ExerciseEntity> _exerciseCacheById =
+      <String, ExerciseEntity>{};
   final Map<String, DateTime> _missingExerciseNameFirstSeenAt =
       <String, DateTime>{};
+  final Map<int, String> _templateExerciseNameBySortOrder = <int, String>{};
+  final List<String> _templateExerciseNamesOrdered = <String>[];
   List<DayWorkoutExerciseEntity>? _bootstrapLines;
+  List<DayWorkoutExerciseEntity> _lastStableLines =
+      const <DayWorkoutExerciseEntity>[];
   final DateTime _sheetOpenedAt = DateTime.now();
   String? _forceExpandedLineId;
   var _collapseAllSignal = 0;
   Set<String> _lastMissingExerciseIds = const <String>{};
 
+  String _fallbackExerciseNameFromId(String exerciseId) {
+    final shortId = exerciseId.length >= 8
+        ? exerciseId.substring(0, 8)
+        : exerciseId;
+    return 'Exercício $shortId';
+  }
+
+  bool _looksLikePlaceholderExerciseName(String name) {
+    final n = name.trim().toLowerCase();
+    if (n.isEmpty) return true;
+    if (n.startsWith('exercício ') || n.startsWith('exercicio ')) return true;
+    if (n.startsWith('exercício personalizado -') ||
+        n.startsWith('exercicio personalizado -')) {
+      return true;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.repo.muteBackgroundCloudRefresh();
     _repairingInitialExercises = true;
     if (widget.showRestTimerOverlayFromLive) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1633,21 +1712,38 @@ class _DayExercisesSheetScaffoldState
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       try {
-        final local = await widget.repo
-            .getDayWorkoutExercises(widget.workout.id)
-            .timeout(
-              const Duration(milliseconds: 450),
-              onTimeout: () => const [],
-            );
-        if (mounted && local.isNotEmpty) {
+        final preload = await Future.wait<dynamic>([
+          widget.repo.getDayWorkoutExercises(widget.workout.id).timeout(
+            const Duration(milliseconds: 900),
+            onTimeout: () => const <DayWorkoutExerciseEntity>[],
+          ),
+          widget.repo.getExercisesAlphabeticalSnapshotLocal().timeout(
+            const Duration(milliseconds: 900),
+            onTimeout: () => const <ExerciseEntity>[],
+          ),
+        ]);
+        final localLines = preload[0] as List<DayWorkoutExerciseEntity>;
+        final localExercises = preload[1] as List<ExerciseEntity>;
+        if (mounted && (localLines.isNotEmpty || localExercises.isNotEmpty)) {
           setState(() {
-            _bootstrapLines = local;
-            _hasLoadedAnyExerciseLine = true;
+            _bootstrapLines = localLines;
+            if (localLines.isNotEmpty) {
+              _hasLoadedAnyExerciseLine = true;
+              _lastStableLines = List<DayWorkoutExerciseEntity>.from(localLines);
+            }
+            for (final e in localExercises) {
+              final n = e.name.trim();
+              if (n.isNotEmpty) {
+                _exerciseNameCacheById[e.id] = n;
+              }
+              _exerciseCacheById[e.id] = e;
+            }
           });
         }
       } catch (_) {
         // Best effort: segue com stream.
       }
+      unawaited(_hydrateTemplateExerciseNamesFromSourceGroup());
       try {
         final n = await widget.repo
             .repairDayWorkoutExercisesFromSourceGroupIfNeeded(widget.workout.id)
@@ -1655,7 +1751,6 @@ class _DayExercisesSheetScaffoldState
         if (mounted && n > 0) {
           // O stream de linhas já notifica alterações; evitar rebuild total
           // da sheet aqui elimina o "refresh" visual logo após abrir.
-          setState(() {});
         }
       } catch (_) {
         // Sem permissão ou dados inconsistentes: mantém a lista atual.
@@ -1669,12 +1764,15 @@ class _DayExercisesSheetScaffoldState
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateWorkoutLinesFromCloud());
-      // Resiliência multi-dispositivo: manter pull periódico mesmo quando o
-      // snapshot inicial ainda não está "started" localmente.
-      _liveWorkoutCloudRefreshTimer = Timer.periodic(
-        const Duration(seconds: 4),
-        (_) => unawaited(_hydrateWorkoutLinesFromCloud(silentUi: true)),
-      );
+      // Pull em background com menor agressividade para preservar fluidez da UI.
+      final allowPeriodicPull =
+          widget.workout.status == 'started' || widget.workout.status == 'paused';
+      if (allowPeriodicPull) {
+        _liveWorkoutCloudRefreshTimer = Timer.periodic(
+          const Duration(seconds: 25),
+          (_) => unawaited(_hydrateWorkoutLinesFromCloud(silentUi: true)),
+        );
+      }
     });
     // Evita loading infinito se pull/rede ou flags de hidratação ficarem presos.
     unawaited(
@@ -1690,9 +1788,70 @@ class _DayExercisesSheetScaffoldState
     );
   }
 
+  Future<void> _hydrateTemplateExerciseNamesFromSourceGroup() async {
+    final gid = (widget.workout.sourceWorkoutGroupId ?? '').trim();
+    if (gid.isEmpty) return;
+    try {
+      final lines = await widget.repo.getGroupExercisesSnapshotLocal(gid).timeout(
+        const Duration(milliseconds: 900),
+        onTimeout: () => const <WorkoutGroupExerciseEntity>[],
+      );
+      if (lines.isEmpty) return;
+      final exIds = <String>{
+        for (final l in lines)
+          if (l.exerciseId.trim().isNotEmpty) l.exerciseId.trim(),
+      };
+      if (exIds.isEmpty) return;
+      var exRows = await widget.repo.getExercisesByIds(exIds).timeout(
+        const Duration(milliseconds: 900),
+        onTimeout: () => const <ExerciseEntity>[],
+      );
+      if (exRows.length < exIds.length) {
+        await widget.repo
+            .refreshExercisesByIdsFromCloud(exIds)
+            .timeout(const Duration(seconds: 6), onTimeout: () {});
+        exRows = await widget.repo.getExercisesByIds(exIds).timeout(
+          const Duration(milliseconds: 900),
+          onTimeout: () => exRows,
+        );
+      }
+      final byId = <String, ExerciseEntity>{for (final e in exRows) e.id: e};
+      var changed = false;
+      final orderedNames = <String>[];
+      for (final l in lines) {
+        final name = (byId[l.exerciseId]?.name ?? '').trim();
+        if (!_looksLikePlaceholderExerciseName(name)) {
+          if (_templateExerciseNameBySortOrder[l.sortOrder] != name) {
+            _templateExerciseNameBySortOrder[l.sortOrder] = name;
+            changed = true;
+          }
+          orderedNames.add(name);
+        }
+      }
+      if (orderedNames.isNotEmpty) {
+        final sameLen = _templateExerciseNamesOrdered.length == orderedNames.length;
+        final sameContent = sameLen &&
+            List.generate(
+              orderedNames.length,
+              (i) => _templateExerciseNamesOrdered[i] == orderedNames[i],
+            ).every((x) => x);
+        if (!sameContent) {
+          _templateExerciseNamesOrdered
+            ..clear()
+            ..addAll(orderedNames);
+          changed = true;
+        }
+      }
+      if (changed && mounted) setState(() {});
+    } catch (_) {
+      // best effort
+    }
+  }
+
   Future<void> _hydrateWorkoutLinesFromCloud({bool silentUi = false}) async {
     if (_cloudRefreshRequestInFlight) return;
     _cloudRefreshRequestInFlight = true;
+    var hydratedSuccessfully = false;
     try {
       if (!silentUi && mounted) {
         setState(() => _cloudHydrationInFlight = true);
@@ -1702,22 +1861,42 @@ class _DayExercisesSheetScaffoldState
       try {
         await widget.repo
             .refreshDayWorkoutFromCloud(widget.workout.id)
-            .timeout(const Duration(milliseconds: 2500), onTimeout: () {});
+            .timeout(const Duration(seconds: 8));
+        hydratedSuccessfully = true;
       } catch (_) {
         // Best effort: mantém snapshot local e tenta de novo no polling.
       } finally {
+        final canMarkHydrationDone =
+            hydratedSuccessfully || _hasLoadedAnyExerciseLine;
         if (!silentUi && mounted) {
           setState(() {
-            _cloudHydrationDone = true;
+            _cloudHydrationDone = canMarkHydrationDone;
             _cloudHydrationInFlight = false;
           });
         } else {
-          _cloudHydrationDone = true;
+          _cloudHydrationDone = canMarkHydrationDone;
           _cloudHydrationInFlight = false;
         }
       }
     } finally {
       _cloudRefreshRequestInFlight = false;
+    }
+  }
+
+  Future<void> _rescueActiveWorkoutLines() async {
+    if (_activeWorkoutRescueInFlight) return;
+    _activeWorkoutRescueInFlight = true;
+    try {
+      try {
+        await widget.repo
+            .repairDayWorkoutExercisesFromSourceGroupIfNeeded(widget.workout.id)
+            .timeout(const Duration(seconds: 5), onTimeout: () => 0);
+      } catch (_) {
+        // best effort
+      }
+      await _hydrateWorkoutLinesFromCloud(silentUi: true);
+    } finally {
+      _activeWorkoutRescueInFlight = false;
     }
   }
 
@@ -1739,7 +1918,7 @@ class _DayExercisesSheetScaffoldState
     }
     _lastCatalogHydrationAttemptAt = now;
     _catalogHydrationInFlight = true;
-    if (mounted) setState(() {});
+    var cacheChanged = false;
     try {
       final localExercises = await widget.repo
           .getExercisesByIds(missingExerciseIds)
@@ -1750,23 +1929,26 @@ class _DayExercisesSheetScaffoldState
       for (final e in localExercises) {
         final n = e.name.trim();
         if (n.isNotEmpty) {
-          _exerciseNameCacheById[e.id] = n;
+          if (_exerciseNameCacheById[e.id] != n) {
+            _exerciseNameCacheById[e.id] = n;
+            cacheChanged = true;
+          }
+        }
+        if (_exerciseCacheById[e.id] != e) {
+          _exerciseCacheById[e.id] = e;
+          cacheChanged = true;
         }
       }
       await widget.repo
           .refreshExercisesByIdsFromCloud(missingExerciseIds)
           .timeout(const Duration(seconds: 7), onTimeout: () {});
-      await widget.repo.refreshExercisesCatalogFromCloud().timeout(
-        const Duration(seconds: 8),
-        onTimeout: () {},
-      );
       _lastMissingExerciseIds = Set<String>.from(missingExerciseIds);
     } catch (_) {
       // Permite nova tentativa automática no próximo rebuild.
       _lastMissingExerciseIds = const <String>{};
     } finally {
       _catalogHydrationInFlight = false;
-      if (mounted) setState(() {});
+      if (mounted && cacheChanged) setState(() {});
     }
   }
 
@@ -1822,7 +2004,9 @@ class _DayExercisesSheetScaffoldState
 
   @override
   void dispose() {
+    widget.repo.unmuteBackgroundCloudRefresh();
     _tick?.cancel();
+    _timerNow.dispose();
     _liveWorkoutCloudRefreshTimer?.cancel();
     super.dispose();
   }
@@ -1834,7 +2018,8 @@ class _DayExercisesSheetScaffoldState
     _tick?.cancel();
     _tick = run
         ? Timer.periodic(const Duration(seconds: 1), (_) {
-            if (mounted) setState(() {});
+            if (!mounted) return;
+            _timerNow.value = DateTime.now();
           })
         : null;
   }
@@ -2075,25 +2260,28 @@ class _DayExercisesSheetScaffoldState
                                 size: iconSz,
                               ),
                               const SizedBox(width: 5),
-                              Text(
-                                _formatWorkoutTimer(
-                                  widget.repo.effectiveActiveSeconds(
-                                    w,
-                                    DateTime.now(),
+                              ValueListenableBuilder<DateTime>(
+                                valueListenable: _timerNow,
+                                builder: (context, nowTick, child) => Text(
+                                  _formatWorkoutTimer(
+                                    widget.repo.effectiveActiveSeconds(
+                                      w,
+                                      nowTick,
+                                    ),
                                   ),
-                                ),
-                                style: TextStyle(
-                                  color:
-                                      w.status == 'started' &&
-                                          w.timerResumeAt == null
-                                      ? const Color(0xFFFFE082)
-                                      : AppColors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: timeFs,
-                                  height: 1.05,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
+                                  style: TextStyle(
+                                    color:
+                                        w.status == 'started' &&
+                                            w.timerResumeAt == null
+                                        ? const Color(0xFFFFE082)
+                                        : AppColors.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: timeFs,
+                                    height: 1.05,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
                                 ),
                               ),
                               if (w.status == 'started' &&
@@ -2266,23 +2454,11 @@ class _DayExercisesSheetScaffoldState
                 // (remontar aqui reiniciava [CountUpScoreText] em todos os exercícios).
                 child: KeyedSubtree(
                   key: ValueKey(_refreshKey),
-                  child: StreamBuilder<List<ExerciseEntity>>(
-                    stream: widget.repo.watchExercisesAlphabetical(),
-                    builder: (context, exSnap) {
-                      final loadingExercisesBase =
-                          exSnap.connectionState == ConnectionState.waiting &&
-                          !exSnap.hasData;
-                      final byId = {for (final e in exSnap.data ?? []) e.id: e};
-                      for (final e in byId.values) {
-                        final n = e.name.trim();
-                        if (n.isNotEmpty) {
-                          _exerciseNameCacheById[e.id] = n;
-                        }
-                      }
-                      return StreamBuilder<List<DayWorkoutExerciseEntity>>(
+                  child: StreamBuilder<List<DayWorkoutExerciseEntity>>(
                         stream: widget.repo.watchDayWorkoutExercises(
                           widget.workout.id,
                         ),
+                        initialData: _bootstrapLines,
                         builder: (context, lineSnap) {
                           if (lineSnap.hasError) {
                             return Center(
@@ -2308,7 +2484,48 @@ class _DayExercisesSheetScaffoldState
                           if (plannedLinesRaw.isNotEmpty) {
                             _hasLoadedAnyExerciseLine = true;
                             _bootstrapLines = plannedLinesRaw;
+                            _lastStableLines = List<DayWorkoutExerciseEntity>.from(
+                              plannedLinesRaw,
+                            );
                           }
+                          final useStableSnapshot =
+                              plannedLinesRaw.isEmpty &&
+                              _lastStableLines.isNotEmpty &&
+                              _hasLoadedAnyExerciseLine;
+                          final holdStableWhileLocalCommitSettles =
+                              widget.repo.isDayWorkoutCloudPullMutedNow &&
+                              _lastStableLines.isNotEmpty &&
+                              plannedLinesRaw.length < _lastStableLines.length;
+                          final effectiveLinesRaw = useStableSnapshot
+                              ? _lastStableLines
+                              : (holdStableWhileLocalCommitSettles
+                                    ? _lastStableLines
+                                    : plannedLinesRaw);
+                          // Evita regressão visual transitória (séries somem e voltam):
+                          // quando chega snapshot antigo por alguns instantes, mantém
+                          // por linha o estado com maior progresso local de séries.
+                          final stableById = <String, DayWorkoutExerciseEntity>{
+                            for (final l in _lastStableLines) l.id: l,
+                          };
+                          final mergedEffectiveLines = <DayWorkoutExerciseEntity>[
+                            for (final line in effectiveLinesRaw)
+                              () {
+                                final prev = stableById[line.id];
+                                if (prev == null) return line;
+                                final prevSets = DayWorkoutPerformedSetCodec
+                                    .decode(prev.performedSetsJson)
+                                    .length;
+                                final curSets = DayWorkoutPerformedSetCodec
+                                    .decode(line.performedSetsJson)
+                                    .length;
+                                if (prevSets > curSets) return prev;
+                                if (prevSets == curSets &&
+                                    prev.updatedAt.isAfter(line.updatedAt)) {
+                                  return prev;
+                                }
+                                return line;
+                              }(),
+                          ];
                           final sheetAge = DateTime.now().difference(
                             _sheetOpenedAt,
                           );
@@ -2317,7 +2534,7 @@ class _DayExercisesSheetScaffoldState
                           final uiCloudHydrationDone =
                               _cloudHydrationDone || stallHydration;
                           final shouldKeepLoadingWhileHydrating =
-                              plannedLinesRaw.isEmpty &&
+                              effectiveLinesRaw.isEmpty &&
                               !_hasLoadedAnyExerciseLine &&
                               !stallHydration &&
                               (_repairingInitialExercises ||
@@ -2328,15 +2545,33 @@ class _DayExercisesSheetScaffoldState
                                       ConnectionState.waiting &&
                                   !lineSnap.hasData) ||
                               shouldKeepLoadingWhileHydrating;
+                          final holdCompletedSnapshotUntilCloudHydrated =
+                              w.status == 'completed' &&
+                              !_cloudHydrationDone &&
+                              DateTime.now().difference(_sheetOpenedAt) <
+                                  const Duration(seconds: 8);
+                          if (holdCompletedSnapshotUntilCloudHydrated &&
+                              !_cloudRefreshRequestInFlight) {
+                            unawaited(
+                              _hydrateWorkoutLinesFromCloud(silentUi: true),
+                            );
+                          }
                           final stalledNoLineData =
                               stallHydration &&
-                              plannedLinesRaw.isEmpty &&
+                              effectiveLinesRaw.isEmpty &&
                               (lineSnap.connectionState ==
                                       ConnectionState.waiting &&
                                   !lineSnap.hasData);
                           final missingExerciseIds = <String>{
-                            for (final l in plannedLinesRaw)
-                              if (!byId.containsKey(l.exerciseId)) l.exerciseId,
+                            for (final l in mergedEffectiveLines)
+                              if (!_exerciseCacheById.containsKey(l.exerciseId) ||
+                                  _looksLikePlaceholderExerciseName(
+                                    (_exerciseCacheById[l.exerciseId]?.name ??
+                                            _exerciseNameCacheById[l.exerciseId] ??
+                                            '')
+                                        .trim(),
+                                  ))
+                                l.exerciseId,
                           };
                           final now = DateTime.now();
                           _missingExerciseNameFirstSeenAt.removeWhere(
@@ -2359,21 +2594,40 @@ class _DayExercisesSheetScaffoldState
                           }
                           final unresolvedNameIds = <String>{
                             for (final id in missingExerciseIds)
-                              if ((_exerciseNameCacheById[id] ?? '')
-                                  .trim()
-                                  .isEmpty)
+                              if (_looksLikePlaceholderExerciseName(
+                                (_exerciseCacheById[id]?.name ??
+                                        _exerciseNameCacheById[id] ??
+                                        '')
+                                    .trim(),
+                              ))
                                 id,
                           };
                           final shouldBlockOnMissingExerciseNames =
-                              unresolvedNameIds.isNotEmpty;
+                              unresolvedNameIds.isNotEmpty &&
+                              mergedEffectiveLines.isEmpty;
                           // Com linhas do treino já conhecidas, não bloquear a lista no
                           // catálogo global (watch pode demorar com DB/rede ocupados).
                           final blockOnExercisesCatalog =
-                              loadingExercisesBase && plannedLinesRaw.isEmpty;
-                          if (loadingWorkoutLines &&
-                              (blockOnExercisesCatalog ||
-                                  plannedLinesRaw.isEmpty)) {
+                              false;
+                          final shouldShowInitialLoadingState =
+                              holdCompletedSnapshotUntilCloudHydrated ||
+                              (loadingWorkoutLines &&
+                                  (blockOnExercisesCatalog ||
+                                      mergedEffectiveLines.isEmpty));
+                          if (shouldShowInitialLoadingState) {
                             if (stalledNoLineData) {
+                              if (w.status == 'started') {
+                                if (!_cloudRefreshRequestInFlight) {
+                                  unawaited(
+                                    _hydrateWorkoutLinesFromCloud(
+                                      silentUi: true,
+                                    ),
+                                  );
+                                }
+                                return const Center(
+                                  child: FuturisticLoadingView(size: 58),
+                                );
+                              }
                               return Center(
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
@@ -2427,16 +2681,66 @@ class _DayExercisesSheetScaffoldState
                           }
                           final plannedOrder =
                               List<DayWorkoutExerciseEntity>.from(
-                                plannedLinesRaw,
+                                mergedEffectiveLines,
                               )..sort(
                                 (a, b) => a.sortOrder.compareTo(b.sortOrder),
                               );
+                          final linePositionById = <String, int>{
+                            for (var i = 0; i < plannedOrder.length; i++)
+                              plannedOrder[i].id: i,
+                          };
+                          final sequentialTemplateNameByLineId = <String, String>{};
+                          if (_templateExerciseNamesOrdered.isNotEmpty &&
+                              plannedOrder.isNotEmpty) {
+                            var tIndex = 0;
+                            for (final l in plannedOrder) {
+                              final exCached = _exerciseCacheById[l.exerciseId];
+                              final rawCached =
+                                  (exCached?.name ??
+                                          _exerciseNameCacheById[l.exerciseId] ??
+                                          '')
+                                      .trim();
+                              if (!_looksLikePlaceholderExerciseName(rawCached)) {
+                                continue;
+                              }
+                              while (tIndex < _templateExerciseNamesOrdered.length &&
+                                  _looksLikePlaceholderExerciseName(
+                                    _templateExerciseNamesOrdered[tIndex],
+                                  )) {
+                                tIndex++;
+                              }
+                              if (tIndex >= _templateExerciseNamesOrdered.length) break;
+                              sequentialTemplateNameByLineId[l.id] =
+                                  _templateExerciseNamesOrdered[tIndex].trim();
+                              tIndex++;
+                            }
+                          }
                           final lines = orderDayWorkoutLinesByPerformedHistory(
-                            plannedLinesRaw,
+                            mergedEffectiveLines,
                           );
                           _scheduleFocusCurrentExerciseAfterRestClose(lines);
                           final blocks = dayWorkoutLinesAsComboBlocks(lines);
                           if (lines.isEmpty) {
+                            if (w.status == 'started' &&
+                                !_activeWorkoutRescueTriggered) {
+                              _activeWorkoutRescueTriggered = true;
+                              unawaited(_rescueActiveWorkoutLines());
+                            }
+                            final shouldKeepLoadingActiveWorkout =
+                                w.status == 'started' &&
+                                (DateTime.now().difference(_sheetOpenedAt) <
+                                        const Duration(seconds: 16) ||
+                                    _activeWorkoutRescueInFlight);
+                            if (shouldKeepLoadingActiveWorkout) {
+                              if (!_cloudRefreshRequestInFlight) {
+                                unawaited(
+                                  _hydrateWorkoutLinesFromCloud(silentUi: true),
+                                );
+                              }
+                              return const Center(
+                                child: FuturisticLoadingView(size: 58),
+                              );
+                            }
                             return const Center(
                               child: Text(
                                 'Nenhum exercício neste treino.',
@@ -2452,11 +2756,42 @@ class _DayExercisesSheetScaffoldState
                               itemBuilder: (_, bi) {
                                 final block = blocks[bi];
                                 Widget lineCard(DayWorkoutExerciseEntity line) {
-                                  final ex = byId[line.exerciseId];
-                                  final name =
+                                  final ex = _exerciseCacheById[line.exerciseId];
+                                  final rawName =
                                       ex?.name ??
                                       _exerciseNameCacheById[line.exerciseId] ??
                                       '';
+                                  final rawTrimmed = rawName.trim();
+                                  final templateName =
+                                      _templateExerciseNameBySortOrder[line.sortOrder]
+                                          ?.trim() ??
+                                      '';
+                                  final linePos = linePositionById[line.id] ?? -1;
+                                  final templateNameByPosition =
+                                      (linePos >= 0 &&
+                                          linePos < _templateExerciseNamesOrdered.length)
+                                      ? _templateExerciseNamesOrdered[linePos].trim()
+                                      : '';
+                                  final name =
+                                      !_looksLikePlaceholderExerciseName(rawTrimmed)
+                                      ? rawTrimmed
+                                      : (!_looksLikePlaceholderExerciseName(
+                                            templateName,
+                                          )
+                                            ? templateName
+                                            : (!_looksLikePlaceholderExerciseName(
+                                                  templateNameByPosition,
+                                                )
+                                                  ? templateNameByPosition
+                                                  : (!_looksLikePlaceholderExerciseName(
+                                                        sequentialTemplateNameByLineId[line.id] ??
+                                                            '',
+                                                      )
+                                                        ? (sequentialTemplateNameByLineId[line.id] ??
+                                                              '')
+                                            : _fallbackExerciseNameFromId(
+                                                line.exerciseId,
+                                              ))));
                                   final outOfOrder =
                                       dayWorkoutLineExecutedOutOfPlannedOrder(
                                         plannedOrder,
@@ -2562,8 +2897,6 @@ class _DayExercisesSheetScaffoldState
                             ),
                           );
                         },
-                      );
-                    },
                   ),
                 ),
               ),

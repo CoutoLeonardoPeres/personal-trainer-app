@@ -22,15 +22,6 @@ String _formatScore(double v) {
   return v.toStringAsFixed(1).replaceAll('.', ',');
 }
 
-String _formatRestMs(int? ms, int? prescribedSec) {
-  if (ms == null) return '—';
-  final s = (ms / 1000).round();
-  final pres = prescribedSec != null && prescribedSec > 0
-      ? ' (meta ${prescribedSec}s)'
-      : '';
-  return '${s}s$pres';
-}
-
 Future<void> showExerciseCompletionComparisonDialog({
   required BuildContext context,
   required ExerciseSessionComparison data,
@@ -126,7 +117,7 @@ class _ExerciseCompletionComparisonBody extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                     children: [
                       Text(
-                        'Por série',
+                        'Séries',
                         style: TextStyle(
                           color: accent.withValues(alpha: 0.95),
                           fontWeight: FontWeight.w800,
@@ -140,20 +131,6 @@ class _ExerciseCompletionComparisonBody extends StatelessWidget {
                           child: _SetComparisonTile(
                             row: row,
                             accent: accent,
-                            isLastSet: row.setNumber == data.sets.length,
-                          ),
-                        ),
-                      if (!data.hasWorkoutWatchKcal)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Para ver calorias por exercício, registe as calorias '
-                            'do relógio ao concluir o treino (treino concluído).',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 11.5,
-                              height: 1.35,
-                            ),
                           ),
                         ),
                     ],
@@ -195,9 +172,6 @@ class _SummaryStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ev = data.totalScoreEvolutionPctVsPrevious;
-    final evLabel = ev == null
-        ? 'Sem treino anterior comparável'
-        : 'Total vs anterior: ${_formatPct(ev)}';
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -208,46 +182,29 @@ class _SummaryStrip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _kv(
-            'Tempo (1ª → última série)',
-            _formatDurationPt(data.currentWallDuration),
-            right: () {
-              final p = data.previousWallDuration;
-              if (p == null) return null;
-              return 'antes: ${_formatDurationPt(p)}';
-            }(),
+          Row(
+            children: [
+              Expanded(
+                child: _kv('Score', _formatScore(data.currentTotalScore)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _kv(
+                  'Evolução',
+                  ev == null ? '—' : _formatPct(ev),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          _kv(
-            'Score total do exercício',
-            _formatScore(data.currentTotalScore),
-            right: () {
-              final p = data.previousTotalScore;
-              if (p == null) return null;
-              return 'antes: ${_formatScore(p)}';
-            }(),
-          ),
-          if (data.currentEstimatedKcal != null) ...[
+          if (data.currentPredictedKcal != null || data.currentEstimatedKcal != null) ...[
             const SizedBox(height: 8),
             _kv(
-              'Calorias (estim.)',
-              '${data.currentEstimatedKcal!.toStringAsFixed(0)} kcal',
-              right: () {
-                final p = data.previousEstimatedKcal;
-                if (p == null) return null;
-                return 'antes: ${p.toStringAsFixed(0)} kcal';
-              }(),
+              'Kcal (prev/exe)',
+              '${(data.currentPredictedKcal ?? 0).toStringAsFixed(0)} / ${(data.currentEstimatedKcal ?? 0).toStringAsFixed(0)}',
             ),
           ],
           const SizedBox(height: 8),
-          Text(
-            evLabel,
-            style: TextStyle(
-              color: accent.withValues(alpha: 0.92),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          _kv('Tempo', _formatDurationPt(data.currentWallDuration)),
         ],
       ),
     );
@@ -300,15 +257,10 @@ class _SummaryStrip extends StatelessWidget {
 }
 
 class _SetComparisonTile extends StatelessWidget {
-  const _SetComparisonTile({
-    required this.row,
-    required this.accent,
-    required this.isLastSet,
-  });
+  const _SetComparisonTile({required this.row, required this.accent});
 
   final ExerciseSetComparisonRow row;
   final Color accent;
-  final bool isLastSet;
 
   @override
   Widget build(BuildContext context) {
@@ -346,8 +298,7 @@ class _SetComparisonTile extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Score ${_formatScore(row.currentSetScore)} · '
-                  '${_formatPct(row.currentPctOfPrescribed, decimals: 0)} do prescrito',
+                  'Score ${_formatScore(row.currentSetScore)} · ${_formatPct(row.currentPctOfPrescribed, decimals: 0)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -360,48 +311,15 @@ class _SetComparisonTile extends StatelessWidget {
               ),
             ],
           ),
-          if (row.previousSetScore != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Último treino: score ${_formatScore(row.previousSetScore!)} · '
-              '${row.previousPctOfPrescribed != null ? _formatPct(row.previousPctOfPrescribed!, decimals: 0) : '—'} do prescrito de então',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 11.2,
-                height: 1.25,
-              ),
+          const SizedBox(height: 6),
+          Text(
+            'Evolução: $evText',
+            style: TextStyle(
+              color: accent.withValues(alpha: 0.95),
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Evolução vs esse treino: $evText',
-              style: TextStyle(
-                color: accent.withValues(alpha: 0.95),
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-              ),
-            ),
-          ],
-          if (!isLastSet) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Descanso após esta série (timer)',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              'Agora: ${_formatRestMs(row.restAfterCurrentCountdownMs, row.restPrescribedSec)}'
-              '${row.restAfterPreviousCountdownMs != null ? ' · Último treino: ${_formatRestMs(row.restAfterPreviousCountdownMs, row.restPrescribedSec)}' : ''}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.75),
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          ),
         ],
       ),
     );
