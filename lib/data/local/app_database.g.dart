@@ -4670,6 +4670,58 @@ class $WorkoutGroupsTable extends WorkoutGroups
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _createdByPersonalIdMeta =
+      const VerificationMeta('createdByPersonalId');
+  @override
+  late final GeneratedColumn<String> createdByPersonalId =
+      GeneratedColumn<String>(
+        'created_by_personal_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES personals (id)',
+        ),
+      );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastModifiedByDeviceIdMeta =
+      const VerificationMeta('lastModifiedByDeviceId');
+  @override
+  late final GeneratedColumn<String> lastModifiedByDeviceId =
+      GeneratedColumn<String>(
+        'last_modified_by_device_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -4710,6 +4762,10 @@ class $WorkoutGroupsTable extends WorkoutGroups
     id,
     name,
     description,
+    createdByPersonalId,
+    isShared,
+    revision,
+    lastModifiedByDeviceId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -4750,6 +4806,36 @@ class $WorkoutGroupsTable extends WorkoutGroups
     } else if (isInserting) {
       context.missing(_descriptionMeta);
     }
+    if (data.containsKey('created_by_personal_id')) {
+      context.handle(
+        _createdByPersonalIdMeta,
+        createdByPersonalId.isAcceptableOrUnknown(
+          data['created_by_personal_id']!,
+          _createdByPersonalIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('last_modified_by_device_id')) {
+      context.handle(
+        _lastModifiedByDeviceIdMeta,
+        lastModifiedByDeviceId.isAcceptableOrUnknown(
+          data['last_modified_by_device_id']!,
+          _lastModifiedByDeviceIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -4789,6 +4875,22 @@ class $WorkoutGroupsTable extends WorkoutGroups
         DriftSqlType.string,
         data['${effectivePrefix}description'],
       )!,
+      createdByPersonalId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}created_by_personal_id'],
+      ),
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+      lastModifiedByDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_modified_by_device_id'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -4815,6 +4917,18 @@ class WorkoutGroupEntity extends DataClass
   final String id;
   final String name;
   final String description;
+
+  /// Personal dono do modelo. Admin pode deixar nulo para modelos globais/legados.
+  final String? createdByPersonalId;
+
+  /// Quando true, o modelo pode aparecer para outros personais como catálogo compartilhado.
+  final bool isShared;
+
+  /// Versão LWW para conflitos entre dispositivos.
+  final int revision;
+
+  /// Dispositivo que fez a última alteração local/remota.
+  final String? lastModifiedByDeviceId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -4825,6 +4939,10 @@ class WorkoutGroupEntity extends DataClass
     required this.id,
     required this.name,
     required this.description,
+    this.createdByPersonalId,
+    required this.isShared,
+    required this.revision,
+    this.lastModifiedByDeviceId,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -4835,6 +4953,16 @@ class WorkoutGroupEntity extends DataClass
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
     map['description'] = Variable<String>(description);
+    if (!nullToAbsent || createdByPersonalId != null) {
+      map['created_by_personal_id'] = Variable<String>(createdByPersonalId);
+    }
+    map['is_shared'] = Variable<bool>(isShared);
+    map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || lastModifiedByDeviceId != null) {
+      map['last_modified_by_device_id'] = Variable<String>(
+        lastModifiedByDeviceId,
+      );
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     if (!nullToAbsent || deletedAt != null) {
@@ -4848,6 +4976,14 @@ class WorkoutGroupEntity extends DataClass
       id: Value(id),
       name: Value(name),
       description: Value(description),
+      createdByPersonalId: createdByPersonalId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(createdByPersonalId),
+      isShared: Value(isShared),
+      revision: Value(revision),
+      lastModifiedByDeviceId: lastModifiedByDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastModifiedByDeviceId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -4865,6 +5001,14 @@ class WorkoutGroupEntity extends DataClass
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String>(json['description']),
+      createdByPersonalId: serializer.fromJson<String?>(
+        json['createdByPersonalId'],
+      ),
+      isShared: serializer.fromJson<bool>(json['isShared']),
+      revision: serializer.fromJson<int>(json['revision']),
+      lastModifiedByDeviceId: serializer.fromJson<String?>(
+        json['lastModifiedByDeviceId'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -4877,6 +5021,12 @@ class WorkoutGroupEntity extends DataClass
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
       'description': serializer.toJson<String>(description),
+      'createdByPersonalId': serializer.toJson<String?>(createdByPersonalId),
+      'isShared': serializer.toJson<bool>(isShared),
+      'revision': serializer.toJson<int>(revision),
+      'lastModifiedByDeviceId': serializer.toJson<String?>(
+        lastModifiedByDeviceId,
+      ),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -4887,6 +5037,10 @@ class WorkoutGroupEntity extends DataClass
     String? id,
     String? name,
     String? description,
+    Value<String?> createdByPersonalId = const Value.absent(),
+    bool? isShared,
+    int? revision,
+    Value<String?> lastModifiedByDeviceId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -4894,6 +5048,14 @@ class WorkoutGroupEntity extends DataClass
     id: id ?? this.id,
     name: name ?? this.name,
     description: description ?? this.description,
+    createdByPersonalId: createdByPersonalId.present
+        ? createdByPersonalId.value
+        : this.createdByPersonalId,
+    isShared: isShared ?? this.isShared,
+    revision: revision ?? this.revision,
+    lastModifiedByDeviceId: lastModifiedByDeviceId.present
+        ? lastModifiedByDeviceId.value
+        : this.lastModifiedByDeviceId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -4905,6 +5067,14 @@ class WorkoutGroupEntity extends DataClass
       description: data.description.present
           ? data.description.value
           : this.description,
+      createdByPersonalId: data.createdByPersonalId.present
+          ? data.createdByPersonalId.value
+          : this.createdByPersonalId,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      lastModifiedByDeviceId: data.lastModifiedByDeviceId.present
+          ? data.lastModifiedByDeviceId.value
+          : this.lastModifiedByDeviceId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -4917,6 +5087,10 @@ class WorkoutGroupEntity extends DataClass
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('createdByPersonalId: $createdByPersonalId, ')
+          ..write('isShared: $isShared, ')
+          ..write('revision: $revision, ')
+          ..write('lastModifiedByDeviceId: $lastModifiedByDeviceId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt')
@@ -4925,8 +5099,18 @@ class WorkoutGroupEntity extends DataClass
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, description, createdAt, updatedAt, deletedAt);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    description,
+    createdByPersonalId,
+    isShared,
+    revision,
+    lastModifiedByDeviceId,
+    createdAt,
+    updatedAt,
+    deletedAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4934,6 +5118,10 @@ class WorkoutGroupEntity extends DataClass
           other.id == this.id &&
           other.name == this.name &&
           other.description == this.description &&
+          other.createdByPersonalId == this.createdByPersonalId &&
+          other.isShared == this.isShared &&
+          other.revision == this.revision &&
+          other.lastModifiedByDeviceId == this.lastModifiedByDeviceId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt);
@@ -4943,6 +5131,10 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
   final Value<String> id;
   final Value<String> name;
   final Value<String> description;
+  final Value<String?> createdByPersonalId;
+  final Value<bool> isShared;
+  final Value<int> revision;
+  final Value<String?> lastModifiedByDeviceId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -4951,6 +5143,10 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.description = const Value.absent(),
+    this.createdByPersonalId = const Value.absent(),
+    this.isShared = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.lastModifiedByDeviceId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -4960,6 +5156,10 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     required String id,
     required String name,
     required String description,
+    this.createdByPersonalId = const Value.absent(),
+    this.isShared = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.lastModifiedByDeviceId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -4971,6 +5171,10 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     Expression<String>? id,
     Expression<String>? name,
     Expression<String>? description,
+    Expression<String>? createdByPersonalId,
+    Expression<bool>? isShared,
+    Expression<int>? revision,
+    Expression<String>? lastModifiedByDeviceId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
@@ -4980,6 +5184,12 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (description != null) 'description': description,
+      if (createdByPersonalId != null)
+        'created_by_personal_id': createdByPersonalId,
+      if (isShared != null) 'is_shared': isShared,
+      if (revision != null) 'revision': revision,
+      if (lastModifiedByDeviceId != null)
+        'last_modified_by_device_id': lastModifiedByDeviceId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -4991,6 +5201,10 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     Value<String>? id,
     Value<String>? name,
     Value<String>? description,
+    Value<String?>? createdByPersonalId,
+    Value<bool>? isShared,
+    Value<int>? revision,
+    Value<String?>? lastModifiedByDeviceId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -5000,6 +5214,11 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      createdByPersonalId: createdByPersonalId ?? this.createdByPersonalId,
+      isShared: isShared ?? this.isShared,
+      revision: revision ?? this.revision,
+      lastModifiedByDeviceId:
+          lastModifiedByDeviceId ?? this.lastModifiedByDeviceId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -5018,6 +5237,22 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
     }
     if (description.present) {
       map['description'] = Variable<String>(description.value);
+    }
+    if (createdByPersonalId.present) {
+      map['created_by_personal_id'] = Variable<String>(
+        createdByPersonalId.value,
+      );
+    }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (lastModifiedByDeviceId.present) {
+      map['last_modified_by_device_id'] = Variable<String>(
+        lastModifiedByDeviceId.value,
+      );
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
@@ -5040,6 +5275,10 @@ class WorkoutGroupsCompanion extends UpdateCompanion<WorkoutGroupEntity> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('createdByPersonalId: $createdByPersonalId, ')
+          ..write('isShared: $isShared, ')
+          ..write('revision: $revision, ')
+          ..write('lastModifiedByDeviceId: $lastModifiedByDeviceId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -9300,6 +9539,45 @@ class $AuditLogsTable extends AuditLogs
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _personalIdMeta = const VerificationMeta(
+    'personalId',
+  );
+  @override
+  late final GeneratedColumn<String> personalId = GeneratedColumn<String>(
+    'personal_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES personals (id)',
+    ),
+  );
+  static const VerificationMeta _studentIdMeta = const VerificationMeta(
+    'studentId',
+  );
+  @override
+  late final GeneratedColumn<String> studentId = GeneratedColumn<String>(
+    'student_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES students (id)',
+    ),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -9308,6 +9586,9 @@ class $AuditLogsTable extends AuditLogs
     entityType,
     entityId,
     payloadJson,
+    deviceId,
+    personalId,
+    studentId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -9360,6 +9641,24 @@ class $AuditLogsTable extends AuditLogs
         ),
       );
     }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    }
+    if (data.containsKey('personal_id')) {
+      context.handle(
+        _personalIdMeta,
+        personalId.isAcceptableOrUnknown(data['personal_id']!, _personalIdMeta),
+      );
+    }
+    if (data.containsKey('student_id')) {
+      context.handle(
+        _studentIdMeta,
+        studentId.isAcceptableOrUnknown(data['student_id']!, _studentIdMeta),
+      );
+    }
     return context;
   }
 
@@ -9393,6 +9692,18 @@ class $AuditLogsTable extends AuditLogs
         DriftSqlType.string,
         data['${effectivePrefix}payload_json'],
       ),
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      ),
+      personalId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}personal_id'],
+      ),
+      studentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}student_id'],
+      ),
     );
   }
 
@@ -9409,6 +9720,9 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
   final String entityType;
   final String? entityId;
   final String? payloadJson;
+  final String? deviceId;
+  final String? personalId;
+  final String? studentId;
   const AuditLogEntity({
     required this.id,
     required this.at,
@@ -9416,6 +9730,9 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
     required this.entityType,
     this.entityId,
     this.payloadJson,
+    this.deviceId,
+    this.personalId,
+    this.studentId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -9429,6 +9746,15 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
     }
     if (!nullToAbsent || payloadJson != null) {
       map['payload_json'] = Variable<String>(payloadJson);
+    }
+    if (!nullToAbsent || deviceId != null) {
+      map['device_id'] = Variable<String>(deviceId);
+    }
+    if (!nullToAbsent || personalId != null) {
+      map['personal_id'] = Variable<String>(personalId);
+    }
+    if (!nullToAbsent || studentId != null) {
+      map['student_id'] = Variable<String>(studentId);
     }
     return map;
   }
@@ -9445,6 +9771,15 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
       payloadJson: payloadJson == null && nullToAbsent
           ? const Value.absent()
           : Value(payloadJson),
+      deviceId: deviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deviceId),
+      personalId: personalId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(personalId),
+      studentId: studentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(studentId),
     );
   }
 
@@ -9460,6 +9795,9 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
       entityType: serializer.fromJson<String>(json['entityType']),
       entityId: serializer.fromJson<String?>(json['entityId']),
       payloadJson: serializer.fromJson<String?>(json['payloadJson']),
+      deviceId: serializer.fromJson<String?>(json['deviceId']),
+      personalId: serializer.fromJson<String?>(json['personalId']),
+      studentId: serializer.fromJson<String?>(json['studentId']),
     );
   }
   @override
@@ -9472,6 +9810,9 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
       'entityType': serializer.toJson<String>(entityType),
       'entityId': serializer.toJson<String?>(entityId),
       'payloadJson': serializer.toJson<String?>(payloadJson),
+      'deviceId': serializer.toJson<String?>(deviceId),
+      'personalId': serializer.toJson<String?>(personalId),
+      'studentId': serializer.toJson<String?>(studentId),
     };
   }
 
@@ -9482,6 +9823,9 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
     String? entityType,
     Value<String?> entityId = const Value.absent(),
     Value<String?> payloadJson = const Value.absent(),
+    Value<String?> deviceId = const Value.absent(),
+    Value<String?> personalId = const Value.absent(),
+    Value<String?> studentId = const Value.absent(),
   }) => AuditLogEntity(
     id: id ?? this.id,
     at: at ?? this.at,
@@ -9489,6 +9833,9 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
     entityType: entityType ?? this.entityType,
     entityId: entityId.present ? entityId.value : this.entityId,
     payloadJson: payloadJson.present ? payloadJson.value : this.payloadJson,
+    deviceId: deviceId.present ? deviceId.value : this.deviceId,
+    personalId: personalId.present ? personalId.value : this.personalId,
+    studentId: studentId.present ? studentId.value : this.studentId,
   );
   AuditLogEntity copyWithCompanion(AuditLogsCompanion data) {
     return AuditLogEntity(
@@ -9502,6 +9849,11 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
       payloadJson: data.payloadJson.present
           ? data.payloadJson.value
           : this.payloadJson,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      personalId: data.personalId.present
+          ? data.personalId.value
+          : this.personalId,
+      studentId: data.studentId.present ? data.studentId.value : this.studentId,
     );
   }
 
@@ -9513,14 +9865,26 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
           ..write('action: $action, ')
           ..write('entityType: $entityType, ')
           ..write('entityId: $entityId, ')
-          ..write('payloadJson: $payloadJson')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('personalId: $personalId, ')
+          ..write('studentId: $studentId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, at, action, entityType, entityId, payloadJson);
+  int get hashCode => Object.hash(
+    id,
+    at,
+    action,
+    entityType,
+    entityId,
+    payloadJson,
+    deviceId,
+    personalId,
+    studentId,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -9530,7 +9894,10 @@ class AuditLogEntity extends DataClass implements Insertable<AuditLogEntity> {
           other.action == this.action &&
           other.entityType == this.entityType &&
           other.entityId == this.entityId &&
-          other.payloadJson == this.payloadJson);
+          other.payloadJson == this.payloadJson &&
+          other.deviceId == this.deviceId &&
+          other.personalId == this.personalId &&
+          other.studentId == this.studentId);
 }
 
 class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
@@ -9540,6 +9907,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
   final Value<String> entityType;
   final Value<String?> entityId;
   final Value<String?> payloadJson;
+  final Value<String?> deviceId;
+  final Value<String?> personalId;
+  final Value<String?> studentId;
   final Value<int> rowid;
   const AuditLogsCompanion({
     this.id = const Value.absent(),
@@ -9548,6 +9918,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
     this.entityType = const Value.absent(),
     this.entityId = const Value.absent(),
     this.payloadJson = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.personalId = const Value.absent(),
+    this.studentId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   AuditLogsCompanion.insert({
@@ -9557,6 +9930,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
     required String entityType,
     this.entityId = const Value.absent(),
     this.payloadJson = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.personalId = const Value.absent(),
+    this.studentId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        action = Value(action),
@@ -9568,6 +9944,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
     Expression<String>? entityType,
     Expression<String>? entityId,
     Expression<String>? payloadJson,
+    Expression<String>? deviceId,
+    Expression<String>? personalId,
+    Expression<String>? studentId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -9577,6 +9956,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
       if (entityType != null) 'entity_type': entityType,
       if (entityId != null) 'entity_id': entityId,
       if (payloadJson != null) 'payload_json': payloadJson,
+      if (deviceId != null) 'device_id': deviceId,
+      if (personalId != null) 'personal_id': personalId,
+      if (studentId != null) 'student_id': studentId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -9588,6 +9970,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
     Value<String>? entityType,
     Value<String?>? entityId,
     Value<String?>? payloadJson,
+    Value<String?>? deviceId,
+    Value<String?>? personalId,
+    Value<String?>? studentId,
     Value<int>? rowid,
   }) {
     return AuditLogsCompanion(
@@ -9597,6 +9982,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
       entityType: entityType ?? this.entityType,
       entityId: entityId ?? this.entityId,
       payloadJson: payloadJson ?? this.payloadJson,
+      deviceId: deviceId ?? this.deviceId,
+      personalId: personalId ?? this.personalId,
+      studentId: studentId ?? this.studentId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -9622,6 +10010,15 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
     if (payloadJson.present) {
       map['payload_json'] = Variable<String>(payloadJson.value);
     }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (personalId.present) {
+      map['personal_id'] = Variable<String>(personalId.value);
+    }
+    if (studentId.present) {
+      map['student_id'] = Variable<String>(studentId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -9637,6 +10034,9 @@ class AuditLogsCompanion extends UpdateCompanion<AuditLogEntity> {
           ..write('entityType: $entityType, ')
           ..write('entityId: $entityId, ')
           ..write('payloadJson: $payloadJson, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('personalId: $personalId, ')
+          ..write('studentId: $studentId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -11942,6 +12342,46 @@ final class $$PersonalsTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$WorkoutGroupsTable, List<WorkoutGroupEntity>>
+  _workoutGroupsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.workoutGroups,
+    aliasName: $_aliasNameGenerator(
+      db.personals.id,
+      db.workoutGroups.createdByPersonalId,
+    ),
+  );
+
+  $$WorkoutGroupsTableProcessedTableManager get workoutGroupsRefs {
+    final manager = $$WorkoutGroupsTableTableManager($_db, $_db.workoutGroups)
+        .filter(
+          (f) =>
+              f.createdByPersonalId.id.sqlEquals($_itemColumn<String>('id')!),
+        );
+
+    final cache = $_typedResult.readTableOrNull(_workoutGroupsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$AuditLogsTable, List<AuditLogEntity>>
+  _auditLogsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.auditLogs,
+    aliasName: $_aliasNameGenerator(db.personals.id, db.auditLogs.personalId),
+  );
+
+  $$AuditLogsTableProcessedTableManager get auditLogsRefs {
+    final manager = $$AuditLogsTableTableManager(
+      $_db,
+      $_db.auditLogs,
+    ).filter((f) => f.personalId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_auditLogsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$PersonalsTableFilterComposer
@@ -12069,6 +12509,56 @@ class $$PersonalsTableFilterComposer
           }) => $$StudentsTableFilterComposer(
             $db: $db,
             $table: $db.students,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> workoutGroupsRefs(
+    Expression<bool> Function($$WorkoutGroupsTableFilterComposer f) f,
+  ) {
+    final $$WorkoutGroupsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.workoutGroups,
+      getReferencedColumn: (t) => t.createdByPersonalId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorkoutGroupsTableFilterComposer(
+            $db: $db,
+            $table: $db.workoutGroups,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> auditLogsRefs(
+    Expression<bool> Function($$AuditLogsTableFilterComposer f) f,
+  ) {
+    final $$AuditLogsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.auditLogs,
+      getReferencedColumn: (t) => t.personalId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$AuditLogsTableFilterComposer(
+            $db: $db,
+            $table: $db.auditLogs,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -12298,6 +12788,56 @@ class $$PersonalsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> workoutGroupsRefs<T extends Object>(
+    Expression<T> Function($$WorkoutGroupsTableAnnotationComposer a) f,
+  ) {
+    final $$WorkoutGroupsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.workoutGroups,
+      getReferencedColumn: (t) => t.createdByPersonalId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorkoutGroupsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.workoutGroups,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> auditLogsRefs<T extends Object>(
+    Expression<T> Function($$AuditLogsTableAnnotationComposer a) f,
+  ) {
+    final $$AuditLogsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.auditLogs,
+      getReferencedColumn: (t) => t.personalId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$AuditLogsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.auditLogs,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$PersonalsTableTableManager
@@ -12313,7 +12853,11 @@ class $$PersonalsTableTableManager
           $$PersonalsTableUpdateCompanionBuilder,
           (PersonalEntity, $$PersonalsTableReferences),
           PersonalEntity,
-          PrefetchHooks Function({bool studentsRefs})
+          PrefetchHooks Function({
+            bool studentsRefs,
+            bool workoutGroupsRefs,
+            bool auditLogsRefs,
+          })
         > {
   $$PersonalsTableTableManager(_$AppDatabase db, $PersonalsTable table)
     : super(
@@ -12426,38 +12970,89 @@ class $$PersonalsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({studentsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (studentsRefs) db.students],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (studentsRefs)
-                    await $_getPrefetchedData<
-                      PersonalEntity,
-                      $PersonalsTable,
-                      StudentEntity
-                    >(
-                      currentTable: table,
-                      referencedTable: $$PersonalsTableReferences
-                          ._studentsRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$PersonalsTableReferences(
-                            db,
-                            table,
-                            p0,
-                          ).studentsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where(
-                            (e) => e.createdByPersonalId == item.id,
-                          ),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({
+                studentsRefs = false,
+                workoutGroupsRefs = false,
+                auditLogsRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (studentsRefs) db.students,
+                    if (workoutGroupsRefs) db.workoutGroups,
+                    if (auditLogsRefs) db.auditLogs,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (studentsRefs)
+                        await $_getPrefetchedData<
+                          PersonalEntity,
+                          $PersonalsTable,
+                          StudentEntity
+                        >(
+                          currentTable: table,
+                          referencedTable: $$PersonalsTableReferences
+                              ._studentsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$PersonalsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).studentsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.createdByPersonalId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (workoutGroupsRefs)
+                        await $_getPrefetchedData<
+                          PersonalEntity,
+                          $PersonalsTable,
+                          WorkoutGroupEntity
+                        >(
+                          currentTable: table,
+                          referencedTable: $$PersonalsTableReferences
+                              ._workoutGroupsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$PersonalsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).workoutGroupsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.createdByPersonalId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (auditLogsRefs)
+                        await $_getPrefetchedData<
+                          PersonalEntity,
+                          $PersonalsTable,
+                          AuditLogEntity
+                        >(
+                          currentTable: table,
+                          referencedTable: $$PersonalsTableReferences
+                              ._auditLogsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$PersonalsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).auditLogsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.personalId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -12474,7 +13069,11 @@ typedef $$PersonalsTableProcessedTableManager =
       $$PersonalsTableUpdateCompanionBuilder,
       (PersonalEntity, $$PersonalsTableReferences),
       PersonalEntity,
-      PrefetchHooks Function({bool studentsRefs})
+      PrefetchHooks Function({
+        bool studentsRefs,
+        bool workoutGroupsRefs,
+        bool auditLogsRefs,
+      })
     >;
 typedef $$StudentsTableCreateCompanionBuilder =
     StudentsCompanion Function({
@@ -12616,6 +13215,24 @@ final class $$StudentsTableReferences
     ).filter((f) => f.studentId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_dayWorkoutsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$AuditLogsTable, List<AuditLogEntity>>
+  _auditLogsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.auditLogs,
+    aliasName: $_aliasNameGenerator(db.students.id, db.auditLogs.studentId),
+  );
+
+  $$AuditLogsTableProcessedTableManager get auditLogsRefs {
+    final manager = $$AuditLogsTableTableManager(
+      $_db,
+      $_db.auditLogs,
+    ).filter((f) => f.studentId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_auditLogsRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -12840,6 +13457,31 @@ class $$StudentsTableFilterComposer
           }) => $$DayWorkoutsTableFilterComposer(
             $db: $db,
             $table: $db.dayWorkouts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> auditLogsRefs(
+    Expression<bool> Function($$AuditLogsTableFilterComposer f) f,
+  ) {
+    final $$AuditLogsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.auditLogs,
+      getReferencedColumn: (t) => t.studentId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$AuditLogsTableFilterComposer(
+            $db: $db,
+            $table: $db.auditLogs,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -13202,6 +13844,31 @@ class $$StudentsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> auditLogsRefs<T extends Object>(
+    Expression<T> Function($$AuditLogsTableAnnotationComposer a) f,
+  ) {
+    final $$AuditLogsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.auditLogs,
+      getReferencedColumn: (t) => t.studentId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$AuditLogsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.auditLogs,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$StudentsTableTableManager
@@ -13222,6 +13889,7 @@ class $$StudentsTableTableManager
             bool studentGymsRefs,
             bool weekScheduleBlocksRefs,
             bool dayWorkoutsRefs,
+            bool auditLogsRefs,
           })
         > {
   $$StudentsTableTableManager(_$AppDatabase db, $StudentsTable table)
@@ -13361,6 +14029,7 @@ class $$StudentsTableTableManager
                 studentGymsRefs = false,
                 weekScheduleBlocksRefs = false,
                 dayWorkoutsRefs = false,
+                auditLogsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -13368,6 +14037,7 @@ class $$StudentsTableTableManager
                     if (studentGymsRefs) db.studentGyms,
                     if (weekScheduleBlocksRefs) db.weekScheduleBlocks,
                     if (dayWorkoutsRefs) db.dayWorkouts,
+                    if (auditLogsRefs) db.auditLogs,
                   ],
                   addJoins:
                       <
@@ -13466,6 +14136,27 @@ class $$StudentsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (auditLogsRefs)
+                        await $_getPrefetchedData<
+                          StudentEntity,
+                          $StudentsTable,
+                          AuditLogEntity
+                        >(
+                          currentTable: table,
+                          referencedTable: $$StudentsTableReferences
+                              ._auditLogsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$StudentsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).auditLogsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.studentId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -13491,6 +14182,7 @@ typedef $$StudentsTableProcessedTableManager =
         bool studentGymsRefs,
         bool weekScheduleBlocksRefs,
         bool dayWorkoutsRefs,
+        bool auditLogsRefs,
       })
     >;
 typedef $$StudentGymsTableCreateCompanionBuilder =
@@ -14399,6 +15091,10 @@ typedef $$WorkoutGroupsTableCreateCompanionBuilder =
       required String id,
       required String name,
       required String description,
+      Value<String?> createdByPersonalId,
+      Value<bool> isShared,
+      Value<int> revision,
+      Value<String?> lastModifiedByDeviceId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -14409,6 +15105,10 @@ typedef $$WorkoutGroupsTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> name,
       Value<String> description,
+      Value<String?> createdByPersonalId,
+      Value<bool> isShared,
+      Value<int> revision,
+      Value<String?> lastModifiedByDeviceId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -14423,6 +15123,28 @@ final class $$WorkoutGroupsTableReferences
     super.$_table,
     super.$_typedResult,
   );
+
+  static $PersonalsTable _createdByPersonalIdTable(_$AppDatabase db) =>
+      db.personals.createAlias(
+        $_aliasNameGenerator(
+          db.workoutGroups.createdByPersonalId,
+          db.personals.id,
+        ),
+      );
+
+  $$PersonalsTableProcessedTableManager? get createdByPersonalId {
+    final $_column = $_itemColumn<String>('created_by_personal_id');
+    if ($_column == null) return null;
+    final manager = $$PersonalsTableTableManager(
+      $_db,
+      $_db.personals,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_createdByPersonalIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
 
   static MultiTypedResultKey<
     $WorkoutGroupExercisesTable,
@@ -14477,6 +15199,21 @@ class $$WorkoutGroupsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -14491,6 +15228,29 @@ class $$WorkoutGroupsTableFilterComposer
     column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$PersonalsTableFilterComposer get createdByPersonalId {
+    final $$PersonalsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.createdByPersonalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableFilterComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<bool> workoutGroupExercisesRefs(
     Expression<bool> Function($$WorkoutGroupExercisesTableFilterComposer f) f,
@@ -14543,6 +15303,21 @@ class $$WorkoutGroupsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -14557,6 +15332,29 @@ class $$WorkoutGroupsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$PersonalsTableOrderingComposer get createdByPersonalId {
+    final $$PersonalsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.createdByPersonalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableOrderingComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$WorkoutGroupsTableAnnotationComposer
@@ -14579,6 +15377,17 @@ class $$WorkoutGroupsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<String> get lastModifiedByDeviceId => $composableBuilder(
+    column: $table.lastModifiedByDeviceId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -14587,6 +15396,29 @@ class $$WorkoutGroupsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  $$PersonalsTableAnnotationComposer get createdByPersonalId {
+    final $$PersonalsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.createdByPersonalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<T> workoutGroupExercisesRefs<T extends Object>(
     Expression<T> Function($$WorkoutGroupExercisesTableAnnotationComposer a) f,
@@ -14628,7 +15460,10 @@ class $$WorkoutGroupsTableTableManager
           $$WorkoutGroupsTableUpdateCompanionBuilder,
           (WorkoutGroupEntity, $$WorkoutGroupsTableReferences),
           WorkoutGroupEntity,
-          PrefetchHooks Function({bool workoutGroupExercisesRefs})
+          PrefetchHooks Function({
+            bool createdByPersonalId,
+            bool workoutGroupExercisesRefs,
+          })
         > {
   $$WorkoutGroupsTableTableManager(_$AppDatabase db, $WorkoutGroupsTable table)
     : super(
@@ -14646,6 +15481,10 @@ class $$WorkoutGroupsTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> description = const Value.absent(),
+                Value<String?> createdByPersonalId = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<String?> lastModifiedByDeviceId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -14654,6 +15493,10 @@ class $$WorkoutGroupsTableTableManager
                 id: id,
                 name: name,
                 description: description,
+                createdByPersonalId: createdByPersonalId,
+                isShared: isShared,
+                revision: revision,
+                lastModifiedByDeviceId: lastModifiedByDeviceId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -14664,6 +15507,10 @@ class $$WorkoutGroupsTableTableManager
                 required String id,
                 required String name,
                 required String description,
+                Value<String?> createdByPersonalId = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<String?> lastModifiedByDeviceId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -14672,6 +15519,10 @@ class $$WorkoutGroupsTableTableManager
                 id: id,
                 name: name,
                 description: description,
+                createdByPersonalId: createdByPersonalId,
+                isShared: isShared,
+                revision: revision,
+                lastModifiedByDeviceId: lastModifiedByDeviceId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -14685,40 +15536,77 @@ class $$WorkoutGroupsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({workoutGroupExercisesRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (workoutGroupExercisesRefs) db.workoutGroupExercises,
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (workoutGroupExercisesRefs)
-                    await $_getPrefetchedData<
-                      WorkoutGroupEntity,
-                      $WorkoutGroupsTable,
-                      WorkoutGroupExerciseEntity
-                    >(
-                      currentTable: table,
-                      referencedTable: $$WorkoutGroupsTableReferences
-                          ._workoutGroupExercisesRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$WorkoutGroupsTableReferences(
-                            db,
-                            table,
-                            p0,
-                          ).workoutGroupExercisesRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where(
-                            (e) => e.workoutGroupId == item.id,
-                          ),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({
+                createdByPersonalId = false,
+                workoutGroupExercisesRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (workoutGroupExercisesRefs) db.workoutGroupExercises,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (createdByPersonalId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.createdByPersonalId,
+                                    referencedTable:
+                                        $$WorkoutGroupsTableReferences
+                                            ._createdByPersonalIdTable(db),
+                                    referencedColumn:
+                                        $$WorkoutGroupsTableReferences
+                                            ._createdByPersonalIdTable(db)
+                                            .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (workoutGroupExercisesRefs)
+                        await $_getPrefetchedData<
+                          WorkoutGroupEntity,
+                          $WorkoutGroupsTable,
+                          WorkoutGroupExerciseEntity
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WorkoutGroupsTableReferences
+                              ._workoutGroupExercisesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WorkoutGroupsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).workoutGroupExercisesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.workoutGroupId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -14735,7 +15623,10 @@ typedef $$WorkoutGroupsTableProcessedTableManager =
       $$WorkoutGroupsTableUpdateCompanionBuilder,
       (WorkoutGroupEntity, $$WorkoutGroupsTableReferences),
       WorkoutGroupEntity,
-      PrefetchHooks Function({bool workoutGroupExercisesRefs})
+      PrefetchHooks Function({
+        bool createdByPersonalId,
+        bool workoutGroupExercisesRefs,
+      })
     >;
 typedef $$WorkoutGroupExercisesTableCreateCompanionBuilder =
     WorkoutGroupExercisesCompanion Function({
@@ -18086,6 +18977,9 @@ typedef $$AuditLogsTableCreateCompanionBuilder =
       required String entityType,
       Value<String?> entityId,
       Value<String?> payloadJson,
+      Value<String?> deviceId,
+      Value<String?> personalId,
+      Value<String?> studentId,
       Value<int> rowid,
     });
 typedef $$AuditLogsTableUpdateCompanionBuilder =
@@ -18096,8 +18990,54 @@ typedef $$AuditLogsTableUpdateCompanionBuilder =
       Value<String> entityType,
       Value<String?> entityId,
       Value<String?> payloadJson,
+      Value<String?> deviceId,
+      Value<String?> personalId,
+      Value<String?> studentId,
       Value<int> rowid,
     });
+
+final class $$AuditLogsTableReferences
+    extends BaseReferences<_$AppDatabase, $AuditLogsTable, AuditLogEntity> {
+  $$AuditLogsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $PersonalsTable _personalIdTable(_$AppDatabase db) =>
+      db.personals.createAlias(
+        $_aliasNameGenerator(db.auditLogs.personalId, db.personals.id),
+      );
+
+  $$PersonalsTableProcessedTableManager? get personalId {
+    final $_column = $_itemColumn<String>('personal_id');
+    if ($_column == null) return null;
+    final manager = $$PersonalsTableTableManager(
+      $_db,
+      $_db.personals,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_personalIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $StudentsTable _studentIdTable(_$AppDatabase db) =>
+      db.students.createAlias(
+        $_aliasNameGenerator(db.auditLogs.studentId, db.students.id),
+      );
+
+  $$StudentsTableProcessedTableManager? get studentId {
+    final $_column = $_itemColumn<String>('student_id');
+    if ($_column == null) return null;
+    final manager = $$StudentsTableTableManager(
+      $_db,
+      $_db.students,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_studentIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
 
 class $$AuditLogsTableFilterComposer
     extends Composer<_$AppDatabase, $AuditLogsTable> {
@@ -18137,6 +19077,57 @@ class $$AuditLogsTableFilterComposer
     column: $table.payloadJson,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$PersonalsTableFilterComposer get personalId {
+    final $$PersonalsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.personalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableFilterComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$StudentsTableFilterComposer get studentId {
+    final $$StudentsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.studentId,
+      referencedTable: $db.students,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$StudentsTableFilterComposer(
+            $db: $db,
+            $table: $db.students,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$AuditLogsTableOrderingComposer
@@ -18177,6 +19168,57 @@ class $$AuditLogsTableOrderingComposer
     column: $table.payloadJson,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$PersonalsTableOrderingComposer get personalId {
+    final $$PersonalsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.personalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableOrderingComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$StudentsTableOrderingComposer get studentId {
+    final $$StudentsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.studentId,
+      referencedTable: $db.students,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$StudentsTableOrderingComposer(
+            $db: $db,
+            $table: $db.students,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$AuditLogsTableAnnotationComposer
@@ -18209,6 +19251,55 @@ class $$AuditLogsTableAnnotationComposer
     column: $table.payloadJson,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  $$PersonalsTableAnnotationComposer get personalId {
+    final $$PersonalsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.personalId,
+      referencedTable: $db.personals,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PersonalsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.personals,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$StudentsTableAnnotationComposer get studentId {
+    final $$StudentsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.studentId,
+      referencedTable: $db.students,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$StudentsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.students,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$AuditLogsTableTableManager
@@ -18222,12 +19313,9 @@ class $$AuditLogsTableTableManager
           $$AuditLogsTableAnnotationComposer,
           $$AuditLogsTableCreateCompanionBuilder,
           $$AuditLogsTableUpdateCompanionBuilder,
-          (
-            AuditLogEntity,
-            BaseReferences<_$AppDatabase, $AuditLogsTable, AuditLogEntity>,
-          ),
+          (AuditLogEntity, $$AuditLogsTableReferences),
           AuditLogEntity,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool personalId, bool studentId})
         > {
   $$AuditLogsTableTableManager(_$AppDatabase db, $AuditLogsTable table)
     : super(
@@ -18248,6 +19336,9 @@ class $$AuditLogsTableTableManager
                 Value<String> entityType = const Value.absent(),
                 Value<String?> entityId = const Value.absent(),
                 Value<String?> payloadJson = const Value.absent(),
+                Value<String?> deviceId = const Value.absent(),
+                Value<String?> personalId = const Value.absent(),
+                Value<String?> studentId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AuditLogsCompanion(
                 id: id,
@@ -18256,6 +19347,9 @@ class $$AuditLogsTableTableManager
                 entityType: entityType,
                 entityId: entityId,
                 payloadJson: payloadJson,
+                deviceId: deviceId,
+                personalId: personalId,
+                studentId: studentId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -18266,6 +19360,9 @@ class $$AuditLogsTableTableManager
                 required String entityType,
                 Value<String?> entityId = const Value.absent(),
                 Value<String?> payloadJson = const Value.absent(),
+                Value<String?> deviceId = const Value.absent(),
+                Value<String?> personalId = const Value.absent(),
+                Value<String?> studentId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AuditLogsCompanion.insert(
                 id: id,
@@ -18274,12 +19371,73 @@ class $$AuditLogsTableTableManager
                 entityType: entityType,
                 entityId: entityId,
                 payloadJson: payloadJson,
+                deviceId: deviceId,
+                personalId: personalId,
+                studentId: studentId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$AuditLogsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({personalId = false, studentId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (personalId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.personalId,
+                                referencedTable: $$AuditLogsTableReferences
+                                    ._personalIdTable(db),
+                                referencedColumn: $$AuditLogsTableReferences
+                                    ._personalIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (studentId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.studentId,
+                                referencedTable: $$AuditLogsTableReferences
+                                    ._studentIdTable(db),
+                                referencedColumn: $$AuditLogsTableReferences
+                                    ._studentIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -18294,12 +19452,9 @@ typedef $$AuditLogsTableProcessedTableManager =
       $$AuditLogsTableAnnotationComposer,
       $$AuditLogsTableCreateCompanionBuilder,
       $$AuditLogsTableUpdateCompanionBuilder,
-      (
-        AuditLogEntity,
-        BaseReferences<_$AppDatabase, $AuditLogsTable, AuditLogEntity>,
-      ),
+      (AuditLogEntity, $$AuditLogsTableReferences),
       AuditLogEntity,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool personalId, bool studentId})
     >;
 typedef $$SyncQueueTableCreateCompanionBuilder =
     SyncQueueCompanion Function({

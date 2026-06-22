@@ -2,6 +2,10 @@
 class ExerciseSetComparisonRow {
   const ExerciseSetComparisonRow({
     required this.setNumber,
+    required this.currentReps,
+    this.currentLoadKg,
+    this.previousReps,
+    this.previousLoadKg,
     required this.currentSetScore,
     this.previousSetScore,
     required this.currentPctOfPrescribed,
@@ -13,6 +17,10 @@ class ExerciseSetComparisonRow {
   });
 
   final int setNumber;
+  final int currentReps;
+  final double? currentLoadKg;
+  final int? previousReps;
+  final double? previousLoadKg;
   final double currentSetScore;
   final double? previousSetScore;
 

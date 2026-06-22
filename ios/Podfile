@@ -279,6 +279,8 @@ OBJC
   live_activities_swift = File.expand_path('.symlinks/plugins/live_activities/ios/live_activities/Sources/live_activities/LiveActivitiesPlugin.swift', __dir__)
   if File.exist?(live_activities_swift)
     las = File.read(live_activities_swift)
+    # Bug no live_activities 2.4.7 (typo): `} else {ver` quebra compilação Swift.
+    las = las.gsub('} else {ver', '} else {')
     unless las.include?('@preconcurrency import ActivityKit')
       las = las.sub(/^import ActivityKit(\r?\n)/, "@preconcurrency import ActivityKit\\1")
     end
@@ -419,7 +421,11 @@ SWIFT
 SWIFT
       las = las.sub(old_tok, new_tok)
     end
-    File.write(live_activities_swift, las)
+    begin
+      File.write(live_activities_swift, las)
+    rescue Errno::EACCES, Errno::EPERM => e
+      Pod::UI.warn "Skipping live_activities cache patch: #{e.message}"
+    end
   end
 
   # permission_handler_apple: ramo pre-iOS 12 usa subscriberCellularProvider (deprecated); app mínimo é 13.

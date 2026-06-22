@@ -4,13 +4,11 @@ import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:drift/drift.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/access/access_tiers.dart';
 import '../../core/access/permission_service.dart';
 import '../../core/auth/app_session.dart';
-import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/auth/password_reset_webhook.dart';
 import '../../core/sync/sync_device_identity.dart';
 import '../../core/utils/calendar_day_utils.dart';
@@ -20,11 +18,11 @@ import '../../core/utils/reps_text_utils.dart';
 import '../../domain/scoring.dart' as scoring;
 import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
-import '../models/day_workout_performed_set_composer.dart';
 import '../models/day_workout_performed_set.dart';
 import '../models/exercise_session_comparison.dart';
 import '../models/programmable_bundle.dart';
 import '../models/week_schedule_row.dart';
+import '../../core/supabase/supabase_sync_controller.dart';
 import '../sync/remote_sync_service.dart';
 
 const _uuid = Uuid();
@@ -77,59 +75,6 @@ int _comparePreferredExerciseLine(
     return a.updatedAt.compareTo(b.updatedAt);
   }
   return a.id.compareTo(b.id);
-}
-
-List<DayWorkoutExerciseEntity> _dedupeDayWorkoutExerciseLinesForDisplay(
-  List<DayWorkoutExerciseEntity> lines,
-) {
-  final activeLines = lines.where((e) => e.deletedAt == null).toList();
-  if (activeLines.length < 2) return activeLines;
-  final kept = <String, DayWorkoutExerciseEntity>{};
-  for (final line in activeLines) {
-    final key = _dayWorkoutExerciseExecutionSlotKey(line);
-    final prev = kept[key];
-    if (prev == null || _comparePreferredExerciseLine(line, prev) > 0) {
-      kept[key] = line;
-    }
-  }
-  final out = kept.values.toList()
-    ..sort((a, b) {
-      final byOrder = a.sortOrder.compareTo(b.sortOrder);
-      if (byOrder != 0) return byOrder;
-      return a.id.compareTo(b.id);
-    });
-  return out;
-}
-
-List<DayWorkoutExerciseEntity> _filterDayWorkoutExercisesByTemplateSlots(
-  List<DayWorkoutExerciseEntity> lines,
-  List<WorkoutGroupExerciseEntity> templateLines,
-) {
-  if (lines.isEmpty || templateLines.isEmpty) return lines;
-  final allowedBySlot = <String, int>{};
-  for (final t in templateLines) {
-    final key = '${t.sortOrder}::${t.exerciseId}';
-    allowedBySlot[key] = (allowedBySlot[key] ?? 0) + 1;
-  }
-  final bySlot = <String, List<DayWorkoutExerciseEntity>>{};
-  for (final line in lines) {
-    final key = '${line.sortOrder}::${line.exerciseId}';
-    bySlot.putIfAbsent(key, () => <DayWorkoutExerciseEntity>[]).add(line);
-  }
-  final out = <DayWorkoutExerciseEntity>[];
-  for (final entry in bySlot.entries) {
-    final allowed = allowedBySlot[entry.key] ?? 0;
-    if (allowed <= 0) continue;
-    final bucket = [...entry.value]
-      ..sort((a, b) => _comparePreferredExerciseLine(b, a));
-    out.addAll(bucket.take(allowed));
-  }
-  out.sort((a, b) {
-    final byOrder = a.sortOrder.compareTo(b.sortOrder);
-    if (byOrder != 0) return byOrder;
-    return a.id.compareTo(b.id);
-  });
-  return out;
 }
 
 /// Soma dos scores e quantidade de linhas **concluídas** (séries registadas conforme planejado).
@@ -187,13 +132,11 @@ String? _repsTextFromWorkoutGroupLine(WorkoutGroupExerciseEntity line) {
 Expression<bool> _dayWorkoutNotCancelled($DayWorkoutsTable t) =>
     t.status.equals('cancelled').not();
 
-/// Apenas treinos ainda não iniciados devem alinhar ao modelo do grupo em
+/// Só snapshots ainda não executados devem alinhar ao modelo do grupo em
 /// [AppDataRepository.syncWorkoutGroupTemplateToScheduledFromDate].
-/// Atualiza `scheduled` e `programmed`; ignora `started`, `completed` e `cancelled`.
+/// `scheduled` e `programmed` são atualizados; iniciado/concluído ficam intactos.
 Expression<bool> _dayWorkoutSubjectToGroupTemplateSync($DayWorkoutsTable w) =>
-    w.status.equals('completed').not() &
-    w.status.equals('cancelled').not() &
-    w.status.equals('started').not();
+    w.status.equals('scheduled') | w.status.equals('programmed');
 
 List<WeekScheduleItemEntity> _weekScheduleItemsInTemplateMultisetOrder(
   List<WeekScheduleItemEntity> groupItemsSortedBySortOrder,
@@ -302,8 +245,13 @@ List<DayWorkoutEntity> _dedupeDayWorkoutsByStudentAndDay(
 /// regista em [audit_logs] + [RemoteSyncService.enqueueAudit], que dispara o envio
 /// incremental ao Supabase em segundo plano ([SupabaseRemoteSyncService]).
 class AppDataRepository {
-  AppDataRepository(this._db, this._session, {RemoteSyncService? remoteSync})
-    : _remote = remoteSync ?? const NoOpRemoteSyncService() {
+  AppDataRepository(
+    this._db,
+    this._session, {
+    RemoteSyncService? remoteSync,
+    SupabaseSyncController? syncController,
+  }) : _remote = remoteSync ?? const NoOpRemoteSyncService(),
+       _syncController = syncController {
     _session.addListener(_clearReactiveStreamCaches);
   }
 
@@ -311,23 +259,14 @@ class AppDataRepository {
   final AppSession _session;
   bool _catalogRefreshInFlight = false;
   final RemoteSyncService _remote;
-  int _backgroundCloudRefreshMuteCount = 0;
+  final SupabaseSyncController? _syncController;
+  Future<String>? _syncDeviceIdFuture;
 
   /// Enquanto ativo, [refreshDayWorkoutFromCloud] não corre (evita pull a competir
   /// com gravação de séries e a repor JSON antigo da nuvem por cima do local).
   DateTime? _dayWorkoutCloudPullMutedUntil;
-
-  bool get _isBackgroundCloudRefreshMuted => _backgroundCloudRefreshMuteCount > 0;
-
-  void muteBackgroundCloudRefresh() {
-    _backgroundCloudRefreshMuteCount++;
-  }
-
-  void unmuteBackgroundCloudRefresh() {
-    if (_backgroundCloudRefreshMuteCount > 0) {
-      _backgroundCloudRefreshMuteCount--;
-    }
-  }
+  final Map<String, DateTime> _weekScheduleCloudPullMutedUntilByKey = {};
+  final Map<String, DateTime> _lastDayWorkoutCloudRefreshAtById = {};
 
   /// Pausa pulls pontuais do treino na nuvem (ex.: com modal de série aberto).
   void muteDayWorkoutCloudPullFor(Duration duration) {
@@ -336,12 +275,136 @@ class AppDataRepository {
     if (cur == null || until.isAfter(cur)) {
       _dayWorkoutCloudPullMutedUntil = until;
     }
+    _syncController?.muteDayWorkoutPullFor(duration);
   }
 
-  bool get isDayWorkoutCloudPullMutedNow {
-    final until = _dayWorkoutCloudPullMutedUntil;
+  String _studentWeekKey(String studentId, DateTime weekMonday) {
+    final mon = normalizeMonday(weekScheduleLocalCalendarDate(weekMonday));
+    return '$studentId|${mon.toIso8601String()}';
+  }
+
+  String _weekScheduleRowsStreamKey(String studentId, DateTime weekMonday) {
+    final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
+    return '$studentId|wsr|${mon.toIso8601String()}';
+  }
+
+  final Map<String, StreamController<List<WeekScheduleRow>>>
+  _weekScheduleManualPushByKey = {};
+  final Map<String, Future<void>> _ensureWeekPlanningInFlightByKey = {};
+  final Map<String, Future<bool>> _repairWeekPlanningInFlightByKey = {};
+  final Map<String, Future<void>> _hydrateWeekPlanningInFlightByKey = {};
+
+  Stream<List<WeekScheduleRow>> _weekScheduleManualPushStream(String key) {
+    return _weekScheduleManualPushByKey
+        .putIfAbsent(
+          key,
+          () => StreamController<List<WeekScheduleRow>>.broadcast(),
+        )
+        .stream;
+  }
+
+  Stream<T> _mergeBroadcastStreams<T>(List<Stream<T>> streams) {
+    if (streams.isEmpty) return const Stream.empty();
+    if (streams.length == 1) return streams.first;
+    return Stream.multi((controller) {
+      final subs = <StreamSubscription<T>>[];
+      controller.onListen = () {
+        for (final stream in streams) {
+          subs.add(
+            stream.listen(
+              controller.add,
+              onError: controller.addError,
+            ),
+          );
+        }
+      };
+      controller.onCancel = () async {
+        for (final sub in subs) {
+          await sub.cancel();
+        }
+        subs.clear();
+      };
+    });
+  }
+
+  List<WeekScheduleRow> _joinRowsToWeekScheduleRows(List<TypedResult> rows) {
+    return rows
+        .map((row) {
+          final ex = row.readTableOrNull(_db.exercises);
+          final rawName = ex?.name.trim();
+          return WeekScheduleRow(
+            item: row.readTable(_db.weekScheduleItems),
+            exerciseName: (rawName != null && rawName.isNotEmpty)
+                ? rawName
+                : 'Exercício ausente no catálogo',
+          );
+        })
+        .toList();
+  }
+
+  Future<void> _publishWeekScheduleRowsSnapshot({
+    required String studentId,
+    required DateTime weekMonday,
+  }) async {
+    final key = _weekScheduleRowsStreamKey(studentId, weekMonday);
+    try {
+      final rows = await _queryWeekScheduleRowsMapped(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      );
+      _weekScheduleLastByKey[key] = rows;
+      final ctrl = _weekScheduleManualPushByKey.putIfAbsent(
+        key,
+        () => StreamController<List<WeekScheduleRow>>.broadcast(),
+      );
+      if (!ctrl.isClosed) {
+        ctrl.add(rows);
+      }
+    } catch (_) {
+      // Best effort: o watch do Drift ainda pode emitir depois.
+    }
+  }
+
+  /// Força o [watchWeekScheduleRows] a emitir o snapshot atual (após gravação local).
+  Future<void> publishWeekScheduleRowsNow({
+    required String studentId,
+    required DateTime weekMonday,
+  }) =>
+      _publishWeekScheduleRowsSnapshot(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      );
+
+  void _markLocalWeekScheduleMutation({
+    required String studentId,
+    required DateTime weekMonday,
+    Duration muteCloudPullFor = const Duration(seconds: 30),
+  }) {
+    final key = _studentWeekKey(studentId, weekMonday);
+    final until = DateTime.now().add(muteCloudPullFor);
+    final cur = _weekScheduleCloudPullMutedUntilByKey[key];
+    if (cur == null || until.isAfter(cur)) {
+      _weekScheduleCloudPullMutedUntilByKey[key] = until;
+    }
+    _weekScheduleLastByKey.remove(_weekScheduleRowsStreamKey(studentId, weekMonday));
+    unawaited(
+      _publishWeekScheduleRowsSnapshot(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      ),
+    );
+  }
+
+  bool _isWeekScheduleCloudPullMuted({
+    required String studentId,
+    required DateTime weekMonday,
+  }) {
+    final key = _studentWeekKey(studentId, weekMonday);
+    final until = _weekScheduleCloudPullMutedUntilByKey[key];
     if (until == null) return false;
-    return DateTime.now().isBefore(until);
+    if (DateTime.now().isBefore(until)) return true;
+    _weekScheduleCloudPullMutedUntilByKey.remove(key);
+    return false;
   }
 
   /// O Drift reaproveita o mesmo [Stream] quando a query é idêntica ([StreamKey]).
@@ -358,8 +421,6 @@ class AppDataRepository {
 
   Stream<List<WorkoutGroupEntity>>? _workoutGroupsInnerBroadcast;
   List<WorkoutGroupEntity>? _lastWorkoutGroups;
-  final Map<String, List<WorkoutGroupExerciseEntity>>
-  _lastGroupExercisesByGroupId = {};
 
   Stream<List<({WorkoutGroupEntity group, int exerciseCount})>>?
   _workoutGroupsSchedulableInnerBroadcast;
@@ -368,14 +429,17 @@ class AppDataRepository {
   /// [watch] por aluno+semana: broadcast por chave + último snapshot (replay para novos ouvintes).
   final Map<String, Stream<List<WeekScheduleRow>>> _weekScheduleInnerByKey = {};
   final Map<String, List<WeekScheduleRow>> _weekScheduleLastByKey = {};
-  final Map<String, DateTime> _weekMissingExerciseHydrationByKey = {};
 
   final Map<String, Stream<List<DayWorkoutEntity>>>
   _studentWeekWorkoutsInnerByKey = {};
   final Map<String, List<DayWorkoutEntity>> _studentWeekWorkoutsLastByKey = {};
   final Map<String, DateTime> _studentWeekWorkoutsLastCloudRefreshByKey = {};
-  final Set<String> _weekPlanningBackfillInFlightKeys = <String>{};
-  final Map<String, DateTime> _weekPlanningBackfillLastAttemptByKey = {};
+
+  /// Uma gravação de série por `lineId` de cada vez (evita duplicar JSON local).
+  final Map<String, Future<void>> _appendSetChainByLineId = {};
+  final Map<String, DayWorkoutPerformedSet?> _lastPerformedSetSeedByLineId = {};
+  final Map<String, List<DayWorkoutPerformedSet>>
+  _lastPerformedSetsSeedByLineId = {};
 
   AppDatabase get db => _db;
   AppSession get session => _session;
@@ -385,23 +449,29 @@ class AppDataRepository {
   void _clearReactiveStreamCaches() {
     _weekScheduleInnerByKey.clear();
     _weekScheduleLastByKey.clear();
-    _weekMissingExerciseHydrationByKey.clear();
+    _weekScheduleCloudPullMutedUntilByKey.clear();
+    for (final c in _weekScheduleManualPushByKey.values) {
+      unawaited(c.close());
+    }
+    _weekScheduleManualPushByKey.clear();
+    _ensureWeekPlanningInFlightByKey.clear();
+    _repairWeekPlanningInFlightByKey.clear();
+    _hydrateWeekPlanningInFlightByKey.clear();
     _studentWeekWorkoutsInnerByKey.clear();
     _studentWeekWorkoutsLastByKey.clear();
     _studentWeekWorkoutsLastCloudRefreshByKey.clear();
-    _weekPlanningBackfillInFlightKeys.clear();
-    _weekPlanningBackfillLastAttemptByKey.clear();
     _studentsRawBroadcast = null;
     _lastStudentsRaw = null;
     _muscleGroupsRawBroadcast = null;
     _lastMuscleGroupsRaw = null;
     _exercisesRawBroadcast = null;
     _lastExercisesRaw = null;
-    _lastGroupExercisesByGroupId.clear();
     _workoutGroupsInnerBroadcast = null;
     _lastWorkoutGroups = null;
     _workoutGroupsSchedulableInnerBroadcast = null;
     _lastSchedulable = null;
+    _lastPerformedSetSeedByLineId.clear();
+    _lastPerformedSetsSeedByLineId.clear();
   }
 
   /// Remover o listener de [AppSession] antes de descartar o repositório.
@@ -905,6 +975,20 @@ class AppDataRepository {
     Map<String, Object?>? payload,
   }) async {
     final auditId = _uuid.v4();
+    final deviceId = await _syncDeviceId();
+    final personalId = (_session.isPersonalTrainer || _session.isAdminPersonal)
+        ? await _existingPersonalIdOrNull(_session.personalId)
+        : null;
+    final studentId = _session.isStudent ? _session.studentId : null;
+    final enrichedPayload = <String, Object?>{
+      if (payload != null) ...payload,
+      'device_id': deviceId,
+      for (final actorEntry in <String, Object?>{
+        'personal_id': personalId,
+        'student_id': studentId,
+      }.entries)
+        if (actorEntry.value != null) actorEntry.key: actorEntry.value,
+    };
     await _db
         .into(_db.auditLogs)
         .insert(
@@ -913,7 +997,10 @@ class AppDataRepository {
             action: action,
             entityType: entityType,
             entityId: Value(entityId),
-            payloadJson: Value(payload == null ? null : jsonEncode(payload)),
+            payloadJson: Value(jsonEncode(enrichedPayload)),
+            deviceId: Value(deviceId),
+            personalId: Value(personalId),
+            studentId: Value(studentId),
           ),
         );
     unawaited(
@@ -922,14 +1009,24 @@ class AppDataRepository {
         action: action,
         entityType: entityType,
         entityId: entityId,
-        payload: payload,
+        payload: enrichedPayload,
       ),
     );
   }
 
-  Future<String> _syncDeviceId() => SyncDeviceIdentity.getOrCreate();
+  Future<String> _syncDeviceId() =>
+      _syncDeviceIdFuture ??= SyncDeviceIdentity.getOrCreate();
 
   int _nextRevision(int current) => current < 0 ? 1 : current + 1;
+
+  Future<String?> _existingPersonalIdOrNull(String? personalId) async {
+    final pid = personalId?.trim();
+    if (pid == null || pid.isEmpty) return null;
+    final row = await (_db.select(
+      _db.personals,
+    )..where((p) => p.id.equals(pid))).getSingleOrNull();
+    return row == null ? null : pid;
+  }
 
   bool _isSqliteBusyError(Object e) {
     final msg = e.toString().toLowerCase();
@@ -1066,7 +1163,6 @@ class AppDataRepository {
   }
 
   void _triggerCatalogRefreshIfNeeded() {
-    if (_isBackgroundCloudRefreshMuted) return;
     if (_catalogRefreshInFlight) return;
     _catalogRefreshInFlight = true;
     Future<void>.microtask(() async {
@@ -1768,22 +1864,22 @@ class AppDataRepository {
 
   Stream<List<WorkoutGroupEntity>> watchWorkoutGroupsAlphabetical() {
     _workoutGroupsInnerBroadcast ??=
-        (_db.select(_db.workoutGroups)
-              ..where((t) => t.deletedAt.isNull())
-              ..orderBy([(t) => OrderingTerm.asc(t.name)]))
-            .watch()
-            .map((list) {
-              if (list.isEmpty) {
-                _triggerCatalogRefreshIfNeeded();
-                final last = _lastWorkoutGroups;
-                if (last != null && last.isNotEmpty) {
-                  return last;
-                }
-              }
-              _lastWorkoutGroups = list;
-              return list;
-            })
-            .asBroadcastStream();
+        (() {
+          final query = _db.select(_db.workoutGroups)
+            ..where((t) => t.deletedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.asc(t.name)]);
+          return query;
+        })().watch().map((list) {
+          if (list.isEmpty) {
+            _triggerCatalogRefreshIfNeeded();
+            final last = _lastWorkoutGroups;
+            if (last != null && last.isNotEmpty) {
+              return last;
+            }
+          }
+          _lastWorkoutGroups = list;
+          return list;
+        }).asBroadcastStream();
 
     return Stream.multi((controller) async {
       final last = _lastWorkoutGroups;
@@ -1794,6 +1890,15 @@ class AppDataRepository {
     });
   }
 
+  Future<bool> canPersonalEditWorkoutGroup(String groupId) async {
+    final group = await (_db.select(
+      _db.workoutGroups,
+    )..where((t) => t.id.equals(groupId))).getSingleOrNull();
+    if (group == null) return false;
+    if (_session.hasFullOrgAccess) return true;
+    return _session.isPersonalTrainer;
+  }
+
   Future<String> upsertWorkoutGroup({
     String? id,
     required String name,
@@ -1802,6 +1907,18 @@ class AppDataRepository {
     await _requireCadastroAccess();
     final now = DateTime.now();
     final sid = id ?? _uuid.v4();
+    final previous = id == null
+        ? null
+        : await (_db.select(
+            _db.workoutGroups,
+          )..where((t) => t.id.equals(sid))).getSingleOrNull();
+    if (previous != null && !await canPersonalEditWorkoutGroup(sid)) {
+      throw ArgumentError('Sem permissão para alterar este grupo de treino.');
+    }
+    final ownerId = previous != null && previous.createdByPersonalId != null
+        ? previous.createdByPersonalId
+        : await _existingPersonalIdOrNull(_session.personalId);
+    final deviceId = await _syncDeviceId();
     await _db
         .into(_db.workoutGroups)
         .insertOnConflictUpdate(
@@ -1809,7 +1926,11 @@ class AppDataRepository {
             id: sid,
             name: name,
             description: description,
-            createdAt: Value(now),
+            createdByPersonalId: Value(ownerId),
+            isShared: Value(previous?.isShared ?? false),
+            revision: Value(_nextRevision(previous?.revision ?? 0)),
+            lastModifiedByDeviceId: Value(deviceId),
+            createdAt: Value(previous?.createdAt ?? now),
             updatedAt: Value(now),
             deletedAt: const Value(null),
           ),
@@ -2049,13 +2170,13 @@ class AppDataRepository {
     }
   }
 
-  /// Alinha o **planejamento semanal** ([week_schedule_items]) e snapshots no calendário
-  /// com status `scheduled` ou `programmed` ao modelo do grupo.
+  /// Alinha o **planejamento semanal** ([week_schedule_items]) e snapshots **programados**
+  /// ou **agendados** (`scheduled`) no calendário ao modelo do grupo.
   ///
   /// Não altera treinos **iniciados**, **concluídos** nem **cancelados**. Para o calendário,
   /// só entram linhas com [DayWorkoutEntity.dayDate] ≥ [effectiveFrom] (dia civil local).
   ///
-  /// No planejamento, alinha da semana atual em diante (itens com
+  /// Semanas passadas no planejamento também são alinhadas (qualquer bloco com
   /// [WeekScheduleItemEntity.sourceWorkoutGroupId] deste grupo).
   ///
   /// A ordem dos exercícios do grupo no planejamento e no calendário passa a seguir a ordem
@@ -2077,7 +2198,6 @@ class AppDataRepository {
       effectiveFrom.month,
       effectiveFrom.day,
     );
-    final effectiveWeekMonday = normalizeMonday(effectiveDay);
 
     var weekItemsUpdated = 0;
     var dayExercisesUpdated = 0;
@@ -2101,10 +2221,7 @@ class AppDataRepository {
           _db.weekScheduleBlocks.id.equalsExp(_db.weekScheduleItems.blockId),
         ),
       ])..where(
-        _db.weekScheduleItems.sourceWorkoutGroupId.equals(workoutGroupId) &
-            _db.weekScheduleBlocks.weekStartMonday.isBiggerOrEqualValue(
-              effectiveWeekMonday,
-            ),
+        _db.weekScheduleItems.sourceWorkoutGroupId.equals(workoutGroupId),
       );
     }
 
@@ -2471,19 +2588,19 @@ class AppDataRepository {
     );
   }
 
-  void _schedulePropagateWorkoutGroupTemplateFromNow(String workoutGroupId) {
-    final gid = workoutGroupId.trim();
-    if (gid.isEmpty) return;
-    unawaited(
-      Future<void>(() async {
-        try {
-          await propagateWorkoutGroupTemplateFromNow(gid);
-        } catch (e) {
-          // ignore: avoid_print
-          print('[GROUP_SYNC] propagate failed gid=$gid err=$e');
-        }
-      }),
-    );
+  Future<void> _propagateWorkoutGroupTemplateAfterMutation(
+    String workoutGroupId,
+  ) async {
+    try {
+      await propagateWorkoutGroupTemplateFromNow(workoutGroupId);
+    } catch (e, st) {
+      developer.log(
+        'propagateWorkoutGroupTemplateAfterMutation failed group=$workoutGroupId: $e',
+        name: 'repo',
+        error: e,
+        stackTrace: st,
+      );
+    }
   }
 
   Future<void> deleteWorkoutGroup(String id) async {
@@ -2561,77 +2678,8 @@ class AppDataRepository {
   Stream<List<WorkoutGroupExerciseEntity>> watchGroupExercises(String groupId) {
     return (_db.select(_db.workoutGroupExercises)
           ..where((t) => t.workoutGroupId.equals(groupId))
-          ..orderBy([
-            (t) => OrderingTerm.asc(t.sortOrder),
-            (t) => OrderingTerm.desc(t.updatedAt),
-            (t) => OrderingTerm.asc(t.id),
-          ]))
-        .watch()
-        .map((rows) {
-          _lastGroupExercisesByGroupId[groupId] = rows;
-          return rows;
-        });
-  }
-
-  Future<List<ExerciseEntity>> getExercisesAlphabeticalSnapshotLocal({
-    Duration timeout = const Duration(milliseconds: 450),
-  }) async {
-    final last = _lastExercisesRaw;
-    if (last != null && last.isNotEmpty) return last;
-    try {
-      return await (_db.select(
-        _db.exercises,
-      )..orderBy([(t) => OrderingTerm.asc(t.name)])).get().timeout(
-        timeout,
-        onTimeout: () => _lastExercisesRaw ?? const <ExerciseEntity>[],
-      );
-    } catch (_) {
-      return _lastExercisesRaw ?? const <ExerciseEntity>[];
-    }
-  }
-
-  Future<List<MuscleGroupEntity>> getMuscleGroupsAlphabeticalSnapshotLocal({
-    Duration timeout = const Duration(milliseconds: 450),
-  }) async {
-    final last = _lastMuscleGroupsRaw;
-    if (last != null && last.isNotEmpty) return last;
-    try {
-      return await (_db.select(
-        _db.muscleGroups,
-      )..orderBy([(t) => OrderingTerm.asc(t.name)])).get().timeout(
-        timeout,
-        onTimeout: () => _lastMuscleGroupsRaw ?? const <MuscleGroupEntity>[],
-      );
-    } catch (_) {
-      return _lastMuscleGroupsRaw ?? const <MuscleGroupEntity>[];
-    }
-  }
-
-  Future<List<WorkoutGroupExerciseEntity>> getGroupExercisesSnapshotLocal(
-    String groupId, {
-    Duration timeout = const Duration(milliseconds: 450),
-  }) async {
-    final last = _lastGroupExercisesByGroupId[groupId];
-    if (last != null && last.isNotEmpty) return last;
-    try {
-      return await (_db.select(_db.workoutGroupExercises)
-            ..where((t) => t.workoutGroupId.equals(groupId))
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.sortOrder),
-              (t) => OrderingTerm.desc(t.updatedAt),
-              (t) => OrderingTerm.asc(t.id),
-            ]))
-          .get()
-          .timeout(
-            timeout,
-            onTimeout: () =>
-                _lastGroupExercisesByGroupId[groupId] ??
-                const <WorkoutGroupExerciseEntity>[],
-          );
-    } catch (_) {
-      return _lastGroupExercisesByGroupId[groupId] ??
-          const <WorkoutGroupExerciseEntity>[];
-    }
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .watch();
   }
 
   /// Adiciona um exercício no modelo do grupo.
@@ -2673,8 +2721,7 @@ class AppDataRepository {
           ),
         );
     await _audit('add_exercise', 'workout_group', entityId: workoutGroupId);
-    _schedulePropagateWorkoutGroupTemplateFromNow(workoutGroupId);
-    unawaited(_remote.recoverPendingWork());
+    await _propagateWorkoutGroupTemplateAfterMutation(workoutGroupId);
     return true;
   }
 
@@ -2709,9 +2756,8 @@ class AppDataRepository {
       await _normalizeWorkoutGroupComboRest(row.workoutGroupId, cid);
     }
     if (row != null) {
-      _schedulePropagateWorkoutGroupTemplateFromNow(row.workoutGroupId);
+      await _propagateWorkoutGroupTemplateAfterMutation(row.workoutGroupId);
     }
-    unawaited(_remote.recoverPendingWork());
   }
 
   Future<void> _normalizeWorkoutGroupComboRest(
@@ -2809,8 +2855,7 @@ class AppDataRepository {
         await _audit('update', 'workout_group_exercise', entityId: onlyId);
       }
     }
-    _schedulePropagateWorkoutGroupTemplateFromNow(gid);
-    unawaited(_remote.recoverPendingWork());
+    await _propagateWorkoutGroupTemplateAfterMutation(gid);
   }
 
   Future<void> removeWorkoutGroupComboBlock({
@@ -2833,8 +2878,7 @@ class AppDataRepository {
       )..where((t) => t.id.equals(l.id))).go();
       await _audit('delete', 'workout_group_exercise', entityId: l.id);
     }
-    _schedulePropagateWorkoutGroupTemplateFromNow(workoutGroupId);
-    unawaited(_remote.recoverPendingWork());
+    await _propagateWorkoutGroupTemplateAfterMutation(workoutGroupId);
   }
 
   /// Combina [secondExerciseId] logo após a linha âncora (mesmo [comboId]).
@@ -2916,8 +2960,7 @@ class AppDataRepository {
 
     await _normalizeWorkoutGroupComboRest(gid, comboId);
     await _audit('combine', 'workout_group', entityId: gid);
-    _schedulePropagateWorkoutGroupTemplateFromNow(gid);
-    unawaited(_remote.recoverPendingWork());
+    await _propagateWorkoutGroupTemplateAfterMutation(gid);
     return true;
   }
 
@@ -2957,8 +3000,7 @@ class AppDataRepository {
       entityId: workoutGroupId,
       payload: {'count': orderedLineIds.length},
     );
-    _schedulePropagateWorkoutGroupTemplateFromNow(workoutGroupId);
-    unawaited(_remote.recoverPendingWork());
+    await _propagateWorkoutGroupTemplateAfterMutation(workoutGroupId);
   }
 
   Stream<List<AuditLogEntity>> watchAuditLogsDesc() {
@@ -3067,15 +3109,7 @@ class AppDataRepository {
           }).toList(),
         )
         .asyncMap(_visibleDayWorkouts)
-        .map(_dedupeDayWorkoutsByStudentAndDay)
-        .map((rows) {
-          for (final w in rows) {
-            if (w.status == 'started') {
-              unawaited(_remote.refreshDayWorkoutFromCloud(w.id));
-            }
-          }
-          return rows;
-        });
+        .map(_dedupeDayWorkoutsByStudentAndDay);
   }
 
   /// Snapshot imediato dos treinos do dia (mesma regra de dia civil local do calendário).
@@ -3137,25 +3171,477 @@ class AppDataRepository {
     DateTime storedWeekStartMonday,
     DateTime weekMondayView,
   ) {
-    final a = normalizeMonday(
-      weekScheduleLocalCalendarDate(storedWeekStartMonday),
-    );
+    final a = normalizeStoredWeekStartMonday(storedWeekStartMonday);
     final b = normalizeMonday(
       DateTime(weekMondayView.year, weekMondayView.month, weekMondayView.day),
     );
     return a == b;
   }
 
+  Future<Set<String>> _calendarWorkoutGroupIdsForStudentWeek(
+    String studentId,
+    DateTime weekMonday,
+  ) async {
+    final start = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    final end = start.add(const Duration(days: 7));
+    final startPad = start.subtract(const Duration(days: 2));
+    final endPad = end.add(const Duration(days: 2));
+    final raw =
+        await (_db.select(_db.dayWorkouts)..where(
+              (w) =>
+                  w.studentId.equals(studentId) &
+                  w.dayDate.isBiggerOrEqualValue(startPad) &
+                  w.dayDate.isSmallerThanValue(endPad) &
+                  _dayWorkoutNotCancelled(w),
+            ))
+            .get();
+    final ids = <String>{};
+    for (final w in raw) {
+      final d = weekScheduleLocalCalendarDate(w.dayDate);
+      if (d.isBefore(start) || !d.isBefore(end)) continue;
+      final gid = w.sourceWorkoutGroupId?.trim();
+      if (gid != null && gid.isNotEmpty) ids.add(gid);
+    }
+    return ids;
+  }
+
+  Set<String> _weekScheduleGroupIdsFromRows(List<WeekScheduleRow> rows) {
+    final out = <String>{};
+    for (final r in rows) {
+      final gid = r.item.sourceWorkoutGroupId?.trim();
+      if (gid != null && gid.isNotEmpty) out.add(gid);
+    }
+    return out;
+  }
+
+  /// Une blocos duplicados da mesma semana (legado UTC/local) num único bloco canônico.
+  Future<void> _consolidateWeekScheduleBlocksForStudentWeek(
+    String studentId,
+    DateTime weekMonday,
+  ) async {
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    final blocks = await (_db.select(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.studentId.equals(studentId))).get();
+    final matching = blocks
+        .where((b) => _weekBlockMondayEquals(b.weekStartMonday, mon))
+        .toList();
+    if (matching.length <= 1) return;
+
+    final itemCountByBlock = <String, int>{};
+    for (final b in matching) {
+      final n = await (_db.select(
+        _db.weekScheduleItems,
+      )..where((i) => i.blockId.equals(b.id))).get();
+      itemCountByBlock[b.id] = n.length;
+    }
+    matching.sort((a, b) {
+      final byItems = itemCountByBlock[b.id]!.compareTo(itemCountByBlock[a.id]!);
+      if (byItems != 0) return byItems;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+
+    final canonical = matching.first;
+    final now = DateTime.now();
+    for (final other in matching.skip(1)) {
+      await (_db.update(
+        _db.weekScheduleItems,
+      )..where((i) => i.blockId.equals(other.id))).write(
+        WeekScheduleItemsCompanion(blockId: Value(canonical.id)),
+      );
+      await (_db.delete(
+        _db.weekScheduleBlocks,
+      )..where((b) => b.id.equals(other.id))).go();
+    }
+    await (_db.update(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.id.equals(canonical.id))).write(
+      WeekScheduleBlocksCompanion(
+        weekStartMonday: Value(normalizeStoredWeekStartMonday(mon)),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<String?> _findWeekBlockIdForMonday(
+    String studentId,
+    DateTime weekMonday,
+  ) async {
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    final blocks = await (_db.select(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.studentId.equals(studentId))).get();
+    for (final b in blocks) {
+      if (_weekBlockMondayEquals(b.weekStartMonday, mon)) return b.id;
+    }
+    return null;
+  }
+
+  Future<bool> _weekPlanningAlreadyHasGroup({
+    required String studentId,
+    required DateTime weekMonday,
+    required String workoutGroupId,
+  }) async {
+    final rows = await _queryWeekScheduleRowsMapped(
+      studentId: studentId,
+      weekMonday: weekMonday,
+    );
+    return _weekScheduleGroupIdsFromRows(rows).contains(workoutGroupId);
+  }
+
+  /// Corrige itens do grupo que existem no SQLite mas não aparecem na listagem da semana.
+  Future<bool> _ensureWeekPlanningGroupVisible({
+    required String studentId,
+    required DateTime weekMonday,
+    required String workoutGroupId,
+  }) async {
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    await _consolidateWeekScheduleBlocksForStudentWeek(studentId, mon);
+    await _relocateOrphanWeekScheduleItemsForGroup(
+      studentId: studentId,
+      weekMonday: mon,
+      workoutGroupId: workoutGroupId,
+    );
+
+    var rows = await _queryWeekScheduleRowsMapped(
+      studentId: studentId,
+      weekMonday: mon,
+    );
+    if (_weekScheduleGroupIdsFromRows(rows).contains(workoutGroupId)) {
+      return true;
+    }
+
+    final canonicalBlockId = await _getOrCreateWeekBlock(studentId, mon);
+    final fixedMonday = normalizeStoredWeekStartMonday(mon);
+    await (_db.update(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.id.equals(canonicalBlockId))).write(
+      WeekScheduleBlocksCompanion(
+        weekStartMonday: Value(fixedMonday),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+
+    rows = await _queryWeekScheduleRowsMapped(
+      studentId: studentId,
+      weekMonday: mon,
+    );
+    if (_weekScheduleGroupIdsFromRows(rows).contains(workoutGroupId)) {
+      return true;
+    }
+
+    // Itens fantasmas no bloco da semana: recria a partir do modelo do grupo.
+    final ghostItems =
+        await (_db.select(_db.weekScheduleItems)..where(
+              (i) =>
+                  i.blockId.equals(canonicalBlockId) &
+                  i.sourceWorkoutGroupId.equals(workoutGroupId),
+            ))
+            .get();
+    for (final item in ghostItems) {
+      await deleteWeekScheduleItem(item.id);
+    }
+
+    final inserted = await _insertWorkoutGroupTemplateToWeekBlock(
+      studentId: studentId,
+      weekMonday: mon,
+      workoutGroupId: workoutGroupId,
+      blockId: canonicalBlockId,
+    );
+    if (inserted > 0) {
+      _markLocalWeekScheduleMutation(studentId: studentId, weekMonday: mon);
+    }
+    return inserted > 0;
+  }
+
+  Future<int> _insertWorkoutGroupTemplateToWeekBlock({
+    required String studentId,
+    required DateTime weekMonday,
+    required String workoutGroupId,
+    required String blockId,
+  }) async {
+    final lines =
+        await (_db.select(_db.workoutGroupExercises)
+              ..where((t) => t.workoutGroupId.equals(workoutGroupId))
+              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+            .get();
+    if (lines.isEmpty) return 0;
+
+    final existing = await (_db.select(
+      _db.weekScheduleItems,
+    )..where((i) => i.blockId.equals(blockId))).get();
+    var maxO = -1;
+    for (final i in existing) {
+      if (i.sortOrder > maxO) maxO = i.sortOrder;
+    }
+
+    var added = 0;
+    await _db.transaction(() async {
+      for (final line in lines) {
+        maxO++;
+        final sets = line.lastSets ?? 0;
+        final reps = _repsIntFromWorkoutGroupLine(line);
+        final needsDetail = sets <= 0 || reps <= 0;
+        final rtw = _repsTextFromWorkoutGroupLine(line);
+        await _db
+            .into(_db.weekScheduleItems)
+            .insert(
+              WeekScheduleItemsCompanion.insert(
+                id: _uuid.v4(),
+                blockId: blockId,
+                exerciseId: line.exerciseId,
+                sourceWorkoutGroupId: Value(workoutGroupId),
+                sortOrder: Value(maxO),
+                sets: Value(sets),
+                reps: Value(reps),
+                repsText: Value(rtw),
+                loadKg: Value(line.lastLoadKg),
+                needsDetail: Value(needsDetail),
+                restBetweenSetsSec: Value(line.restBetweenSetsSec),
+                trainingMethodId: Value(line.trainingMethodId),
+                comboId: Value(line.comboId),
+              ),
+            );
+        added++;
+      }
+    });
+    if (added > 0) {
+      final now = DateTime.now();
+      await (_db.update(
+        _db.weekScheduleBlocks,
+      )..where((b) => b.id.equals(blockId))).write(
+        WeekScheduleBlocksCompanion(updatedAt: Value(now)),
+      );
+      await _audit(
+        'schedule_exercises_week',
+        'week_schedule',
+        entityId: blockId,
+        payload: {'repairVisible': true, 'items': added},
+      );
+    }
+    return added;
+  }
+
+  /// Move itens de grupo presos em bloco de outra semana para o bloco canônico.
+  Future<void> _relocateOrphanWeekScheduleItemsForGroup({
+    required String studentId,
+    required DateTime weekMonday,
+    required String workoutGroupId,
+  }) async {
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    final canonicalBlockId = await _getOrCreateWeekBlock(studentId, mon);
+    final blocks = await (_db.select(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.studentId.equals(studentId))).get();
+    final existingOnCanonical = await (_db.select(
+      _db.weekScheduleItems,
+    )..where((i) => i.blockId.equals(canonicalBlockId))).get();
+    var maxO = -1;
+    for (final i in existingOnCanonical) {
+      if (i.sortOrder > maxO) maxO = i.sortOrder;
+    }
+    for (final block in blocks) {
+      if (block.id == canonicalBlockId) continue;
+      final orphans =
+          await (_db.select(_db.weekScheduleItems)..where(
+                (i) =>
+                    i.blockId.equals(block.id) &
+                    i.sourceWorkoutGroupId.equals(workoutGroupId),
+              ))
+              .get();
+      if (orphans.isEmpty) continue;
+      for (final item in orphans) {
+        maxO++;
+        await (_db.update(
+          _db.weekScheduleItems,
+        )..where((i) => i.id.equals(item.id))).write(
+          WeekScheduleItemsCompanion(
+            blockId: Value(canonicalBlockId),
+            sortOrder: Value(maxO),
+          ),
+        );
+      }
+    }
+    if (existingOnCanonical.isNotEmpty || maxO >= 0) {
+      await (_db.update(
+        _db.weekScheduleBlocks,
+      )..where((b) => b.id.equals(canonicalBlockId))).write(
+        WeekScheduleBlocksCompanion(updatedAt: Value(DateTime.now())),
+      );
+    }
+  }
+
+  /// Garante que grupos já programados no calendário existam também no planejamento semanal.
+  Future<void> ensureWeekPlanningIncludesCalendarGroups({
+    required String studentId,
+    required DateTime weekMonday,
+  }) =>
+      hydrateWeekPlanningForStudentWeek(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      );
+
+  /// Carrega o planejamento local na UI e reconcilia com o calendário (ao escolher aluno/semana).
+  Future<void> hydrateWeekPlanningForStudentWeek({
+    required String studentId,
+    required DateTime weekMonday,
+  }) async {
+    final key = _weekScheduleRowsStreamKey(studentId, weekMonday);
+    final inFlight = _hydrateWeekPlanningInFlightByKey[key];
+    if (inFlight != null) return inFlight;
+
+    final run = () async {
+      await requireStudentAccess(studentId);
+      await _publishWeekScheduleRowsSnapshot(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      );
+      unawaited(
+        refreshStudentWeekScheduleFromCloud(
+          studentId,
+          weekMonday: weekMonday,
+        ).timeout(const Duration(seconds: 12), onTimeout: () {}),
+      );
+      if (await _repairWeekPlanningFromCalendar(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      )) {
+        await _publishWeekScheduleRowsSnapshot(
+          studentId: studentId,
+          weekMonday: weekMonday,
+        );
+      }
+    }();
+
+    _hydrateWeekPlanningInFlightByKey[key] = run;
+    try {
+      await run;
+    } finally {
+      _hydrateWeekPlanningInFlightByKey.remove(key);
+    }
+  }
+
+  /// Cria itens de planejamento faltantes a partir de treinos do calendário na semana.
+  Future<bool> _repairWeekPlanningFromCalendar({
+    required String studentId,
+    required DateTime weekMonday,
+  }) async {
+    final key = _studentWeekKey(studentId, weekMonday);
+    final inFlight = _repairWeekPlanningInFlightByKey[key];
+    if (inFlight != null) return inFlight;
+
+    final run = _repairWeekPlanningFromCalendarOnce(
+      studentId: studentId,
+      weekMonday: weekMonday,
+    );
+    _repairWeekPlanningInFlightByKey[key] = run;
+    try {
+      return await run;
+    } finally {
+      _repairWeekPlanningInFlightByKey.remove(key);
+    }
+  }
+
+  Future<bool> _repairWeekPlanningFromCalendarOnce({
+    required String studentId,
+    required DateTime weekMonday,
+  }) async {
+    await requireStudentAccess(studentId);
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    await _consolidateWeekScheduleBlocksForStudentWeek(studentId, mon);
+
+    final calendarGroups = await _calendarWorkoutGroupIdsForStudentWeek(
+      studentId,
+      mon,
+    );
+    if (calendarGroups.isEmpty) return false;
+
+    final plannedRows = await _queryWeekScheduleRowsMapped(
+      studentId: studentId,
+      weekMonday: mon,
+    );
+    final plannedGroups = _weekScheduleGroupIdsFromRows(plannedRows);
+    final missing = calendarGroups.difference(plannedGroups);
+
+    var changed = false;
+    final groupsToFix = missing.isEmpty ? calendarGroups : missing;
+    for (final gid in groupsToFix) {
+      try {
+        await _relocateOrphanWeekScheduleItemsForGroup(
+          studentId: studentId,
+          weekMonday: mon,
+          workoutGroupId: gid,
+        );
+        if (missing.contains(gid)) {
+          final r = await scheduleWorkoutGroupForWeeks(
+            studentId: studentId,
+            startWeekMonday: mon,
+            workoutGroupId: gid,
+            weekCount: 1,
+          );
+          if (r.itemsAdded > 0) changed = true;
+        } else {
+          final afterRelocate = await _queryWeekScheduleRowsMapped(
+            studentId: studentId,
+            weekMonday: mon,
+          );
+          if (_weekScheduleGroupIdsFromRows(afterRelocate).contains(gid)) {
+            changed = true;
+          }
+        }
+      } catch (e, st) {
+        developer.log(
+          'repairWeekPlanning group=$gid: $e',
+          name: 'AppDataRepository',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }
+
+    if (changed) {
+      _markLocalWeekScheduleMutation(studentId: studentId, weekMonday: mon);
+    }
+    return changed;
+  }
+
   Future<String> _getOrCreateWeekBlock(
     String studentId,
     DateTime weekMonday,
   ) async {
-    final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    await _consolidateWeekScheduleBlocksForStudentWeek(studentId, mon);
+    final storedMonday = normalizeStoredWeekStartMonday(mon);
     final existingAll = await (_db.select(
       _db.weekScheduleBlocks,
     )..where((b) => b.studentId.equals(studentId))).get();
     for (final b in existingAll) {
       if (_weekBlockMondayEquals(b.weekStartMonday, mon)) {
+        final fixed = normalizeStoredWeekStartMonday(mon);
+        if (b.weekStartMonday != fixed) {
+          await (_db.update(
+            _db.weekScheduleBlocks,
+          )..where((x) => x.id.equals(b.id))).write(
+            WeekScheduleBlocksCompanion(
+              weekStartMonday: Value(fixed),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        }
         return b.id;
       }
     }
@@ -3167,7 +3653,7 @@ class AppDataRepository {
           WeekScheduleBlocksCompanion.insert(
             id: id,
             studentId: studentId,
-            weekStartMonday: mon,
+            weekStartMonday: storedMonday,
             createdAt: Value(now),
             updatedAt: Value(now),
           ),
@@ -3182,13 +3668,8 @@ class AppDataRepository {
     required DateTime weekMonday,
   }) {
     final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
-    final weekPadStart = mon.subtract(const Duration(days: 2));
-    final weekPadEnd = mon.add(const Duration(days: 2));
-    final key = '$studentId|wsr|${mon.toIso8601String()}';
+    final key = _weekScheduleRowsStreamKey(studentId, weekMonday);
     _weekScheduleInnerByKey.putIfAbsent(key, () {
-      // Só filtra aluno no SQL; o recorte da semana é em Dart ([_weekBlockMondayEquals]).
-      // Assim blocos com `week_start_monday` gravado de forma inconsistente (UTC/local legado)
-      // não somem para alguns alunos enquanto aparecem para outros.
       final q =
           _db.select(_db.weekScheduleItems).join([
               innerJoin(
@@ -3202,144 +3683,83 @@ class AppDataRepository {
                 _db.exercises.id.equalsExp(_db.weekScheduleItems.exerciseId),
               ),
             ])
-            ..where(
-              _db.weekScheduleBlocks.studentId.equals(studentId) &
-                  _db.weekScheduleBlocks.weekStartMonday.isBiggerOrEqualValue(
-                    weekPadStart,
-                  ) &
-                  _db.weekScheduleBlocks.weekStartMonday
-                      .isSmallerOrEqualValue(weekPadEnd),
-            )
+            ..where(_db.weekScheduleBlocks.studentId.equals(studentId))
             ..orderBy([OrderingTerm.asc(_db.weekScheduleItems.sortOrder)]);
 
-      // Offline-first real: stream local SEM bloquear por checagem remota/permissão.
-      // A convergência com nuvem roda em background.
-      if (!_isBackgroundCloudRefreshMuted) {
-        unawaited(
-          refreshStudentWeekScheduleFromCloud(
-            studentId,
-            weekMonday: mon,
-          ).timeout(const Duration(seconds: 25), onTimeout: () {}),
-        );
-      }
-
-      return q.watch().map((rows) {
-        final list = rows
-            .where(
-              (row) => _weekBlockMondayEquals(
-                row.readTable(_db.weekScheduleBlocks).weekStartMonday,
-                mon,
-              ),
-            )
-            .map((row) {
-              final ex = row.readTableOrNull(_db.exercises);
-              final rawName = ex?.name.trim();
-              return WeekScheduleRow(
-                item: row.readTable(_db.weekScheduleItems),
-                exerciseName: (rawName != null && rawName.isNotEmpty)
-                    ? rawName
-                    : 'Exercício ausente no catálogo',
-              );
-            })
-            .toList();
-        final missingExerciseIds = <String>{
-          for (final row in rows)
-            if (row.readTableOrNull(_db.exercises) == null)
-              row.readTable(_db.weekScheduleItems).exerciseId,
-        };
-        if (missingExerciseIds.isNotEmpty && !_isBackgroundCloudRefreshMuted) {
-          final mk = '$studentId|${mon.toIso8601String()}';
-          final now = DateTime.now();
-          final last = _weekMissingExerciseHydrationByKey[mk];
-          if (last == null || now.difference(last) > const Duration(seconds: 6)) {
-            _weekMissingExerciseHydrationByKey[mk] = now;
-            unawaited(
-              refreshExercisesByIdsFromCloud(missingExerciseIds).timeout(
-                const Duration(seconds: 4),
-                onTimeout: () {},
-              ),
-            );
-          }
-        }
-        if (list.isEmpty && !_isBackgroundCloudRefreshMuted) {
-          unawaited(
-            _ensureWeekPlanningBackfillFromCalendar(
-              studentId: studentId,
-              weekMonday: mon,
-            ),
-          );
-        }
-        _weekScheduleLastByKey[key] = list;
-        return list;
-      }).asBroadcastStream();
-    });
-
-    return Stream.multi((controller) async {
-      final last = _weekScheduleLastByKey[key];
-      if (last != null) {
-        controller.add(last);
-      }
-      await controller.addStream(_weekScheduleInnerByKey[key]!);
-    });
-  }
-
-  Future<void> _ensureWeekPlanningBackfillFromCalendar({
-    required String studentId,
-    required DateTime weekMonday,
-  }) async {
-    final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
-    final key = '$studentId|${mon.toIso8601String()}';
-    if (_weekPlanningBackfillInFlightKeys.contains(key)) return;
-    final now = DateTime.now();
-    final lastAttempt = _weekPlanningBackfillLastAttemptByKey[key];
-    if (lastAttempt != null &&
-        now.difference(lastAttempt) < const Duration(seconds: 8)) {
-      return;
-    }
-    _weekPlanningBackfillInFlightKeys.add(key);
-    _weekPlanningBackfillLastAttemptByKey[key] = now;
-    try {
-      final start = mon;
-      final end = mon.add(const Duration(days: 7));
-      final startPad = start.subtract(const Duration(days: 2));
-      final endPad = end.add(const Duration(days: 2));
-      final workouts =
-          await (_db.select(_db.dayWorkouts)..where(
-                (w) =>
-                    w.studentId.equals(studentId) &
-                    w.dayDate.isBiggerOrEqualValue(startPad) &
-                    w.dayDate.isSmallerThanValue(endPad) &
-                    _dayWorkoutVisibleFilterForSession(w),
-              ))
-              .get();
-      final groupIds = <String>{};
-      for (final w in workouts) {
-        final d = weekScheduleLocalCalendarDate(w.dayDate);
-        if (d.isBefore(start) || !d.isBefore(end)) continue;
-        final gid = (w.sourceWorkoutGroupId ?? '').trim();
-        if (gid.isEmpty) continue;
-        if (w.status == 'completed' || w.status == 'cancelled') continue;
-        groupIds.add(gid);
-      }
-      if (groupIds.isEmpty) return;
-      for (final gid in groupIds) {
-        await repairWorkoutGroupTemplateFromWeekSnapshotIfEmpty(
+      final driftStream = q.watch().asyncMap((_) {
+        return _queryWeekScheduleRowsMapped(
           studentId: studentId,
           weekMonday: mon,
-          workoutGroupId: gid,
         );
-        await scheduleWorkoutGroupForWeeks(
-          studentId: studentId,
-          startWeekMonday: mon,
-          workoutGroupId: gid,
-          weekCount: 1,
-        );
+      }).map((list) {
+        _weekScheduleLastByKey[key] = list;
+        return list;
+      });
+
+      return _mergeBroadcastStreams([
+        driftStream,
+        _weekScheduleManualPushStream(key),
+      ]).asBroadcastStream();
+    });
+
+    return Stream.multi((controller) {
+      StreamSubscription<List<WeekScheduleRow>>? innerSub;
+
+      Future<void> emitLocalSnapshot() async {
+        try {
+          final rows = await _queryWeekScheduleRowsMapped(
+            studentId: studentId,
+            weekMonday: mon,
+          );
+          _weekScheduleLastByKey[key] = rows;
+          if (!controller.isClosed) controller.add(rows);
+        } catch (e, st) {
+          if (!controller.isClosed) controller.addError(e, st);
+        }
       }
-    } catch (_) {
-      // best effort: nunca bloquear render da tela de planejamento.
-    } finally {
-      _weekPlanningBackfillInFlightKeys.remove(key);
-    }
+
+      final cached = _weekScheduleLastByKey[key];
+      if (cached != null) {
+        controller.add(cached);
+      } else {
+        controller.add(const <WeekScheduleRow>[]);
+      }
+
+      unawaited(emitLocalSnapshot());
+
+      innerSub = _weekScheduleInnerByKey[key]!.listen(
+        (rows) {
+          _weekScheduleLastByKey[key] = rows;
+          if (!controller.isClosed) controller.add(rows);
+        },
+        onError: controller.addError,
+      );
+
+      unawaited(
+        requireStudentAccess(studentId)
+            .timeout(
+              const Duration(seconds: 8),
+              onTimeout: () => throw TimeoutException(
+                'Timeout ao verificar acesso ao aluno no planejamento.',
+              ),
+            )
+            .then((_) {
+              unawaited(
+                refreshStudentWeekScheduleFromCloud(
+                  studentId,
+                  weekMonday: mon,
+                ).timeout(const Duration(seconds: 12), onTimeout: () {}),
+              );
+            })
+            .catchError((Object e, StackTrace st) {
+              if (!controller.isClosed) controller.addError(e, st);
+            }),
+      );
+
+      controller.onCancel = () async {
+        await innerSub?.cancel();
+      };
+    });
   }
 
   /// Treinos no calendário (programados / iniciados / concluídos) dentro da semana [monday, monday+7).
@@ -3364,42 +3784,44 @@ class AppDataRepository {
         )
         ..orderBy([(w) => OrderingTerm.asc(w.dayDate)]);
 
-      // Offline-first real: leitura local imediata, sem bloqueio por checagem.
-      return sel.watch().map((list) {
-        final filtered = list.where((w) {
-          final d = weekScheduleLocalCalendarDate(w.dayDate);
-          return !d.isBefore(start) && d.isBefore(end);
-        }).toList();
-        final deduped = _dedupeDayWorkoutsByStudentAndDay(filtered);
-        // Convergência iPhone <-> tablet: mesmo que um evento realtime
-        // falhe, o calendário força pull leve da semana visível.
-        final now = DateTime.now();
-        final last = _studentWeekWorkoutsLastCloudRefreshByKey[key];
-        if (!_isBackgroundCloudRefreshMuted &&
-            (last == null || now.difference(last) > const Duration(seconds: 10))) {
-          _studentWeekWorkoutsLastCloudRefreshByKey[key] = now;
-          unawaited(
-            _remote.refreshStudentWeekScheduleFromCloud(
-              studentId,
-              weekMonday: start,
-            ),
-          );
-          // Reforço de convergência: também puxa concluídos recentes.
-          unawaited(
-            _remote.refreshRecentCompletedHistoryForStudent(
-              studentId,
-              limit: 40,
-            ),
-          );
-          for (final w in deduped) {
-            if (w.status == 'started') {
-              unawaited(_remote.refreshDayWorkoutFromCloud(w.id));
-            }
-          }
-        }
-        _studentWeekWorkoutsLastByKey[key] = deduped;
-        return deduped;
-      }).asBroadcastStream();
+      return Stream.fromFuture(
+            requireStudentAccess(studentId).then((_) => true),
+          )
+          .asyncExpand(
+            (_) => sel.watch().map((list) {
+              final filtered = list.where((w) {
+                final d = weekScheduleLocalCalendarDate(w.dayDate);
+                return !d.isBefore(start) && d.isBefore(end);
+              }).toList();
+              final deduped = _dedupeDayWorkoutsByStudentAndDay(filtered);
+              // Convergência iPhone <-> tablet: mesmo que um evento realtime
+              // falhe, o calendário força pull leve da semana visível.
+              final now = DateTime.now();
+              final last = _studentWeekWorkoutsLastCloudRefreshByKey[key];
+              if (last == null ||
+                  now.difference(last) > const Duration(seconds: 10)) {
+                _studentWeekWorkoutsLastCloudRefreshByKey[key] = now;
+                unawaited(
+                  refreshStudentWeekScheduleFromCloud(
+                    studentId,
+                    weekMonday: start,
+                  ),
+                );
+                // Reforço de convergência: também puxa concluídos recentes.
+                // Cobre casos em que o treino foi concluído em outro dispositivo
+                // e ainda não entrou no recorte semanal local por atraso/offset.
+                unawaited(
+                  _remote.refreshRecentCompletedHistoryForStudent(
+                    studentId,
+                    limit: 40,
+                  ),
+                );
+              }
+              _studentWeekWorkoutsLastByKey[key] = deduped;
+              return deduped;
+            }),
+          )
+          .asBroadcastStream();
     });
 
     return Stream.multi((controller) async {
@@ -3453,11 +3875,16 @@ class AppDataRepository {
       }
     });
     if (added > 0) {
+      _markLocalWeekScheduleMutation(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      );
       await _audit(
         'schedule_exercises_week',
         'week_schedule',
         entityId: blockId,
       );
+      unawaited(_remote.recoverPendingWork());
     }
     return (added: added, skipped: 0);
   }
@@ -3467,9 +3894,12 @@ class AppDataRepository {
   Stream<List<({WorkoutGroupEntity group, int exerciseCount})>>
   watchWorkoutGroupsSchedulable() {
     _workoutGroupsSchedulableInnerBroadcast ??=
-        (_db.select(_db.workoutGroups)
-              ..where((t) => t.deletedAt.isNull())
-              ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+        (() {
+              final query = _db.select(_db.workoutGroups)
+                ..where((t) => t.deletedAt.isNull())
+                ..orderBy([(t) => OrderingTerm.asc(t.name)]);
+              return query;
+            })()
             .watch()
             .asyncMap((groups) async {
               final out = <({WorkoutGroupEntity group, int exerciseCount})>[];
@@ -3542,17 +3972,157 @@ class AppDataRepository {
 
     for (var wi = 0; wi < weekCount; wi++) {
       final mon = start.add(Duration(days: wi * 7));
+      if (await _weekPlanningAlreadyHasGroup(
+        studentId: studentId,
+        weekMonday: mon,
+        workoutGroupId: workoutGroupId,
+      )) {
+        unawaited(
+          _ensureWeekPlanningGroupVisible(
+            studentId: studentId,
+            weekMonday: mon,
+            workoutGroupId: workoutGroupId,
+          ).then((_) {
+            return _publishWeekScheduleRowsSnapshot(
+              studentId: studentId,
+              weekMonday: mon,
+            );
+          }),
+        );
+        continue;
+      }
+      final blockId = await _getOrCreateWeekBlock(studentId, mon);
+      final addedThisWeek = await _insertWorkoutGroupTemplateToWeekBlock(
+        studentId: studentId,
+        weekMonday: mon,
+        workoutGroupId: workoutGroupId,
+        blockId: blockId,
+      );
+      if (addedThisWeek > 0) {
+        weeksWithAdds++;
+        itemsAdded += addedThisWeek;
+        _markLocalWeekScheduleMutation(studentId: studentId, weekMonday: mon);
+      }
+    }
+
+    if (itemsAdded > 0) unawaited(_remote.recoverPendingWork());
+    unawaited(
+      _publishWeekScheduleRowsSnapshot(
+        studentId: studentId,
+        weekMonday: start,
+      ),
+    );
+    return (weeksWithAdds: weeksWithAdds, itemsAdded: itemsAdded);
+  }
+
+  Future<List<WeekScheduleRow>> buildWorkoutGroupPlanningDraftRows(
+    String workoutGroupId,
+  ) async {
+    final query =
+        _db.select(_db.workoutGroupExercises).join([
+            leftOuterJoin(
+              _db.exercises,
+              _db.exercises.id.equalsExp(_db.workoutGroupExercises.exerciseId),
+            ),
+          ])
+          ..where(
+            _db.workoutGroupExercises.workoutGroupId.equals(workoutGroupId),
+          )
+          ..orderBy([OrderingTerm.asc(_db.workoutGroupExercises.sortOrder)]);
+
+    final joined = await query.get();
+    final now = DateTime.now();
+    final rows = <WeekScheduleRow>[];
+    for (var idx = 0; idx < joined.length; idx++) {
+      final line = joined[idx].readTable(_db.workoutGroupExercises);
+      final exercise = joined[idx].readTableOrNull(_db.exercises);
+      final reps = _repsIntFromWorkoutGroupLine(line);
+      final repsText = _repsTextFromWorkoutGroupLine(line);
+      final item = WeekScheduleItemEntity(
+        id: _uuid.v4(),
+        blockId: '',
+        exerciseId: line.exerciseId,
+        sourceWorkoutGroupId: workoutGroupId,
+        sortOrder: idx,
+        sets: line.lastSets ?? 0,
+        reps: reps,
+        repsText: repsText,
+        loadKg: line.lastLoadKg,
+        needsDetail: (line.lastSets ?? 0) <= 0 || reps <= 0,
+        restBetweenSetsSec: line.restBetweenSetsSec,
+        trainingMethodId: line.trainingMethodId,
+        updatedAt: now,
+        comboId: line.comboId,
+      );
+      rows.add(
+        WeekScheduleRow(
+          item: item,
+          exerciseName: exercise?.name ?? line.exerciseId,
+        ),
+      );
+    }
+    return rows;
+  }
+
+  Future<({int weeksWithAdds, int itemsAdded})>
+  scheduleEditedWorkoutGroupRowsForWeeks({
+    required String studentId,
+    required DateTime startWeekMonday,
+    required String workoutGroupId,
+    required int weekCount,
+    required List<WeekScheduleRow> rows,
+  }) async {
+    await _requirePlanningAccess();
+    await requireStudentAccess(studentId);
+    if (weekCount < 1 || weekCount > 52) {
+      throw ArgumentError('weekCount deve estar entre 1 e 52.');
+    }
+    if (rows.isEmpty) {
+      throw ArgumentError('Mantenha pelo menos um exercício para agendar.');
+    }
+    final wg = await (_db.select(
+      _db.workoutGroups,
+    )..where((t) => t.id.equals(workoutGroupId))).getSingleOrNull();
+    if (wg == null || wg.deletedAt != null) {
+      throw ArgumentError('Grupo de treino indisponível ou excluído.');
+    }
+
+    final orderedRows = List<WeekScheduleRow>.from(rows)
+      ..sort((a, b) => a.item.sortOrder.compareTo(b.item.sortOrder));
+    final start = DateTime(
+      startWeekMonday.year,
+      startWeekMonday.month,
+      startWeekMonday.day,
+    );
+
+    var weeksWithAdds = 0;
+    var itemsAdded = 0;
+
+    for (var wi = 0; wi < weekCount; wi++) {
+      final mon = start.add(Duration(days: wi * 7));
+      if (await _weekPlanningAlreadyHasGroup(
+        studentId: studentId,
+        weekMonday: mon,
+        workoutGroupId: workoutGroupId,
+      )) {
+        unawaited(
+          _ensureWeekPlanningGroupVisible(
+            studentId: studentId,
+            weekMonday: mon,
+            workoutGroupId: workoutGroupId,
+          ).then((_) {
+            return _publishWeekScheduleRowsSnapshot(
+              studentId: studentId,
+              weekMonday: mon,
+            );
+          }),
+        );
+        continue;
+      }
       final blockId = await _getOrCreateWeekBlock(studentId, mon);
       final existing = await (_db.select(
         _db.weekScheduleItems,
       )..where((i) => i.blockId.equals(blockId))).get();
-      final alreadyHasThisGroup = existing.any(
-        (i) => i.sourceWorkoutGroupId == workoutGroupId,
-      );
-      if (alreadyHasThisGroup) {
-        continue;
-      }
-
       var maxO = -1;
       for (final i in existing) {
         if (i.sortOrder > maxO) maxO = i.sortOrder;
@@ -3560,129 +4130,61 @@ class AppDataRepository {
 
       var addedThisWeek = 0;
       await _db.transaction(() async {
-        for (final line in lines) {
+        for (final row in orderedRows) {
           maxO++;
-          final sets = line.lastSets ?? 0;
-          final reps = _repsIntFromWorkoutGroupLine(line);
-          final needsDetail = sets <= 0 || reps <= 0;
-          final rtw = _repsTextFromWorkoutGroupLine(line);
+          final item = row.item;
           await _db
               .into(_db.weekScheduleItems)
               .insert(
                 WeekScheduleItemsCompanion.insert(
                   id: _uuid.v4(),
                   blockId: blockId,
-                  exerciseId: line.exerciseId,
+                  exerciseId: item.exerciseId,
                   sourceWorkoutGroupId: Value(workoutGroupId),
                   sortOrder: Value(maxO),
-                  sets: Value(sets),
-                  reps: Value(reps),
-                  repsText: Value(rtw),
-                  loadKg: Value(line.lastLoadKg),
-                  needsDetail: Value(needsDetail),
-                  restBetweenSetsSec: Value(line.restBetweenSetsSec),
-                  trainingMethodId: Value(line.trainingMethodId),
-                  comboId: Value(line.comboId),
+                  sets: Value(item.sets),
+                  reps: Value(item.reps),
+                  repsText: Value(item.repsText),
+                  loadKg: Value(item.loadKg),
+                  needsDetail: Value(
+                    item.needsDetail ||
+                        !weekScheduleItemHasValidPrescription(item),
+                  ),
+                  restBetweenSetsSec: Value(item.restBetweenSetsSec),
+                  trainingMethodId: Value(item.trainingMethodId),
+                  comboId: Value(item.comboId),
                 ),
               );
           addedThisWeek++;
         }
       });
       if (addedThisWeek > 0) {
+        final now = DateTime.now();
+        await (_db.update(
+          _db.weekScheduleBlocks,
+        )..where((b) => b.id.equals(blockId))).write(
+          WeekScheduleBlocksCompanion(updatedAt: Value(now)),
+        );
         weeksWithAdds++;
         itemsAdded += addedThisWeek;
+        _markLocalWeekScheduleMutation(studentId: studentId, weekMonday: mon);
         await _audit(
           'schedule_exercises_week',
           'week_schedule',
           entityId: blockId,
+          payload: {'editedDraft': true, 'items': addedThisWeek},
         );
       }
     }
 
-    if (itemsAdded > 0) {
-      // Acelera convergência para outros dispositivos logo após agendar.
-      unawaited(_remote.recoverPendingWork());
-    }
-    return (weeksWithAdds: weeksWithAdds, itemsAdded: itemsAdded);
-  }
-
-  /// Repara modelo de grupo quando ele está vazio, reaproveitando snapshot já
-  /// existente em algum treino do calendário daquela semana.
-  Future<int> repairWorkoutGroupTemplateFromWeekSnapshotIfEmpty({
-    required String studentId,
-    required DateTime weekMonday,
-    required String workoutGroupId,
-  }) async {
-    await _requireCadastroAccess();
-    await requireStudentAccess(studentId);
-    final existingTemplate = await (_db.select(_db.workoutGroupExercises)
-          ..where((t) => t.workoutGroupId.equals(workoutGroupId))
-          ..limit(1))
-        .getSingleOrNull();
-    if (existingTemplate != null) return 0;
-
-    final start = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
-    final end = start.add(const Duration(days: 7));
-    final candidates = await (_db.select(_db.dayWorkouts)
-          ..where(
-            (w) =>
-                w.studentId.equals(studentId) &
-                w.sourceWorkoutGroupId.equals(workoutGroupId),
-          )
-          ..orderBy([(w) => OrderingTerm.desc(w.updatedAt)]))
-        .get();
-    DayWorkoutEntity? source;
-    for (final w in candidates) {
-      final d = weekScheduleLocalCalendarDate(w.dayDate);
-      if (!d.isBefore(start) && d.isBefore(end)) {
-        source = w;
-        break;
-      }
-    }
-    if (source == null) return 0;
-    final sourceWorkout = source;
-
-    final lines = await (_db.select(_db.dayWorkoutExercises)
-          ..where((e) => e.dayWorkoutId.equals(sourceWorkout.id))
-          ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-        .get();
-    if (lines.isEmpty) return 0;
-
-    final now = DateTime.now();
-    await _db.transaction(() async {
-      for (final l in lines) {
-        await _db.into(_db.workoutGroupExercises).insert(
-              WorkoutGroupExercisesCompanion.insert(
-                id: _uuid.v4(),
-                workoutGroupId: workoutGroupId,
-                exerciseId: l.exerciseId,
-                sortOrder: Value(l.sortOrder),
-                lastReps: Value(l.reps > 0 ? l.reps : null),
-                lastSets: Value(l.sets > 0 ? l.sets : 3),
-                lastLoadKg: Value(l.loadKg),
-                lastRepsText: Value(
-                  (l.repsText ?? '').trim().isEmpty
-                      ? null
-                      : (l.repsText ?? '').trim(),
-                ),
-                restBetweenSetsSec: Value(l.restBetweenSetsSec),
-                trainingMethodId: Value(l.trainingMethodId),
-                comboId: Value(l.comboId),
-                updatedAt: Value(now),
-              ),
-            );
-      }
-    });
-    await _audit(
-      'repair_group_template_from_day_workout',
-      'workout_group',
-      entityId: workoutGroupId,
-      payload: {
-        'source_day_workout_id': sourceWorkout.id,
-        'lines_added': lines.length,
-      },
+    if (itemsAdded > 0) unawaited(_remote.recoverPendingWork());
+    unawaited(
+      _publishWeekScheduleRowsSnapshot(
+        studentId: studentId,
+        weekMonday: start,
+      ),
     );
-    return lines.length;
+    return (weeksWithAdds: weeksWithAdds, itemsAdded: itemsAdded);
   }
 
   /// Copia o planejamento da semana [startWeekMonday] de [sourceStudentId] para [targetStudentId]
@@ -3806,6 +4308,10 @@ class AppDataRepository {
       if (addedThisWeek > 0) {
         weeksWithAdds++;
         itemsAdded += addedThisWeek;
+        _markLocalWeekScheduleMutation(
+          studentId: targetStudentId,
+          weekMonday: mon,
+        );
         await _audit(
           'schedule_exercises_week',
           'week_schedule',
@@ -3814,6 +4320,7 @@ class AppDataRepository {
       }
     }
 
+    if (itemsAdded > 0) unawaited(_remote.recoverPendingWork());
     return (
       sourceItems: sourceItems.length,
       weeksWithAdds: weeksWithAdds,
@@ -3878,6 +4385,10 @@ class AppDataRepository {
     if (row != null && cid != null && cid.isNotEmpty) {
       await _normalizeWeekScheduleComboRest(row.blockId, cid);
     }
+    _markLocalWeekScheduleMutation(
+      studentId: block.studentId,
+      weekMonday: block.weekStartMonday,
+    );
     final gid = row?.sourceWorkoutGroupId?.trim();
     if (row != null && gid != null && gid.isNotEmpty) {
       await propagateWeekBlockProgrammedSnapshotsFromPlanning(
@@ -3946,6 +4457,10 @@ class AppDataRepository {
         onlyWorkoutGroupId: propagateGroupId,
       );
     }
+    _markLocalWeekScheduleMutation(
+      studentId: block.studentId,
+      weekMonday: block.weekStartMonday,
+    );
   }
 
   Future<void> removeWeekScheduleComboBlock({
@@ -3995,6 +4510,10 @@ class AppDataRepository {
         onlyWorkoutGroupId: gid0,
       );
     }
+    _markLocalWeekScheduleMutation(
+      studentId: block.studentId,
+      weekMonday: block.weekStartMonday,
+    );
   }
 
   Future<bool> combineWeekScheduleItemWithExercise({
@@ -4092,6 +4611,10 @@ class AppDataRepository {
         onlyWorkoutGroupId: pg,
       );
     }
+    _markLocalWeekScheduleMutation(
+      studentId: block.studentId,
+      weekMonday: block.weekStartMonday,
+    );
     return true;
   }
 
@@ -4158,50 +4681,78 @@ class AppDataRepository {
         onlyWorkoutGroupId: g,
       );
     }
+    _markLocalWeekScheduleMutation(
+      studentId: block.studentId,
+      weekMonday: block.weekStartMonday,
+    );
   }
 
   // ——— Calendário: programar / iniciar / timer / concluir ———
+
+  Future<List<WeekScheduleRow>> _queryWeekScheduleRowsMapped({
+    required String studentId,
+    required DateTime weekMonday,
+  }) async {
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    await _consolidateWeekScheduleBlocksForStudentWeek(studentId, mon);
+    final blockId = await _findWeekBlockIdForMonday(studentId, mon);
+    if (blockId == null) return [];
+
+    final rows =
+        await (_db.select(_db.weekScheduleItems).join([
+              innerJoin(
+                _db.weekScheduleBlocks,
+                _db.weekScheduleBlocks.id.equalsExp(
+                  _db.weekScheduleItems.blockId,
+                ),
+              ),
+              leftOuterJoin(
+                _db.exercises,
+                _db.exercises.id.equalsExp(_db.weekScheduleItems.exerciseId),
+              ),
+            ])
+            ..where(
+              _db.weekScheduleItems.blockId.equals(blockId) &
+                  _db.weekScheduleBlocks.studentId.equals(studentId),
+            )
+            ..orderBy([OrderingTerm.asc(_db.weekScheduleItems.sortOrder)]))
+            .get();
+    return _joinRowsToWeekScheduleRows(rows);
+  }
 
   Future<List<WeekScheduleRow>> loadWeekScheduleRows({
     required String studentId,
     required DateTime weekMonday,
   }) async {
     await requireStudentAccess(studentId);
-    final mon = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
-    final q =
-        _db.select(_db.weekScheduleItems).join([
-            innerJoin(
-              _db.weekScheduleBlocks,
-              _db.weekScheduleBlocks.id.equalsExp(
-                _db.weekScheduleItems.blockId,
-              ),
-            ),
-            leftOuterJoin(
-              _db.exercises,
-              _db.exercises.id.equalsExp(_db.weekScheduleItems.exerciseId),
-            ),
-          ])
-          ..where(_db.weekScheduleBlocks.studentId.equals(studentId))
-          ..orderBy([OrderingTerm.asc(_db.weekScheduleItems.sortOrder)]);
-    final rows = await q.get();
-    return rows
-        .where(
-          (row) => _weekBlockMondayEquals(
-            row.readTable(_db.weekScheduleBlocks).weekStartMonday,
-            mon,
-          ),
-        )
-        .map((row) {
-          final ex = row.readTableOrNull(_db.exercises);
-          final rawName = ex?.name.trim();
-          return WeekScheduleRow(
-            item: row.readTable(_db.weekScheduleItems),
-            exerciseName: (rawName != null && rawName.isNotEmpty)
-                ? rawName
-                : 'Exercício ausente no catálogo',
+    var rows = await _queryWeekScheduleRowsMapped(
+      studentId: studentId,
+      weekMonday: weekMonday,
+    );
+    final mon = normalizeMonday(
+      DateTime(weekMonday.year, weekMonday.month, weekMonday.day),
+    );
+    final calendarGroups = await _calendarWorkoutGroupIdsForStudentWeek(
+      studentId,
+      mon,
+    );
+    if (calendarGroups.isNotEmpty) {
+      final planned = _weekScheduleGroupIdsFromRows(rows);
+      if (calendarGroups.difference(planned).isNotEmpty) {
+        if (await _repairWeekPlanningFromCalendar(
+          studentId: studentId,
+          weekMonday: mon,
+        )) {
+          rows = await _queryWeekScheduleRowsMapped(
+            studentId: studentId,
+            weekMonday: mon,
           );
-        })
-        .toList();
+        }
+      }
+    }
+    return rows;
   }
 
   /// Alunos com pelo menos um item de semana com séries e reps preenchidos na semana do dia.
@@ -4389,9 +4940,7 @@ class AppDataRepository {
   Future<int> repairDayWorkoutExercisesFromSourceGroupIfNeeded(
     String dayWorkoutId,
   ) async {
-    // Não bloquear reparo de linhas por checagem de acesso aqui.
-    // Em cenários de bootstrap/sync parcial, a sessão pode ainda não ter
-    // resolvido vínculos e isso deixava o treino "vazio" na UI.
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
     final w = await _dayWorkoutRow(dayWorkoutId);
     if (w == null) return 0;
     if (w.status == 'completed' || w.status == 'cancelled') return 0;
@@ -4399,6 +4948,10 @@ class AppDataRepository {
     final existing = await (_db.select(
       _db.dayWorkoutExercises,
     )..where((e) => e.dayWorkoutId.equals(dayWorkoutId))).get();
+    if (existing.isNotEmpty) {
+      await _normalizeDuplicateDayWorkoutExercises(dayWorkoutId);
+      return 0;
+    }
 
     final gid = w.sourceWorkoutGroupId?.trim();
     if (gid == null || gid.isEmpty) return 0;
@@ -4408,121 +4961,20 @@ class AppDataRepository {
               ..where((t) => t.workoutGroupId.equals(gid))
               ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
             .get();
-    var templateLines = lines;
-    if (templateLines.isEmpty) {
-      // Fallback: hidrata o grupo da nuvem e tenta novamente para evitar treino vazio
-      // quando o snapshot local ainda não trouxe workout_group_exercises.
-      try {
-        await _remote.refreshWorkoutGroupsCatalogFromCloud();
-      } catch (_) {
-        // best effort
-      }
-      templateLines =
-          await (_db.select(_db.workoutGroupExercises)
-                ..where((t) => t.workoutGroupId.equals(gid))
-                ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
-              .get();
-    }
-    if (templateLines.isEmpty) return 0;
+    if (lines.isEmpty) return 0;
 
-    final exIds = templateLines.map((l) => l.exerciseId).toSet().toList();
+    final exIds = lines.map((l) => l.exerciseId).toSet().toList();
     if (exIds.isEmpty) return 0;
-
-    String slotKeyFromTemplate(WorkoutGroupExerciseEntity l) =>
-        '${l.sortOrder}::${l.exerciseId}';
-    String slotKeyFromExercise(DayWorkoutExerciseEntity e) =>
-        '${e.sortOrder}::${e.exerciseId}';
-
-    final templateAllowedBySlot = <String, int>{};
-    for (final l in templateLines) {
-      final key = slotKeyFromTemplate(l);
-      templateAllowedBySlot[key] = (templateAllowedBySlot[key] ?? 0) + 1;
-    }
-
-    // Garante catálogo mínimo local para não perder linhas por FK quando
-    // exercícios ainda não chegaram no pull.
-    Future<String> ensureFallbackMuscleGroupId() async {
-      const fallbackId = '00000000-0000-0000-0000-000000000001';
-      final fallback = await (_db.select(
-        _db.muscleGroups,
-      )..where((m) => m.id.equals(fallbackId))).getSingleOrNull();
-      if (fallback != null) return fallbackId;
-      final any = await (_db.select(_db.muscleGroups)
-            ..orderBy([(m) => OrderingTerm.asc(m.name)])
-            ..limit(1))
-          .getSingleOrNull();
-      if (any != null) return any.id;
-      final now = DateTime.now();
-      await _db.into(_db.muscleGroups).insertOnConflictUpdate(
-        MuscleGroupsCompanion.insert(
-          id: fallbackId,
-          name: 'Recuperacao',
-          createdAt: Value(now),
-          updatedAt: Value(now),
-        ),
-      );
-      return fallbackId;
-    }
-
     final existingEx = await (_db.select(
       _db.exercises,
     )..where((e) => e.id.isIn(exIds))).get();
-    final existingById = {for (final e in existingEx) e.id: e};
-    if (existingById.length < exIds.length) {
-      final fallbackMgId = await ensureFallbackMuscleGroupId();
-      final now = DateTime.now();
-      for (final exId in exIds) {
-        if (existingById.containsKey(exId)) continue;
-        final shortId = exId.length >= 8 ? exId.substring(0, 8) : exId;
-        await _db.into(_db.exercises).insertOnConflictUpdate(
-          ExercisesCompanion.insert(
-            id: exId,
-            name: 'Exercício $shortId',
-            muscleGroupId: fallbackMgId,
-            createdAt: Value(now),
-            updatedAt: Value(now),
-          ),
-        );
-      }
-    }
+    final exerciseOk = existingEx.map((e) => e.id).toSet();
+    if (exerciseOk.isEmpty) return 0;
 
     var added = 0;
-    var removed = 0;
     await _db.transaction(() async {
-      final existingBySlot = <String, List<DayWorkoutExerciseEntity>>{};
-      for (final row in existing) {
-        final key = slotKeyFromExercise(row);
-        existingBySlot.putIfAbsent(key, () => <DayWorkoutExerciseEntity>[]).add(row);
-      }
-
-      // Remove sobras/duplicados que não pertencem ao template atual
-      // (ou excedem a quantidade permitida por slot).
-      for (final entry in existingBySlot.entries) {
-        final allowed = templateAllowedBySlot[entry.key] ?? 0;
-        final rows = [...entry.value]
-          ..sort((a, b) => _comparePreferredExerciseLine(b, a));
-        if (rows.length <= allowed) continue;
-        for (var i = allowed; i < rows.length; i++) {
-          await (_db.delete(
-            _db.dayWorkoutExercises,
-          )..where((e) => e.id.equals(rows[i].id))).go();
-          removed++;
-        }
-      }
-
-      final existingAfterCleanup = await (_db.select(
-        _db.dayWorkoutExercises,
-      )..where((e) => e.dayWorkoutId.equals(dayWorkoutId))).get();
-      final existingBySort = <int, Set<String>>{};
-      for (final row in existingAfterCleanup) {
-        existingBySort.putIfAbsent(row.sortOrder, () => <String>{}).add(row.exerciseId);
-      }
-      for (final line in templateLines) {
-        final bucket = existingBySort[line.sortOrder] ?? const <String>{};
-        final sameExerciseAlreadyExists = bucket.contains(line.exerciseId);
-        if (sameExerciseAlreadyExists) {
-          continue;
-        }
+      for (final line in lines) {
+        if (!exerciseOk.contains(line.exerciseId)) continue;
         final sets = line.lastSets != null && line.lastSets! > 0
             ? line.lastSets!
             : 3;
@@ -4546,7 +4998,6 @@ class AppDataRepository {
                 comboId: Value(line.comboId),
               ),
             );
-        existingBySort.putIfAbsent(line.sortOrder, () => <String>{}).add(line.exerciseId);
         added++;
       }
     });
@@ -4561,18 +5012,7 @@ class AppDataRepository {
         payload: {'from_workout_group_id': gid, 'lines_added': added},
       );
     }
-    if (removed > 0) {
-      await (_db.update(_db.dayWorkouts)
-            ..where((x) => x.id.equals(dayWorkoutId)))
-          .write(DayWorkoutsCompanion(updatedAt: Value(DateTime.now())));
-      await _audit(
-        'repair_day_workout_exercises',
-        'day_workout',
-        entityId: dayWorkoutId,
-        payload: {'from_workout_group_id': gid, 'lines_removed': removed},
-      );
-    }
-    return added + removed;
+    return added;
   }
 
   Future<DayWorkoutEntity?> getDayWorkout(String id) async {
@@ -4602,234 +5042,17 @@ class AppDataRepository {
     if (muted != null && DateTime.now().isBefore(muted)) {
       return;
     }
+    final last = _lastDayWorkoutCloudRefreshAtById[dayWorkoutId];
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(seconds: 25)) {
+      return;
+    }
+    _lastDayWorkoutCloudRefreshAtById[dayWorkoutId] = DateTime.now();
     try {
       await _remote.refreshDayWorkoutFromCloud(dayWorkoutId);
-      await _pullWorkoutEventTablesFromCloud(dayWorkoutId);
-      await reconcileDayWorkoutPerformedSetsFromLocalEvents(dayWorkoutId);
     } catch (_) {
       // Best effort: a UI continua com o snapshot local.
     }
-  }
-
-  Future<void> _pullWorkoutEventTablesFromCloud(String dayWorkoutId) async {
-    if (!supabaseAppEnabled) return;
-    final c = Supabase.instance.client;
-    try {
-      final setRows =
-          await c
-              .from('day_workout_set_events')
-              .select(
-                'event_id,day_workout_id,day_workout_exercise_id,student_id,reps,load_kg,'
-                'logged_at_ms,created_by_user_id,created_by_role,created_at',
-              )
-              .eq('day_workout_id', dayWorkoutId)
-              .order('logged_at_ms', ascending: true);
-      for (final raw in (setRows as List)) {
-        final m = Map<String, dynamic>.from(raw as Map);
-        final createdAt = DateTime.tryParse('${m['created_at'] ?? ''}');
-        final createdAtMs = createdAt?.millisecondsSinceEpoch ?? 0;
-        await _db.customStatement(
-          'INSERT OR REPLACE INTO day_workout_set_events_local '
-          '(event_id, day_workout_id, day_workout_exercise_id, student_id, reps, load_kg, '
-          'logged_at_ms, created_by_user_id, created_by_role, created_at_ms, sync_status) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          <Object?>[
-            m['event_id'],
-            m['day_workout_id'],
-            m['day_workout_exercise_id'],
-            m['student_id'],
-            (m['reps'] as num?)?.toInt() ?? 0,
-            (m['load_kg'] as num?)?.toDouble(),
-            (m['logged_at_ms'] as num?)?.toInt() ?? 0,
-            m['created_by_user_id']?.toString(),
-            m['created_by_role']?.toString() ?? 'personal',
-            createdAtMs,
-            'synced',
-          ],
-        );
-      }
-    } catch (_) {
-      // best effort
-    }
-    try {
-      final restRows =
-          await c
-              .from('day_workout_set_rest_events')
-              .select(
-                'rest_event_id,set_event_id,day_workout_id,day_workout_exercise_id,'
-                'rest_prescribed_sec,rest_countdown_elapsed_ms,post_rest_modal_ms,'
-                'recorded_at_ms,recorded_by_user_id,recorded_by_role,created_at',
-              )
-              .eq('day_workout_id', dayWorkoutId)
-              .order('recorded_at_ms', ascending: true);
-      for (final raw in (restRows as List)) {
-        final m = Map<String, dynamic>.from(raw as Map);
-        final createdAt = DateTime.tryParse('${m['created_at'] ?? ''}');
-        final createdAtMs = createdAt?.millisecondsSinceEpoch ?? 0;
-        await _db.customStatement(
-          'INSERT OR REPLACE INTO day_workout_set_rest_events_local '
-          '(rest_event_id, set_event_id, day_workout_id, day_workout_exercise_id, '
-          'rest_prescribed_sec, rest_countdown_elapsed_ms, post_rest_modal_ms, recorded_at_ms, '
-          'recorded_by_user_id, recorded_by_role, created_at_ms, sync_status) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          <Object?>[
-            m['rest_event_id'],
-            m['set_event_id'],
-            m['day_workout_id'],
-            m['day_workout_exercise_id'],
-            (m['rest_prescribed_sec'] as num?)?.toInt(),
-            (m['rest_countdown_elapsed_ms'] as num?)?.toInt(),
-            (m['post_rest_modal_ms'] as num?)?.toInt(),
-            (m['recorded_at_ms'] as num?)?.toInt() ?? 0,
-            m['recorded_by_user_id']?.toString(),
-            m['recorded_by_role']?.toString() ?? 'personal',
-            createdAtMs,
-            'synced',
-          ],
-        );
-      }
-    } catch (_) {
-      // best effort
-    }
-    try {
-      final tombRows =
-          await c
-              .from('day_workout_set_event_tombstones')
-              .select(
-                'tombstone_id,event_id,day_workout_id,day_workout_exercise_id,deleted_at_ms,'
-                'deleted_by_user_id,deleted_by_role,created_at',
-              )
-              .eq('day_workout_id', dayWorkoutId)
-              .order('deleted_at_ms', ascending: true);
-      for (final raw in (tombRows as List)) {
-        final m = Map<String, dynamic>.from(raw as Map);
-        final createdAt = DateTime.tryParse('${m['created_at'] ?? ''}');
-        final createdAtMs = createdAt?.millisecondsSinceEpoch ?? 0;
-        await _db.customStatement(
-          'INSERT OR REPLACE INTO day_workout_set_event_tombstones_local '
-          '(tombstone_id, event_id, day_workout_id, day_workout_exercise_id, deleted_at_ms, '
-          'deleted_by_user_id, deleted_by_role, created_at_ms, sync_status) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          <Object?>[
-            m['tombstone_id'],
-            m['event_id'],
-            m['day_workout_id'],
-            m['day_workout_exercise_id'],
-            (m['deleted_at_ms'] as num?)?.toInt() ?? 0,
-            m['deleted_by_user_id']?.toString(),
-            m['deleted_by_role']?.toString() ?? 'personal',
-            createdAtMs,
-            'synced',
-          ],
-        );
-      }
-    } catch (_) {
-      // best effort
-    }
-  }
-
-  Future<int> reconcileDayWorkoutPerformedSetsFromLocalEvents(
-    String dayWorkoutId,
-  ) async {
-    final lines =
-        await (_db.select(_db.dayWorkoutExercises)
-              ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
-              ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-            .get();
-    if (lines.isEmpty) return 0;
-    var changed = 0;
-    for (final line in lines) {
-      final setRows = await _db.customSelect(
-        'SELECT event_id, reps, load_kg, logged_at_ms, created_at_ms '
-        'FROM day_workout_set_events_local '
-        'WHERE day_workout_id = ? AND day_workout_exercise_id = ? '
-        'ORDER BY logged_at_ms ASC, created_at_ms ASC, event_id ASC',
-        variables: <Variable<Object>>[
-          Variable<String>(dayWorkoutId),
-          Variable<String>(line.id),
-        ],
-      ).get();
-      final restRows = await _db.customSelect(
-        'SELECT rest_event_id, set_event_id, rest_prescribed_sec, rest_countdown_elapsed_ms, '
-        'post_rest_modal_ms, recorded_at_ms, created_at_ms '
-        'FROM day_workout_set_rest_events_local '
-        'WHERE day_workout_id = ? AND day_workout_exercise_id = ? '
-        'ORDER BY recorded_at_ms ASC, created_at_ms ASC, rest_event_id ASC',
-        variables: <Variable<Object>>[
-          Variable<String>(dayWorkoutId),
-          Variable<String>(line.id),
-        ],
-      ).get();
-      final tombRows = await _db.customSelect(
-        'SELECT tombstone_id, event_id, deleted_at_ms '
-        'FROM day_workout_set_event_tombstones_local '
-        'WHERE day_workout_id = ? AND day_workout_exercise_id = ? '
-        'ORDER BY deleted_at_ms ASC, tombstone_id ASC',
-        variables: <Variable<Object>>[
-          Variable<String>(dayWorkoutId),
-          Variable<String>(line.id),
-        ],
-      ).get();
-
-      final setEvents = setRows
-          .map(
-            (row) => (
-              eventId: row.read<String>('event_id'),
-              reps: (row.data['reps'] as num).toInt(),
-              loadKg: (row.data['load_kg'] as num?)?.toDouble(),
-              loggedAtMs: (row.data['logged_at_ms'] as num).toInt(),
-              createdAtMs: (row.data['created_at_ms'] as num).toInt(),
-            ),
-          )
-          .toList();
-      final restEvents = restRows
-          .map(
-            (row) => (
-              restEventId: row.read<String>('rest_event_id'),
-              setEventId: row.read<String>('set_event_id'),
-              restPrescribedSec: (row.data['rest_prescribed_sec'] as num?)?.toInt(),
-              restCountdownElapsedMs:
-                  (row.data['rest_countdown_elapsed_ms'] as num?)?.toInt(),
-              postRestModalMs: (row.data['post_rest_modal_ms'] as num?)?.toInt(),
-              recordedAtMs: (row.data['recorded_at_ms'] as num).toInt(),
-              createdAtMs: (row.data['created_at_ms'] as num).toInt(),
-            ),
-          )
-          .toList();
-      final tombstones = tombRows
-          .map(
-            (row) => (
-              tombstoneId: row.read<String>('tombstone_id'),
-              eventId: row.read<String>('event_id'),
-              deletedAtMs: (row.data['deleted_at_ms'] as num).toInt(),
-            ),
-          )
-          .toList();
-
-      final composed = DayWorkoutPerformedSetComposer.compose(
-        legacyJsonRaw: line.performedSetsJson,
-        setEvents: setEvents,
-        restEvents: restEvents,
-        tombstones: tombstones,
-      );
-      final encoded = DayWorkoutPerformedSetCodec.encode(composed);
-      final current = line.performedSetsJson ?? '';
-      if (encoded == current) continue;
-      final score = DayWorkoutPerformedSetCodec.totalExerciseScore(composed);
-      final loadKg = composed.isEmpty ? null : composed.last.loadKg;
-      await (_db.update(_db.dayWorkoutExercises)
-            ..where((e) => e.id.equals(line.id)))
-          .write(
-        DayWorkoutExercisesCompanion(
-          performedSetsJson: Value(encoded),
-          exerciseScore: Value(score),
-          loadKg: Value(loadKg),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
-      changed++;
-    }
-    return changed;
   }
 
   /// Antes de abrir/avaliar o planejamento semanal, força pull pontual da nuvem
@@ -4838,6 +5061,12 @@ class AppDataRepository {
     String studentId, {
     required DateTime weekMonday,
   }) async {
+    if (_isWeekScheduleCloudPullMuted(
+      studentId: studentId,
+      weekMonday: weekMonday,
+    )) {
+      return;
+    }
     try {
       await _remote.refreshStudentWeekScheduleFromCloud(
         studentId,
@@ -4949,72 +5178,20 @@ class AppDataRepository {
     //
     // As operações mutáveis (append/edit/delete) continuam exigindo acesso via
     // [_requireAccessForDayWorkoutLineId] e [_requireAccessForDayWorkoutId].
-    unawaited(_normalizeDuplicateDayWorkoutExercises(dayWorkoutId));
     yield* (_db.select(_db.dayWorkoutExercises)
-          ..where(
-            (e) =>
-                e.dayWorkoutId.equals(dayWorkoutId) & e.deletedAt.isNull(),
-          )
+          ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
           ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-        .watch()
-        .asyncMap((rows) async {
-          final deduped = _dedupeDayWorkoutExerciseLinesForDisplay(rows);
-          final workout = await _dayWorkoutRow(dayWorkoutId);
-          final gid = workout?.sourceWorkoutGroupId?.trim();
-          final shouldForceTemplate =
-              gid != null &&
-              gid.isNotEmpty &&
-              workout != null &&
-              (workout.status == 'programmed' ||
-                  workout.status == 'scheduled' ||
-                  workout.status == 'started' ||
-                  workout.status == 'paused');
-          if (!shouldForceTemplate) return deduped;
-          final templateLines =
-              await (_db.select(_db.workoutGroupExercises)
-                    ..where((t) => t.workoutGroupId.equals(gid))
-                    ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
-                  .get();
-          if (templateLines.isEmpty) return deduped;
-          return _filterDayWorkoutExercisesByTemplateSlots(
-            deduped,
-            templateLines,
-          );
-        });
+        .watch();
   }
 
   Future<List<DayWorkoutExerciseEntity>> getDayWorkoutExercises(
     String dayWorkoutId,
   ) async {
     await _requireAccessForDayWorkoutId(dayWorkoutId);
-    await _normalizeDuplicateDayWorkoutExercises(dayWorkoutId);
-    final rows =
-        await (_db.select(_db.dayWorkoutExercises)
-              ..where(
-                (e) =>
-                    e.dayWorkoutId.equals(dayWorkoutId) & e.deletedAt.isNull(),
-              )
-              ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
-            .get();
-    final deduped = _dedupeDayWorkoutExerciseLinesForDisplay(rows);
-    final workout = await _dayWorkoutRow(dayWorkoutId);
-    final gid = workout?.sourceWorkoutGroupId?.trim();
-    final shouldForceTemplate =
-        gid != null &&
-        gid.isNotEmpty &&
-        workout != null &&
-        (workout.status == 'programmed' ||
-            workout.status == 'scheduled' ||
-            workout.status == 'started' ||
-            workout.status == 'paused');
-    if (!shouldForceTemplate) return deduped;
-    final templateLines =
-        await (_db.select(_db.workoutGroupExercises)
-              ..where((t) => t.workoutGroupId.equals(gid))
-              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
-            .get();
-    if (templateLines.isEmpty) return deduped;
-    return _filterDayWorkoutExercisesByTemplateSlots(deduped, templateLines);
+    return (_db.select(_db.dayWorkoutExercises)
+          ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
+          ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
+        .get();
   }
 
   Future<int> _normalizeDuplicateDayWorkoutExercises(
@@ -5022,10 +5199,7 @@ class AppDataRepository {
   ) async {
     final lines =
         await (_db.select(_db.dayWorkoutExercises)
-              ..where(
-                (e) =>
-                    e.dayWorkoutId.equals(dayWorkoutId) & e.deletedAt.isNull(),
-              )
+              ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
               ..orderBy([
                 (e) => OrderingTerm.asc(e.sortOrder),
                 (e) => OrderingTerm.desc(e.updatedAt),
@@ -5086,7 +5260,7 @@ class AppDataRepository {
 
   /// Para descanso entre séries: no último exercício do bloco [comboId] oferece intervalo; entre movimentos do combo, não.
   Future<bool> isLastLineInExerciseCombo(String lineId) async {
-      final line = await (_db.select(
+    final line = await (_db.select(
       _db.dayWorkoutExercises,
     )..where((e) => e.id.equals(lineId))).getSingleOrNull();
     if (line == null) return true;
@@ -5098,8 +5272,7 @@ class AppDataRepository {
               ..where(
                 (e) =>
                     e.dayWorkoutId.equals(line.dayWorkoutId) &
-                    e.comboId.equals(cid) &
-                    e.deletedAt.isNull(),
+                    e.comboId.equals(cid),
               )
               ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
             .get();
@@ -5269,52 +5442,20 @@ class AppDataRepository {
   Future<DayWorkoutPerformedSet?> lastPerformedSetSeedForLine(
     String lineId,
   ) async {
-    await _requireAccessForDayWorkoutLineId(lineId);
-    final line = await (_db.select(
-      _db.dayWorkoutExercises,
-    )..where((e) => e.id.equals(lineId))).getSingleOrNull();
-    if (line == null) return null;
-
-    final workout = await _dayWorkoutRow(line.dayWorkoutId);
-    if (workout == null) return null;
-
-    final q =
-        _db.select(_db.dayWorkoutExercises).join([
-            innerJoin(
-              _db.dayWorkouts,
-              _db.dayWorkouts.id.equalsExp(
-                _db.dayWorkoutExercises.dayWorkoutId,
-              ),
-            ),
-          ])
-          ..where(
-            _db.dayWorkoutExercises.id.equals(lineId).not() &
-                _db.dayWorkoutExercises.exerciseId.equals(line.exerciseId) &
-                _db.dayWorkouts.studentId.equals(workout.studentId) &
-                _dayWorkoutNotCancelled(_db.dayWorkouts),
-          )
-          ..orderBy([
-            OrderingTerm.desc(_db.dayWorkouts.dayDate),
-            OrderingTerm.desc(_db.dayWorkouts.updatedAt),
-          ]);
-
-    final rows = await q.get();
-    for (final row in rows) {
-      final exerciseRow = row.readTable(_db.dayWorkoutExercises);
-      final performed = DayWorkoutPerformedSetCodec.decode(
-        exerciseRow.performedSetsJson,
-      );
-      if (performed.isNotEmpty) return performed.last;
-    }
-    return null;
+    final sets = await lastPerformedSetsSeedForLine(lineId);
+    return sets.isEmpty ? null : sets.last;
   }
 
-  /// Todas as séries do último treino com registros para o mesmo aluno +
-  /// exercício da [lineId] (não considera a própria linha atual).
   Future<List<DayWorkoutPerformedSet>> lastPerformedSetsSeedForLine(
     String lineId,
   ) async {
-    await _requireAccessForDayWorkoutLineId(lineId);
+    if (_lastPerformedSetsSeedByLineId.containsKey(lineId)) {
+      return _lastPerformedSetsSeedByLineId[lineId]!;
+    }
+    if (_lastPerformedSetSeedByLineId.containsKey(lineId)) {
+      final set = _lastPerformedSetSeedByLineId[lineId];
+      return set == null ? const <DayWorkoutPerformedSet>[] : [set];
+    }
     final line = await (_db.select(
       _db.dayWorkoutExercises,
     )..where((e) => e.id.equals(lineId))).getSingleOrNull();
@@ -5322,6 +5463,7 @@ class AppDataRepository {
 
     final workout = await _dayWorkoutRow(line.dayWorkoutId);
     if (workout == null) return const <DayWorkoutPerformedSet>[];
+    await requireStudentAccess(workout.studentId);
 
     final q =
         _db.select(_db.dayWorkoutExercises).join([
@@ -5341,7 +5483,8 @@ class AppDataRepository {
           ..orderBy([
             OrderingTerm.desc(_db.dayWorkouts.dayDate),
             OrderingTerm.desc(_db.dayWorkouts.updatedAt),
-          ]);
+          ])
+          ..limit(24);
 
     final rows = await q.get();
     for (final row in rows) {
@@ -5349,19 +5492,27 @@ class AppDataRepository {
       final performed = DayWorkoutPerformedSetCodec.decode(
         exerciseRow.performedSetsJson,
       );
-      if (performed.isNotEmpty) return performed;
+      if (performed.isNotEmpty) {
+        _lastPerformedSetsSeedByLineId[lineId] = performed;
+        _lastPerformedSetSeedByLineId[lineId] = performed.last;
+        return performed;
+      }
     }
+    _lastPerformedSetsSeedByLineId[lineId] = const <DayWorkoutPerformedSet>[];
+    _lastPerformedSetSeedByLineId[lineId] = null;
     return const <DayWorkoutPerformedSet>[];
   }
 
-  Future<bool> hasLocalSetEvent(String eventId) async {
-    final id = eventId.trim();
-    if (id.isEmpty) return false;
-    final row = await _db.customSelect(
-      'SELECT event_id FROM day_workout_set_events_local WHERE event_id = ? LIMIT 1',
-      variables: [Variable<String>(id)],
-    ).getSingleOrNull();
-    return row != null;
+  DayWorkoutPerformedSet? cachedLastPerformedSetSeedForLine(String lineId) {
+    final sets = _lastPerformedSetsSeedByLineId[lineId];
+    if (sets != null) return sets.isEmpty ? null : sets.last;
+    return _lastPerformedSetSeedByLineId[lineId];
+  }
+
+  List<DayWorkoutPerformedSet>? cachedLastPerformedSetsSeedForLine(
+    String lineId,
+  ) {
+    return _lastPerformedSetsSeedByLineId[lineId];
   }
 
   Duration _wallSpanPerformed(List<DayWorkoutPerformedSet> performed) {
@@ -5413,27 +5564,16 @@ class AppDataRepository {
     final curDw = await _dayWorkoutRow(curLine.dayWorkoutId);
     if (curDw == null) return null;
 
-    final sumCurScores = await _sumPerformedScoresForDayWorkout(
-      curLine.dayWorkoutId,
-    );
     final curTotal = DayWorkoutPerformedSetCodec.totalExerciseScore(performed);
-    final curPlanned = scoring.prescribedExerciseLineScore(
-      loadKg: curLine.loadKg ?? 0,
-      reps: curLine.reps,
-      sets: curLine.sets,
-    );
-    final curPlannedSafe = curPlanned <= 0 ? 1.0 : curPlanned;
-    final curPlannedSum = await _sumPrescribedScoresForDayWorkout(
-      curLine.dayWorkoutId,
-    );
     final wkCal = curDw.watchCaloriesKcal;
     double? currentKcal;
-    double? currentPredictedKcal;
     var hasWatch = false;
     if (wkCal != null && wkCal > 0) {
       hasWatch = true;
+      final sumCurScores = await _sumPerformedScoresForDayWorkout(
+        curLine.dayWorkoutId,
+      );
       currentKcal = wkCal * (curTotal / sumCurScores);
-      currentPredictedKcal = wkCal * (curPlannedSafe / curPlannedSum);
     }
 
     final cutoff = curDw.completedAt ?? DateTime.now();
@@ -5479,7 +5619,6 @@ class AppDataRepository {
     double? prevTotal;
     Duration? prevWall;
     double? previousKcal;
-    double? previousPredictedKcal;
     if (prevLine != null && prevPerformed.isNotEmpty) {
       prevTotal = DayWorkoutPerformedSetCodec.totalExerciseScore(prevPerformed);
       prevWall = _wallSpanPerformed(prevPerformed);
@@ -5491,16 +5630,6 @@ class AppDataRepository {
         if (sumPrev > 0) {
           previousKcal = pk * (prevTotal / sumPrev);
         }
-        final prevPlanned = scoring.prescribedExerciseLineScore(
-          loadKg: prevLine.loadKg ?? 0,
-          reps: prevLine.reps,
-          sets: prevLine.sets,
-        );
-        final prevPlannedSum = await _sumPrescribedScoresForDayWorkout(
-          prevLine.dayWorkoutId,
-        );
-        previousPredictedKcal =
-            pk * ((prevPlanned <= 0 ? 1.0 : prevPlanned) / prevPlannedSum);
       }
     }
 
@@ -5547,6 +5676,12 @@ class AppDataRepository {
       rows.add(
         ExerciseSetComparisonRow(
           setNumber: i + 1,
+          currentReps: s.reps,
+          currentLoadKg: s.loadKg ?? curLine.loadKg,
+          previousReps: i < prevPerformed.length ? prevPerformed[i].reps : null,
+          previousLoadKg: i < prevPerformed.length
+              ? (prevPerformed[i].loadKg ?? prevLine?.loadKg)
+              : null,
           currentSetScore: curSetScore,
           previousSetScore: prevSetScore,
           currentPctOfPrescribed: curPct,
@@ -5568,24 +5703,9 @@ class AppDataRepository {
       previousTotalScore: prevTotal,
       totalScoreEvolutionPctVsPrevious: totalEvol,
       currentEstimatedKcal: currentKcal,
-      currentPredictedKcal: currentPredictedKcal,
       previousEstimatedKcal: previousKcal,
-      previousPredictedKcal: previousPredictedKcal,
       hasWorkoutWatchKcal: hasWatch,
     );
-  }
-
-  Future<double> _sumPrescribedScoresForDayWorkout(String dayWorkoutId) async {
-    final lines = await getDayWorkoutExercises(dayWorkoutId);
-    var sum = 0.0;
-    for (final e in lines) {
-      sum += scoring.prescribedExerciseLineScore(
-        loadKg: e.loadKg ?? 0,
-        reps: e.reps,
-        sets: e.sets,
-      );
-    }
-    return sum <= 0 ? 1.0 : sum;
   }
 
   /// Últimos [limit] treinos **concluídos**, ordenados do mais **antigo** ao mais **novo** (eixo X).
@@ -5800,25 +5920,34 @@ class AppDataRepository {
     required String lineId,
     double? loadKg,
     required int reps,
-    String? clientEventId,
+  }) {
+    final prior = _appendSetChainByLineId[lineId] ?? Future<void>.value();
+    final next = prior
+        .catchError((_) {})
+        .then(
+          (_) => _appendDayWorkoutExercisePerformedSetOnce(
+            lineId: lineId,
+            loadKg: loadKg,
+            reps: reps,
+          ),
+        );
+    _appendSetChainByLineId[lineId] = next;
+    return next.whenComplete(() {
+      if (identical(_appendSetChainByLineId[lineId], next)) {
+        _appendSetChainByLineId.remove(lineId);
+      }
+    });
+  }
+
+  Future<void> _appendDayWorkoutExercisePerformedSetOnce({
+    required String lineId,
+    double? loadKg,
+    required int reps,
   }) async {
     _syncTrace(
       'append_set/start line=$lineId reps=$reps load=${loadKg ?? 'null'}',
     );
-    muteDayWorkoutCloudPullFor(const Duration(seconds: 20));
-    await _requireAccessForDayWorkoutLineId(lineId);
-    if (clientEventId != null && clientEventId.trim().isNotEmpty) {
-      final existingEvent = await _db.customSelect(
-        'SELECT event_id FROM day_workout_set_events_local WHERE event_id = ? LIMIT 1',
-        variables: [Variable<String>(clientEventId)],
-      ).getSingleOrNull();
-      if (existingEvent != null) {
-        _syncTrace(
-          'append_set/idempotent_hit line=$lineId event=$clientEventId',
-        );
-        return;
-      }
-    }
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 30));
     final row = await (_db.select(
       _db.dayWorkoutExercises,
     )..where((x) => x.id.equals(lineId))).getSingleOrNull();
@@ -5831,8 +5960,22 @@ class AppDataRepository {
         'Já foram registradas as ${row.sets} série(s) planejadas.',
       );
     }
-    final workout = await _dayWorkoutRow(row.dayWorkoutId);
-    if (workout != null && workout.status == 'started' && loadKg == null) {
+    final dayWorkoutId = row.dayWorkoutId;
+    var workoutBefore = await _dayWorkoutRow(dayWorkoutId);
+    if (workoutBefore == null) {
+      // Evita falso positivo de gravação em linha órfã (sem treino pai local):
+      // nesses casos a série podia "salvar" e depois sumir por descarte na fila.
+      await _remote.refreshDayWorkoutFromCloud(dayWorkoutId);
+      workoutBefore = await _dayWorkoutRow(dayWorkoutId);
+      if (workoutBefore == null) {
+        throw ArgumentError(
+          'Treino indisponível para este exercício. Reabra o treino e tente novamente.',
+        );
+      }
+    }
+    final workout = workoutBefore;
+    await requireStudentAccess(workout.studentId);
+    if (workout.status == 'started' && loadKg == null) {
       throw ArgumentError(
         'Com o treino em execução, preencha a carga (kg) e as repetições em cada série.',
       );
@@ -5849,28 +5992,10 @@ class AppDataRepository {
     final newLoadKg = next.isEmpty
         ? row.loadKg
         : (next.last.loadKg ?? row.loadKg);
-    final dayWorkoutId = row.dayWorkoutId;
     final now = DateTime.now();
     final deviceId = await _syncDeviceId();
-    var workoutBefore = await _dayWorkoutRow(dayWorkoutId);
-    if (workoutBefore == null) {
-      // Evita falso positivo de gravação em linha órfã (sem treino pai local):
-      // nesses casos a série podia "salvar" e depois sumir por descarte na fila.
-      await _remote.refreshDayWorkoutFromCloud(dayWorkoutId);
-      workoutBefore = await _dayWorkoutRow(dayWorkoutId);
-      if (workoutBefore == null) {
-        throw ArgumentError(
-          'Treino indisponível para este exercício. Reabra o treino e tente novamente.',
-        );
-      }
-    }
     final appendAuditId = _uuid.v4();
     final touchAuditId = _uuid.v4();
-    final setEventId = (clientEventId != null && clientEventId.trim().isNotEmpty)
-        ? clientEventId.trim()
-        : _uuid.v4();
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final createdByRole = _session.isStudent ? 'student' : 'personal';
 
     await _runWithDbRetry(() async {
       await _db.transaction(() async {
@@ -5887,18 +6012,16 @@ class AppDataRepository {
             syncStatus: const Value('pending'),
           ),
         );
-        if (workoutBefore != null) {
-          await (_db.update(
-            _db.dayWorkouts,
-          )..where((w) => w.id.equals(dayWorkoutId))).write(
-            DayWorkoutsCompanion(
-              updatedAt: Value(now),
-              revision: Value(_nextRevision(workoutBefore.revision)),
-              lastModifiedByDeviceId: Value(deviceId),
-              syncStatus: const Value('pending'),
-            ),
-          );
-        }
+        await (_db.update(
+          _db.dayWorkouts,
+        )..where((w) => w.id.equals(dayWorkoutId))).write(
+          DayWorkoutsCompanion(
+            updatedAt: Value(now),
+            revision: Value(_nextRevision(workout.revision)),
+            lastModifiedByDeviceId: Value(deviceId),
+            syncStatus: const Value('pending'),
+          ),
+        );
         await _db
             .into(_db.auditLogs)
             .insert(
@@ -5920,40 +6043,6 @@ class AppDataRepository {
                 payloadJson: Value(jsonEncode({'reason': 'append_set'})),
               ),
             );
-        await _db.customStatement(
-          'INSERT OR REPLACE INTO day_workout_set_events_local '
-          '(event_id, day_workout_id, day_workout_exercise_id, student_id, reps, load_kg, '
-          'logged_at_ms, created_by_role, created_at_ms, sync_status) '
-          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          <Object?>[
-            setEventId,
-            dayWorkoutId,
-            lineId,
-            workoutBefore?.studentId ?? '',
-            reps,
-            loadKg,
-            nowMs,
-            createdByRole,
-            nowMs,
-            'pending',
-          ],
-        );
-        await _enqueueSyncOutbox(
-          entityId: setEventId,
-          op: 'upsert_set_event',
-          dayWorkoutId: dayWorkoutId,
-          dayWorkoutExerciseId: lineId,
-          payload: <String, dynamic>{
-            'event_id': setEventId,
-            'day_workout_id': dayWorkoutId,
-            'day_workout_exercise_id': lineId,
-            'student_id': workoutBefore?.studentId ?? '',
-            'reps': reps,
-            'load_kg': loadKg,
-            'logged_at_ms': nowMs,
-            'created_by_role': createdByRole,
-          },
-        );
       });
     });
 
@@ -5961,89 +6050,87 @@ class AppDataRepository {
       'append_set/local_commit_ok line=$lineId dayWorkout=$dayWorkoutId sets_now=${next.length}/${row.sets} score=$exerciseScore',
     );
 
-    // Offline-first de verdade: commit local já concluído, nuvem sempre em background.
-    unawaited(
-      _enqueueAppendSetSyncInBackground(
-        lineId: lineId,
-        dayWorkoutId: dayWorkoutId,
-        appendAuditId: appendAuditId,
-        touchAuditId: touchAuditId,
-      ),
+    // UI: retorna logo após o commit SQLite; nuvem/score em segundo plano.
+    _scheduleAppendSetCloudFollowUp(
+      lineId: lineId,
+      dayWorkoutId: dayWorkoutId,
+      appendAuditId: appendAuditId,
+      touchAuditId: touchAuditId,
     );
-    // Recalcula score de treino após garantir enqueue; falha aqui não pode
-    // impedir propagação da série para nuvem/outros dispositivos.
-    try {
-      await _refreshWorkoutScoreForDayWorkoutAtNow(dayWorkoutId);
-    } catch (e, st) {
-      _syncTrace(
-        'append_set/score_refresh_non_fatal line=$lineId dayWorkout=$dayWorkoutId error=$e',
-      );
-      developer.log(
-        'append_set score refresh failed',
-        name: 'sync.trace',
-        error: e,
-        stackTrace: st,
-      );
-    }
   }
 
-  Future<void> _enqueueAppendSetSyncInBackground({
+  void _scheduleAppendSetCloudFollowUp({
     required String lineId,
     required String dayWorkoutId,
     required String appendAuditId,
     required String touchAuditId,
-  }) async {
-    var appendEnqueued = false;
-    var touchEnqueued = false;
-    try {
-      await _remote.enqueueAudit(
-        auditLogId: appendAuditId,
-        action: 'append_set',
-        entityType: 'day_workout_exercise',
-        entityId: lineId,
-      );
-      appendEnqueued = true;
-    } catch (e, st) {
-      developer.log(
-        'append_set enqueue failed (line)',
-        name: 'sync.trace',
-        error: e,
-        stackTrace: st,
-      );
-    }
-    try {
-      await _remote.enqueueAudit(
-        auditLogId: touchAuditId,
-        action: 'touch',
-        entityType: 'day_workout',
-        entityId: dayWorkoutId,
-        payload: {'reason': 'append_set'},
-      );
-      touchEnqueued = true;
-    } catch (e, st) {
-      developer.log(
-        'append_set enqueue failed (touch)',
-        name: 'sync.trace',
-        error: e,
-        stackTrace: st,
-      );
-    }
-    try {
-      if (await _shouldFlushWorkoutCloudSync(dayWorkoutId)) {
-        unawaited(_remote.recoverPendingWork());
-        unawaited(_remote.pushDayWorkoutExerciseNow(lineId));
-      }
-    } catch (e, st) {
-      developer.log(
-        'append_set background sync kick failed',
-        name: 'sync.trace',
-        error: e,
-        stackTrace: st,
-      );
-    }
-    _syncTrace(
-      'append_set/enqueued_bg line=$lineId audit_append=$appendAuditId '
-      'ok_append=$appendEnqueued audit_touch=$touchAuditId ok_touch=$touchEnqueued',
+  }) {
+    unawaited(
+      Future.microtask(() async {
+        var appendEnqueued = false;
+        var touchEnqueued = false;
+        try {
+          await _remote.enqueueAudit(
+            auditLogId: appendAuditId,
+            action: 'append_set',
+            entityType: 'day_workout_exercise',
+            entityId: lineId,
+          );
+          appendEnqueued = true;
+        } catch (e, st) {
+          developer.log(
+            'append_set enqueue failed (line)',
+            name: 'sync.trace',
+            error: e,
+            stackTrace: st,
+          );
+        }
+        try {
+          await _remote.enqueueAudit(
+            auditLogId: touchAuditId,
+            action: 'touch',
+            entityType: 'day_workout',
+            entityId: dayWorkoutId,
+            payload: {'reason': 'append_set'},
+          );
+          touchEnqueued = true;
+        } catch (e, st) {
+          developer.log(
+            'append_set enqueue failed (touch)',
+            name: 'sync.trace',
+            error: e,
+            stackTrace: st,
+          );
+        }
+        try {
+          await _remote.recoverPendingWork();
+          muteDayWorkoutCloudPullFor(const Duration(seconds: 20));
+        } catch (e, st) {
+          developer.log(
+            'append_set recoverPendingWork failed',
+            name: 'sync.trace',
+            error: e,
+            stackTrace: st,
+          );
+        }
+        _syncTrace(
+          'append_set/enqueued line=$lineId audit_append=$appendAuditId '
+          'ok_append=$appendEnqueued audit_touch=$touchAuditId ok_touch=$touchEnqueued',
+        );
+        try {
+          await _refreshWorkoutScoreForDayWorkoutAtNow(dayWorkoutId);
+        } catch (e, st) {
+          _syncTrace(
+            'append_set/score_refresh_non_fatal line=$lineId dayWorkout=$dayWorkoutId error=$e',
+          );
+          developer.log(
+            'append_set score refresh failed',
+            name: 'sync.trace',
+            error: e,
+            stackTrace: st,
+          );
+        }
+      }),
     );
   }
 
@@ -6079,58 +6166,12 @@ class AppDataRepository {
       next,
       syncParentWorkoutScore: false,
     );
-    final setEventId = await _resolveLastActiveSetEventId(lineId);
-    if (setEventId != null) {
-      final restEventId = _uuid.v4();
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      final role = _session.isStudent ? 'student' : 'personal';
-      await _db.customStatement(
-        'INSERT OR REPLACE INTO day_workout_set_rest_events_local '
-        '(rest_event_id, set_event_id, day_workout_id, day_workout_exercise_id, '
-        'rest_prescribed_sec, rest_countdown_elapsed_ms, post_rest_modal_ms, '
-        'recorded_at_ms, recorded_by_role, created_at_ms, sync_status) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        <Object?>[
-          restEventId,
-          setEventId,
-          row.dayWorkoutId,
-          lineId,
-          prescribedSec,
-          countdownElapsedMs,
-          postPhaseMs,
-          nowMs,
-          role,
-          nowMs,
-          'pending',
-        ],
-      );
-      await _enqueueSyncOutbox(
-        entityId: restEventId,
-        op: 'upsert_rest_event',
-        dayWorkoutId: row.dayWorkoutId,
-        dayWorkoutExerciseId: lineId,
-        payload: <String, dynamic>{
-          'rest_event_id': restEventId,
-          'set_event_id': setEventId,
-          'day_workout_id': row.dayWorkoutId,
-          'day_workout_exercise_id': lineId,
-          'rest_prescribed_sec': prescribedSec,
-          'rest_countdown_elapsed_ms': countdownElapsedMs,
-          'post_rest_modal_ms': postPhaseMs,
-          'recorded_at_ms': nowMs,
-          'recorded_by_role': role,
-        },
-      );
-    }
     await _audit('patch_set_rest', 'day_workout_exercise', entityId: lineId);
     await _touchDayWorkoutAfterLineMutation(
       row.dayWorkoutId,
       reason: 'patch_set_rest',
     );
-    if (await _shouldFlushWorkoutCloudSync(row.dayWorkoutId)) {
-      unawaited(_remote.recoverPendingWork());
-      unawaited(_remote.pushDayWorkoutExerciseNow(lineId));
-    }
+    unawaited(_remote.recoverPendingWork());
   }
 
   Future<void> _persistDayWorkoutPerformedSets(
@@ -6189,17 +6230,7 @@ class AppDataRepository {
       entityId: dayWorkoutId,
       payload: {'reason': reason},
     );
-    if (await _shouldFlushWorkoutCloudSync(dayWorkoutId)) {
-      unawaited(_remote.recoverPendingWork());
-    }
-  }
-
-  Future<bool> _shouldFlushWorkoutCloudSync(String dayWorkoutId) async {
-    final w = await _dayWorkoutRow(dayWorkoutId);
-    if (w == null) return true;
-    // Durante treino em execução, segue offline-first estrito:
-    // grava local + outbox, mas sem forçar push imediato.
-    return w.status != 'started';
+    unawaited(_remote.recoverPendingWork());
   }
 
   /// Remove a série executada no índice [performedIndex] (0-based na lista JSON).
@@ -6207,7 +6238,7 @@ class AppDataRepository {
     required String lineId,
     required int performedIndex,
   }) async {
-    muteDayWorkoutCloudPullFor(const Duration(seconds: 8));
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 30));
     await _requireAccessForDayWorkoutLineId(lineId);
     final row = await (_db.select(
       _db.dayWorkoutExercises,
@@ -6219,160 +6250,14 @@ class AppDataRepository {
     if (performedIndex < 0 || performedIndex >= existing.length) {
       throw ArgumentError('Índice de série inválido.');
     }
-    final removedSet = existing[performedIndex];
     final next = [...existing]..removeAt(performedIndex);
-    final targetEventId = await _resolveActiveSetEventIdAtIndex(
-      lineId: lineId,
-      index: performedIndex,
-    );
     await _persistDayWorkoutPerformedSets(lineId, row, next);
-    var effectiveEventId = targetEventId;
-    if (effectiveEventId == null) {
-      final workoutRow = await _dayWorkoutRow(row.dayWorkoutId);
-      final fallbackStudentId = workoutRow?.studentId ?? '';
-      // Compat legado: se a série veio do JSON antigo (sem event_id local),
-      // cria evento sintético para que a exclusão gere tombstone global.
-      effectiveEventId = _uuid.v4();
-      final nowMsSynthetic = DateTime.now().millisecondsSinceEpoch;
-      final roleSynthetic = _session.isStudent ? 'student' : 'personal';
-      await _db.customStatement(
-        'INSERT OR REPLACE INTO day_workout_set_events_local '
-        '(event_id, day_workout_id, day_workout_exercise_id, student_id, reps, load_kg, '
-        'logged_at_ms, created_by_role, created_at_ms, sync_status) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        <Object?>[
-          effectiveEventId,
-          row.dayWorkoutId,
-          lineId,
-          fallbackStudentId,
-          removedSet.reps,
-          removedSet.loadKg,
-          removedSet.loggedAtMs ?? nowMsSynthetic,
-          roleSynthetic,
-          nowMsSynthetic,
-          'pending',
-        ],
-      );
-      await _enqueueSyncOutbox(
-        entityId: effectiveEventId,
-        op: 'upsert_set_event',
-        dayWorkoutId: row.dayWorkoutId,
-        dayWorkoutExerciseId: lineId,
-        payload: <String, dynamic>{
-          'event_id': effectiveEventId,
-          'day_workout_id': row.dayWorkoutId,
-          'day_workout_exercise_id': lineId,
-          'student_id': fallbackStudentId,
-          'reps': removedSet.reps,
-          'load_kg': removedSet.loadKg,
-          'logged_at_ms': removedSet.loggedAtMs ?? nowMsSynthetic,
-          'created_by_role': roleSynthetic,
-        },
-      );
-    }
-    final tombstoneId = _uuid.v4();
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final role = _session.isStudent ? 'student' : 'personal';
-    await _db.customStatement(
-      'INSERT OR REPLACE INTO day_workout_set_event_tombstones_local '
-      '(tombstone_id, event_id, day_workout_id, day_workout_exercise_id, '
-      'deleted_at_ms, deleted_by_role, created_at_ms, sync_status) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      <Object?>[
-        tombstoneId,
-        effectiveEventId,
-        row.dayWorkoutId,
-        lineId,
-        nowMs,
-        role,
-        nowMs,
-        'pending',
-      ],
-    );
-    await _enqueueSyncOutbox(
-      entityId: tombstoneId,
-      op: 'insert_set_tombstone',
-      dayWorkoutId: row.dayWorkoutId,
-      dayWorkoutExerciseId: lineId,
-      payload: <String, dynamic>{
-        'tombstone_id': tombstoneId,
-        'event_id': effectiveEventId,
-        'day_workout_id': row.dayWorkoutId,
-        'day_workout_exercise_id': lineId,
-        'deleted_at_ms': nowMs,
-        'deleted_by_role': role,
-      },
-    );
     await _audit('remove_set', 'day_workout_exercise', entityId: lineId);
     await _touchDayWorkoutAfterLineMutation(
       row.dayWorkoutId,
       reason: 'remove_set',
     );
-    if (await _shouldFlushWorkoutCloudSync(row.dayWorkoutId)) {
-      unawaited(_remote.recoverPendingWork());
-      unawaited(_remote.pushDayWorkoutExerciseNow(lineId));
-    }
-  }
-
-  Future<void> _enqueueSyncOutbox({
-    required String entityId,
-    required String op,
-    required String dayWorkoutId,
-    required String dayWorkoutExerciseId,
-    required Map<String, dynamic> payload,
-  }) async {
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    await _db.customStatement(
-      'INSERT OR REPLACE INTO sync_outbox '
-      '(entity_id, op, day_workout_id, day_workout_exercise_id, payload_json, '
-      'status, attempts, next_retry_at_ms, last_error, created_at_ms, updated_at_ms) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '
-      'COALESCE((SELECT created_at_ms FROM sync_outbox WHERE entity_id = ?), ?), ?)',
-      <Object?>[
-        entityId,
-        op,
-        dayWorkoutId,
-        dayWorkoutExerciseId,
-        jsonEncode(payload),
-        'pending',
-        0,
-        null,
-        null,
-        entityId,
-        nowMs,
-        nowMs,
-      ],
-    );
-  }
-
-  Future<String?> _resolveLastActiveSetEventId(String lineId) async {
-    final rows = await _db.customSelect(
-      'SELECT e.event_id '
-      'FROM day_workout_set_events_local e '
-      'LEFT JOIN day_workout_set_event_tombstones_local t ON t.event_id = e.event_id '
-      'WHERE e.day_workout_exercise_id = ? AND t.event_id IS NULL '
-      'ORDER BY e.logged_at_ms DESC, e.created_at_ms DESC, e.event_id DESC '
-      'LIMIT 1',
-      variables: <Variable<Object>>[Variable<String>(lineId)],
-    ).get();
-    if (rows.isEmpty) return null;
-    return rows.first.read<String>('event_id');
-  }
-
-  Future<String?> _resolveActiveSetEventIdAtIndex({
-    required String lineId,
-    required int index,
-  }) async {
-    final rows = await _db.customSelect(
-      'SELECT e.event_id '
-      'FROM day_workout_set_events_local e '
-      'LEFT JOIN day_workout_set_event_tombstones_local t ON t.event_id = e.event_id '
-      'WHERE e.day_workout_exercise_id = ? AND t.event_id IS NULL '
-      'ORDER BY e.logged_at_ms ASC, e.created_at_ms ASC, e.event_id ASC',
-      variables: <Variable<Object>>[Variable<String>(lineId)],
-    ).get();
-    if (index < 0 || index >= rows.length) return null;
-    return rows[index].read<String>('event_id');
+    unawaited(_remote.recoverPendingWork());
   }
 
   /// Atualiza carga/reps da série executada no índice [performedIndex] (0-based).
@@ -6382,7 +6267,7 @@ class AppDataRepository {
     double? loadKg,
     required int reps,
   }) async {
-    muteDayWorkoutCloudPullFor(const Duration(seconds: 20));
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 30));
     if (reps < 1) {
       throw ArgumentError('Repetições deve ser ≥ 1.');
     }
@@ -6408,7 +6293,7 @@ class AppDataRepository {
     next[performedIndex] = DayWorkoutPerformedSet(
       loadKg: loadKg,
       reps: reps,
-      loggedAtMs: prev.loggedAtMs,
+      loggedAtMs: DateTime.now().millisecondsSinceEpoch,
       restPrescribedSec: prev.restPrescribedSec,
       restCountdownElapsedMs: prev.restCountdownElapsedMs,
       postRestModalMs: prev.postRestModalMs,
@@ -6419,10 +6304,14 @@ class AppDataRepository {
       row.dayWorkoutId,
       reason: 'update_set',
     );
-    if (await _shouldFlushWorkoutCloudSync(row.dayWorkoutId)) {
-      unawaited(_remote.recoverPendingWork());
-      unawaited(_remote.pushDayWorkoutExerciseNow(lineId));
-    }
+    unawaited(
+      Future.microtask(() async {
+        try {
+          await _remote.recoverPendingWork();
+          muteDayWorkoutCloudPullFor(const Duration(seconds: 25));
+        } catch (_) {}
+      }),
+    );
   }
 
   /// Só **administrador**. Remove do SQLite **todos** os treinos do aluno na data
@@ -6526,20 +6415,6 @@ class AppDataRepository {
         syncStatus: const Value('pending'),
       ),
     );
-    final startEventId = _uuid.v4();
-    final startedAt = DateTime.now();
-    await _enqueueSyncOutbox(
-      entityId: startEventId,
-      op: 'insert_workout_start_event',
-      dayWorkoutId: id,
-      dayWorkoutExerciseId: '',
-      payload: <String, dynamic>{
-        'event_id': startEventId,
-        'day_workout_id': id,
-        'student_id': cur.studentId,
-        'started_at': startedAt.toUtc().toIso8601String(),
-      },
-    );
     await _audit('start', 'day_workout', entityId: id);
     unawaited(_remote.recoverPendingWork());
   }
@@ -6606,34 +6481,6 @@ class AppDataRepository {
     return sum;
   }
 
-  double _sumPlannedVolumeDayWorkoutLines(List<DayWorkoutExerciseEntity> exercises) {
-    var sum = 0.0;
-    for (final e in exercises) {
-      final load = e.loadKg ?? 0.0;
-      if (load <= 0 || e.reps <= 0 || e.sets <= 0) continue;
-      sum += load * e.reps * e.sets;
-    }
-    return sum;
-  }
-
-  /// Resumo de calorias para UI: previsão local (sem rede) e executado do relógio.
-  /// A previsão é heurística baseada em volume total (kg×reps).
-  Future<({double predictedKcal, double? executedKcal})> workoutCaloriesSummary(
-    String dayWorkoutId,
-  ) async {
-    await _requireAccessForDayWorkoutId(dayWorkoutId);
-    final w = await _dayWorkoutRow(dayWorkoutId);
-    if (w == null) {
-      return (predictedKcal: 0.0, executedKcal: null);
-    }
-    final exercises = await getDayWorkoutExercises(dayWorkoutId);
-    final performedVolume = sumPerformedVolumeDayWorkoutLines(exercises);
-    final plannedVolume = _sumPlannedVolumeDayWorkoutLines(exercises);
-    final baseVolume = performedVolume > 0 ? performedVolume : plannedVolume;
-    final predicted = (baseVolume / 25.0).clamp(0.0, 5000.0);
-    return (predictedKcal: predicted, executedKcal: w.watchCaloriesKcal);
-  }
-
   /// Mesma fórmula do score final do treino, para uso pontual (treinos concluídos).
   double liveWorkoutScorePerActiveMinute({
     required DayWorkoutEntity workout,
@@ -6692,67 +6539,80 @@ class AppDataRepository {
 
   Future<void> completeDayWorkout(String id) async {
     await _requireAccessForDayWorkoutId(id);
+    muteDayWorkoutCloudPullFor(const Duration(seconds: 60));
     final before = await _dayWorkoutRow(id);
     if (before == null || before.status != 'started') return;
-    var w = before;
-    var activeSeconds = w.activeDurationSeconds;
-    if (w.timerResumeAt != null) {
-      final add = DateTime.now().difference(w.timerResumeAt!).inSeconds;
-      if (add > 0) {
-        activeSeconds += add;
-      }
-    }
+    final now = DateTime.now();
+    final activeSecondsAtCompletion = before.timerResumeAt == null
+        ? before.activeDurationSeconds
+        : max(
+            before.activeDurationSeconds,
+            before.activeDurationSeconds +
+                now.difference(before.timerResumeAt!).inSeconds,
+          );
     final deviceId = await _syncDeviceId();
     final exercises = await getDayWorkoutExercises(id);
-    for (final e in exercises) {
-      final performed = DayWorkoutPerformedSetCodec.decode(e.performedSetsJson);
-      final exScore = performed.isNotEmpty
-          ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
-          : scoring.prescribedExerciseLineScore(
-              sets: e.sets,
-              loadKg: e.loadKg ?? 0,
-              reps: e.reps,
-            );
-      await (_db.update(
-        _db.dayWorkoutExercises,
-      )..where((x) => x.id.equals(e.id))).write(
-        DayWorkoutExercisesCompanion(
-          exerciseScore: Value(exScore),
-          updatedAt: Value(DateTime.now()),
-          revision: Value(_nextRevision(e.revision)),
-          lastModifiedByDeviceId: Value(deviceId),
-          syncStatus: const Value('pending'),
-        ),
-      );
-    }
     final agg = _completedExerciseScoreAgg(exercises);
-    final active = activeSeconds > 0 ? activeSeconds : 1;
+    final active = activeSecondsAtCompletion > 0
+        ? activeSecondsAtCompletion
+        : 1;
     final ws = scoring.workoutFinalScoreFromExerciseScores(
       exerciseScoresSum: agg.sumScores,
       activeDurationSeconds: active,
       completedExerciseCount: agg.completedCount,
     );
-    final now = DateTime.now();
-    await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
-      DayWorkoutsCompanion(
-        status: const Value('completed'),
-        completedAt: Value(now),
-        timerResumeAt: const Value(null),
-        activeDurationSeconds: Value(activeSeconds),
-        updatedAt: Value(now),
-        workoutScore: Value(ws),
-        revision: Value(_nextRevision(w.revision)),
-        lastModifiedByDeviceId: Value(deviceId),
-        syncStatus: const Value('pending'),
-      ),
-    );
+    await _db.transaction(() async {
+      for (final e in exercises) {
+        final performed = DayWorkoutPerformedSetCodec.decode(
+          e.performedSetsJson,
+        );
+        final exScore = performed.isNotEmpty
+            ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+            : scoring.prescribedExerciseLineScore(
+                sets: e.sets,
+                loadKg: e.loadKg ?? 0,
+                reps: e.reps,
+              );
+        await (_db.update(
+          _db.dayWorkoutExercises,
+        )..where((x) => x.id.equals(e.id))).write(
+          DayWorkoutExercisesCompanion(
+            exerciseScore: Value(exScore),
+            updatedAt: Value(now),
+            revision: Value(_nextRevision(e.revision)),
+            lastModifiedByDeviceId: Value(deviceId),
+            syncStatus: const Value('pending'),
+          ),
+        );
+      }
+      await (_db.update(_db.dayWorkouts)..where((x) => x.id.equals(id))).write(
+        DayWorkoutsCompanion(
+          status: const Value('completed'),
+          activeDurationSeconds: Value(activeSecondsAtCompletion),
+          timerResumeAt: const Value(null),
+          completedAt: Value(now),
+          updatedAt: Value(now),
+          workoutScore: Value(ws),
+          revision: Value(_nextRevision(before.revision)),
+          lastModifiedByDeviceId: Value(deviceId),
+          syncStatus: const Value('pending'),
+        ),
+      );
+    });
     await _audit(
       'complete',
       'day_workout',
       entityId: id,
-      payload: {'workoutScore': ws, 'activeSeconds': activeSeconds},
+      payload: {'workoutScore': ws, 'activeSeconds': activeSecondsAtCompletion},
     );
-    unawaited(_remote.recoverPendingWork());
+    unawaited(
+      Future.microtask(() async {
+        try {
+          await _remote.recoverPendingWork();
+          muteDayWorkoutCloudPullFor(const Duration(seconds: 45));
+        } catch (_) {}
+      }),
+    );
   }
 
   /// Opcional: calorias (kcal) e FC média (bpm) do relógio após concluir o treino.

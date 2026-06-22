@@ -37,6 +37,9 @@ abstract class RemoteSyncService {
   /// Força atualização do catálogo base de exercícios (grupos + exercícios).
   Future<void> refreshExercisesCatalogFromCloud() async {}
 
+  /// Força atualização do catálogo de grupos de treino e suas linhas.
+  Future<void> refreshWorkoutGroupsCatalogFromCloud() async {}
+
   /// Força atualização pontual de exercícios por id (mais rápido para modal de treino).
   Future<void> refreshExercisesByIdsFromCloud(
     Iterable<String> exerciseIds,
@@ -81,6 +84,9 @@ class NoOpRemoteSyncService implements RemoteSyncService {
 
   @override
   Future<void> refreshExercisesCatalogFromCloud() async {}
+
+  @override
+  Future<void> refreshWorkoutGroupsCatalogFromCloud() async {}
 
   @override
   Future<void> refreshExercisesByIdsFromCloud(

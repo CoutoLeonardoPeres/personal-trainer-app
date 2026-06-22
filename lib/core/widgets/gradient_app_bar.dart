@@ -17,7 +17,7 @@ Widget? _titleWithTrafficIndicator(
   bool centerTitleInToolbar = false,
 }) {
   if (title == null) {
-    return const Row(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         SupabaseTrafficIndicator(),
@@ -46,12 +46,17 @@ Widget? _titleWithTrafficIndicator(
             ),
           ),
         ),
-        const Positioned(
+        Positioned(
           left: 4,
           top: 0,
           bottom: 0,
           child: Center(
-            child: SupabaseTrafficIndicator(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SupabaseTrafficIndicator(),
+              ],
+            ),
           ),
         ),
       ],
@@ -78,10 +83,7 @@ const BoxDecoration _kAppBarGradientDecoration = BoxDecoration(
   gradient: LinearGradient(
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
-    colors: [
-      AppColors.headerGradientPink,
-      AppColors.headerGradientMint,
-    ],
+    colors: [AppColors.headerGradientPink, AppColors.headerGradientMint],
   ),
 );
 
@@ -101,6 +103,7 @@ AppBar buildGradientAppBar({
   List<Widget>? actions,
   bool? centerTitle,
   bool showSupabaseTrafficIndicator = true,
+
   /// Título visualmente ao centro da barra (telas das abas inferiores), com indicador à esquerda.
   bool centerTitleInToolbar = false,
 }) {
@@ -114,6 +117,8 @@ AppBar buildGradientAppBar({
       ? false
       : (showSupabaseTrafficIndicator ? (centerTitle ?? false) : centerTitle);
 
+  final effectiveActions = <Widget>[...?actions];
+
   return AppBar(
     key: key,
     toolbarHeight: kAppBarToolbarHeight,
@@ -121,7 +126,7 @@ AppBar buildGradientAppBar({
     leading: leading,
     leadingWidth: leadingWidth,
     automaticallyImplyLeading: automaticallyImplyLeading,
-    actions: actions,
+    actions: effectiveActions,
     centerTitle: effectiveCenterTitle,
     backgroundColor: Colors.transparent,
     elevation: 0,

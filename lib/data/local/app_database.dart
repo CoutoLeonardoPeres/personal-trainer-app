@@ -110,8 +110,7 @@ class Personals extends Table {
   BoolColumn get isAdmin => boolean().withDefault(const Constant(false))();
 
   /// Plano / perfil comercial (RBAC). `legacy` = comportamento anterior ao controle fino.
-  TextColumn get accessTier =>
-      text().withDefault(const Constant('legacy'))();
+  TextColumn get accessTier => text().withDefault(const Constant('legacy'))();
 
   /// Limite de alunos (personal starter/pro). Null = ilimitado (legacy / pro+).
   IntColumn get maxStudentsCap => integer().nullable()();
@@ -157,8 +156,7 @@ class Students extends Table {
       boolean().withDefault(const Constant(true))();
 
   /// Plano aluno (RBAC). `legacy` = sem restrições do novo modelo.
-  TextColumn get accessTier =>
-      text().withDefault(const Constant('legacy'))();
+  TextColumn get accessTier => text().withDefault(const Constant('legacy'))();
 
   /// Fim do período premium (trial ou assinatura); após esta data o app faz downgrade local para standard.
   DateTimeColumn get premiumPlanExpiresAt => dateTime().nullable()();
@@ -196,6 +194,20 @@ class WorkoutGroups extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   TextColumn get description => text()();
+
+  /// Personal dono do modelo. Admin pode deixar nulo para modelos globais/legados.
+  TextColumn get createdByPersonalId =>
+      text().nullable().references(Personals, #id)();
+
+  /// Quando true, o modelo pode aparecer para outros personais como catálogo compartilhado.
+  BoolColumn get isShared => boolean().withDefault(const Constant(false))();
+
+  /// Versão LWW para conflitos entre dispositivos.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
+
+  /// Dispositivo que fez a última alteração local/remota.
+  TextColumn get lastModifiedByDeviceId => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -214,6 +226,7 @@ class WorkoutGroupExercises extends Table {
   TextColumn get exerciseId => text().references(Exercises, #id)();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   RealColumn get lastLoadKg => real().nullable()();
+
   /// Legado (número inteiro); preferir [lastRepsText] para faixas como «12-15».
   IntColumn get lastReps => integer().nullable()();
   TextColumn get lastRepsText => text().nullable()();
@@ -262,6 +275,7 @@ class WeekScheduleItems extends Table {
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   IntColumn get sets => integer().withDefault(const Constant(0))();
   IntColumn get reps => integer().withDefault(const Constant(0))();
+
   /// Faixa livre (ex.: «12-15»); quando preenchido, tem precedência na UI sobre [reps].
   TextColumn get repsText => text().nullable()();
   RealColumn get loadKg => real().nullable()();
@@ -382,6 +396,9 @@ class AuditLogs extends Table {
   TextColumn get entityType => text()();
   TextColumn get entityId => text().nullable()();
   TextColumn get payloadJson => text().nullable()();
+  TextColumn get deviceId => text().nullable()();
+  TextColumn get personalId => text().nullable().references(Personals, #id)();
+  TextColumn get studentId => text().nullable().references(Students, #id)();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -430,7 +447,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 32;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -457,7 +474,6 @@ class AppDatabase extends _$AppDatabase {
         'CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_dedupe_key_uidx '
         'ON sync_queue(dedupe_key) WHERE dedupe_key IS NOT NULL',
       );
-      await _createWorkoutSyncLocalTables();
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
@@ -657,91 +673,28 @@ class AppDatabase extends _$AppDatabase {
         );
       }
       if (from < 29) {
-        await _createWorkoutSyncLocalTables();
+        await m.addColumn(workoutGroups, workoutGroups.createdByPersonalId);
+        await m.addColumn(workoutGroups, workoutGroups.isShared);
+      }
+      if (from < 30) {
+        await m.addColumn(workoutGroups, workoutGroups.revision);
+        await m.addColumn(workoutGroups, workoutGroups.lastModifiedByDeviceId);
+        await m.addColumn(auditLogs, auditLogs.deviceId);
+        await m.addColumn(auditLogs, auditLogs.personalId);
+        await m.addColumn(auditLogs, auditLogs.studentId);
+      }
+      if (from < 31) {
+        await _repairSyncColumnsV31();
+      }
+      if (from < 32) {
+        await _recomputeScoresVolumeFormulaV32();
       }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON;');
+      await _repairSyncColumnsV31();
     },
   );
-
-  Future<void> _createWorkoutSyncLocalTables() async {
-    await customStatement(
-      'CREATE TABLE IF NOT EXISTS day_workout_set_events_local ('
-      'event_id TEXT PRIMARY KEY,'
-      'day_workout_id TEXT NOT NULL,'
-      'day_workout_exercise_id TEXT NOT NULL,'
-      'student_id TEXT NOT NULL,'
-      'reps INTEGER NOT NULL,'
-      'load_kg REAL NULL,'
-      'logged_at_ms INTEGER NOT NULL,'
-      'created_by_user_id TEXT NULL,'
-      'created_by_role TEXT NOT NULL,'
-      'created_at_ms INTEGER NOT NULL,'
-      'sync_status TEXT NOT NULL DEFAULT \'pending\''
-      ')',
-    );
-    await customStatement(
-      'CREATE TABLE IF NOT EXISTS day_workout_set_rest_events_local ('
-      'rest_event_id TEXT PRIMARY KEY,'
-      'set_event_id TEXT NOT NULL,'
-      'day_workout_id TEXT NOT NULL,'
-      'day_workout_exercise_id TEXT NOT NULL,'
-      'rest_prescribed_sec INTEGER NULL,'
-      'rest_countdown_elapsed_ms INTEGER NULL,'
-      'post_rest_modal_ms INTEGER NULL,'
-      'recorded_at_ms INTEGER NOT NULL,'
-      'recorded_by_user_id TEXT NULL,'
-      'recorded_by_role TEXT NOT NULL,'
-      'created_at_ms INTEGER NOT NULL,'
-      'sync_status TEXT NOT NULL DEFAULT \'pending\''
-      ')',
-    );
-    await customStatement(
-      'CREATE TABLE IF NOT EXISTS day_workout_set_event_tombstones_local ('
-      'tombstone_id TEXT PRIMARY KEY,'
-      'event_id TEXT NOT NULL,'
-      'day_workout_id TEXT NOT NULL,'
-      'day_workout_exercise_id TEXT NOT NULL,'
-      'deleted_at_ms INTEGER NOT NULL,'
-      'deleted_by_user_id TEXT NULL,'
-      'deleted_by_role TEXT NOT NULL,'
-      'created_at_ms INTEGER NOT NULL,'
-      'sync_status TEXT NOT NULL DEFAULT \'pending\''
-      ')',
-    );
-    await customStatement(
-      'CREATE TABLE IF NOT EXISTS sync_outbox ('
-      'entity_id TEXT PRIMARY KEY,'
-      'op TEXT NOT NULL,'
-      'day_workout_id TEXT NULL,'
-      'day_workout_exercise_id TEXT NULL,'
-      'payload_json TEXT NOT NULL,'
-      'status TEXT NOT NULL DEFAULT \'pending\','
-      'attempts INTEGER NOT NULL DEFAULT 0,'
-      'next_retry_at_ms INTEGER NULL,'
-      'last_error TEXT NULL,'
-      'created_at_ms INTEGER NOT NULL,'
-      'updated_at_ms INTEGER NOT NULL'
-      ')',
-    );
-    await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_set_events_local_workout '
-      'ON day_workout_set_events_local(day_workout_id, logged_at_ms)',
-    );
-    await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_rest_events_local_workout '
-      'ON day_workout_set_rest_events_local(day_workout_id, recorded_at_ms)',
-    );
-    await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_tombstones_local_workout '
-      'ON day_workout_set_event_tombstones_local(day_workout_id, deleted_at_ms)',
-    );
-    await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_sync_outbox_status_retry '
-      'ON sync_outbox(status, next_retry_at_ms, created_at_ms)',
-    );
-  }
 
   /// Alinha datas legadas ao dia civil local (mesma regra do pull Supabase / planejamento).
   Future<void> _normalizeWeekBlocksAndDayWorkoutDatesV19() async {
@@ -749,15 +702,15 @@ class AppDatabase extends _$AppDatabase {
     for (final b in blocks) {
       final fixed = normalizeStoredWeekStartMonday(b.weekStartMonday);
       await (update(weekScheduleBlocks)..where((t) => t.id.equals(b.id))).write(
-            WeekScheduleBlocksCompanion(weekStartMonday: Value(fixed)),
-          );
+        WeekScheduleBlocksCompanion(weekStartMonday: Value(fixed)),
+      );
     }
     final dws = await select(dayWorkouts).get();
     for (final w in dws) {
       final fixedDay = weekScheduleLocalCalendarDate(w.dayDate);
       await (update(dayWorkouts)..where((t) => t.id.equals(w.id))).write(
-            DayWorkoutsCompanion(dayDate: Value(fixedDay)),
-          );
+        DayWorkoutsCompanion(dayDate: Value(fixedDay)),
+      );
     }
   }
 
@@ -772,6 +725,55 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  Future<void> _addColumnIfMissing(
+    String tableName,
+    String columnName,
+    String columnSql,
+  ) async {
+    final info = await customSelect('PRAGMA table_info($tableName)').get();
+    final exists = info.any((row) => row.data['name'] == columnName);
+    if (exists) return;
+    await customStatement('ALTER TABLE $tableName ADD COLUMN $columnSql');
+  }
+
+  Future<void> _repairSyncColumnsV31() async {
+    await _addColumnIfMissing(
+      'workout_groups',
+      'created_by_personal_id',
+      'created_by_personal_id TEXT NULL REFERENCES personals(id)',
+    );
+    await _addColumnIfMissing(
+      'workout_groups',
+      'is_shared',
+      'is_shared INTEGER NOT NULL DEFAULT 0 CHECK ("is_shared" IN (0, 1))',
+    );
+    await _addColumnIfMissing(
+      'workout_groups',
+      'revision',
+      'revision INTEGER NOT NULL DEFAULT 0',
+    );
+    await _addColumnIfMissing(
+      'workout_groups',
+      'last_modified_by_device_id',
+      'last_modified_by_device_id TEXT NULL',
+    );
+    await _addColumnIfMissing(
+      'audit_logs',
+      'device_id',
+      'device_id TEXT NULL',
+    );
+    await _addColumnIfMissing(
+      'audit_logs',
+      'personal_id',
+      'personal_id TEXT NULL REFERENCES personals(id)',
+    );
+    await _addColumnIfMissing(
+      'audit_logs',
+      'student_id',
+      'student_id TEXT NULL REFERENCES students(id)',
+    );
+  }
+
   /// Insere grupos de [kDefaultMuscleGroupNames] se não existir nenhum com o mesmo nome normalizado.
   Future<void> _seedMuscleGroupsFromDefaults() async {
     const uuid = Uuid();
@@ -780,9 +782,9 @@ class AppDatabase extends _$AppDatabase {
     for (final name in kDefaultMuscleGroupNames) {
       final trimmed = name.trim();
       if (norms.contains(normalizeMuscleGroupName(trimmed))) continue;
-      await into(muscleGroups).insert(
-        MuscleGroupsCompanion.insert(id: uuid.v4(), name: trimmed),
-      );
+      await into(
+        muscleGroups,
+      ).insert(MuscleGroupsCompanion.insert(id: uuid.v4(), name: trimmed));
       norms.add(normalizeMuscleGroupName(trimmed));
     }
   }
@@ -802,7 +804,9 @@ class AppDatabase extends _$AppDatabase {
         if (list.length == 1) {
           final only = list.single;
           if (only.name.trim().isEmpty) {
-            await (update(muscleGroups)..where((t) => t.id.equals(only.id))).write(
+            await (update(
+              muscleGroups,
+            )..where((t) => t.id.equals(only.id))).write(
               MuscleGroupsCompanion(
                 name: const Value('Sem nome'),
                 updatedAt: Value(DateTime.now()),
@@ -817,7 +821,9 @@ class AppDatabase extends _$AppDatabase {
         final emptyName = keeper.name.trim().isEmpty;
         final keeperName = emptyName ? 'Sem nome' : keeper.name.trim();
         if (emptyName) {
-          await (update(muscleGroups)..where((t) => t.id.equals(keeperId))).write(
+          await (update(
+            muscleGroups,
+          )..where((t) => t.id.equals(keeperId))).write(
             MuscleGroupsCompanion(
               name: Value(keeperName),
               updatedAt: Value(DateTime.now()),
@@ -826,7 +832,8 @@ class AppDatabase extends _$AppDatabase {
         }
         for (var i = 1; i < list.length; i++) {
           final dup = list[i];
-          await (update(exercises)..where((e) => e.muscleGroupId.equals(dup.id)))
+          await (update(exercises)
+                ..where((e) => e.muscleGroupId.equals(dup.id)))
               .write(ExercisesCompanion(muscleGroupId: Value(keeperId)));
           await (delete(muscleGroups)..where((t) => t.id.equals(dup.id))).go();
         }
@@ -882,8 +889,9 @@ class AppDatabase extends _$AppDatabase {
             alternativeVideoUrl: altV,
           ),
         );
-        final inserted = await (select(exercises)..where((t) => t.id.equals(newId)))
-            .getSingle();
+        final inserted = await (select(
+          exercises,
+        )..where((t) => t.id.equals(newId))).getSingle();
         exerciseRows = [...exerciseRows, inserted];
       } else {
         await (update(exercises)..where((t) => t.id.equals(existing.id))).write(
@@ -944,37 +952,50 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  Future<void> _repointExerciseReferencesToKeeper(String dupId, String keeperId) async {
-    final wges =
-        await (select(workoutGroupExercises)..where((w) => w.exerciseId.equals(dupId))).get();
+  Future<void> _repointExerciseReferencesToKeeper(
+    String dupId,
+    String keeperId,
+  ) async {
+    final wges = await (select(
+      workoutGroupExercises,
+    )..where((w) => w.exerciseId.equals(dupId))).get();
     for (final row in wges) {
-      final clash = await (select(workoutGroupExercises)
-            ..where(
-              (w) =>
-                  w.workoutGroupId.equals(row.workoutGroupId) &
-                  w.exerciseId.equals(keeperId),
-            ))
-          .getSingleOrNull();
+      final clash =
+          await (select(workoutGroupExercises)..where(
+                (w) =>
+                    w.workoutGroupId.equals(row.workoutGroupId) &
+                    w.exerciseId.equals(keeperId),
+              ))
+              .getSingleOrNull();
       if (clash != null) {
-        await (delete(workoutGroupExercises)..where((w) => w.id.equals(row.id))).go();
+        await (delete(
+          workoutGroupExercises,
+        )..where((w) => w.id.equals(row.id))).go();
       } else {
         await (update(workoutGroupExercises)..where((w) => w.id.equals(row.id)))
             .write(WorkoutGroupExercisesCompanion(exerciseId: Value(keeperId)));
       }
     }
 
-    final wis = await (select(weekScheduleItems)..where((w) => w.exerciseId.equals(dupId))).get();
+    final wis = await (select(
+      weekScheduleItems,
+    )..where((w) => w.exerciseId.equals(dupId))).get();
     for (final row in wis) {
-      final clash = await (select(weekScheduleItems)
-            ..where(
-              (w) => w.blockId.equals(row.blockId) & w.exerciseId.equals(keeperId),
-            ))
-          .getSingleOrNull();
+      final clash =
+          await (select(weekScheduleItems)..where(
+                (w) =>
+                    w.blockId.equals(row.blockId) &
+                    w.exerciseId.equals(keeperId),
+              ))
+              .getSingleOrNull();
       if (clash != null) {
-        await (delete(weekScheduleItems)..where((w) => w.id.equals(row.id))).go();
+        await (delete(
+          weekScheduleItems,
+        )..where((w) => w.id.equals(row.id))).go();
       } else {
-        await (update(weekScheduleItems)..where((w) => w.id.equals(row.id)))
-            .write(
+        await (update(
+          weekScheduleItems,
+        )..where((w) => w.id.equals(row.id))).write(
           WeekScheduleItemsCompanion(
             exerciseId: Value(keeperId),
             updatedAt: Value(DateTime.now()),
@@ -983,21 +1004,25 @@ class AppDatabase extends _$AppDatabase {
       }
     }
 
-    final dwes =
-        await (select(dayWorkoutExercises)..where((w) => w.exerciseId.equals(dupId))).get();
+    final dwes = await (select(
+      dayWorkoutExercises,
+    )..where((w) => w.exerciseId.equals(dupId))).get();
     for (final row in dwes) {
-      final clash = await (select(dayWorkoutExercises)
-            ..where(
-              (w) =>
-                  w.dayWorkoutId.equals(row.dayWorkoutId) &
-                  w.exerciseId.equals(keeperId),
-            ))
-          .getSingleOrNull();
+      final clash =
+          await (select(dayWorkoutExercises)..where(
+                (w) =>
+                    w.dayWorkoutId.equals(row.dayWorkoutId) &
+                    w.exerciseId.equals(keeperId),
+              ))
+              .getSingleOrNull();
       if (clash != null) {
-        await (delete(dayWorkoutExercises)..where((w) => w.id.equals(row.id))).go();
+        await (delete(
+          dayWorkoutExercises,
+        )..where((w) => w.id.equals(row.id))).go();
       } else {
-        await (update(dayWorkoutExercises)..where((w) => w.id.equals(row.id)))
-            .write(
+        await (update(
+          dayWorkoutExercises,
+        )..where((w) => w.id.equals(row.id))).write(
           DayWorkoutExercisesCompanion(
             exerciseId: Value(keeperId),
             updatedAt: Value(DateTime.now()),
@@ -1009,26 +1034,34 @@ class AppDatabase extends _$AppDatabase {
 
   /// Alinha `exercise_id` nas tabelas filhas de [dupId] para [keeperId], com a mesma
   /// regra de choque que a deduplicação local (remove linha duplicada no mesmo bloco/treino).
-  Future<void> repointExerciseReferencesToKeeperId(String dupId, String keeperId) =>
-      _repointExerciseReferencesToKeeper(dupId, keeperId);
+  Future<void> repointExerciseReferencesToKeeperId(
+    String dupId,
+    String keeperId,
+  ) => _repointExerciseReferencesToKeeper(dupId, keeperId);
 
   /// Recalcula [day_workouts.workout_score] para treinos **concluídos** com data do dia ≤ hoje
   /// (fórmula legada v16: Σ score de todas as linhas × 10 ÷ min; corrigido em v26).
   Future<void> _backfillCompletedWorkoutScoresV16() async {
     final now = DateTime.now();
-    final tomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
-    final completed = await (select(dayWorkouts)
-          ..where((w) => w.status.equals('completed'))
-          ..where((w) => w.dayDate.isSmallerThanValue(tomorrow)))
-        .get();
+    final tomorrow = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(const Duration(days: 1));
+    final completed =
+        await (select(dayWorkouts)
+              ..where((w) => w.status.equals('completed'))
+              ..where((w) => w.dayDate.isSmallerThanValue(tomorrow)))
+            .get();
     for (final w in completed) {
-      final lines = await (select(dayWorkoutExercises)
-            ..where((e) => e.dayWorkoutId.equals(w.id)))
-          .get();
+      final lines = await (select(
+        dayWorkoutExercises,
+      )..where((e) => e.dayWorkoutId.equals(w.id))).get();
       var sumEx = 0.0;
       for (final line in lines) {
-        final performed =
-            DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+        final performed = DayWorkoutPerformedSetCodec.decode(
+          line.performedSetsJson,
+        );
         sumEx += performed.isNotEmpty
             ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
             : scoring.prescribedExerciseLineScore(
@@ -1051,8 +1084,9 @@ class AppDatabase extends _$AppDatabase {
     final allLines = await select(dayWorkoutExercises).get();
     final sumByWorkout = <String, double>{};
     for (final line in allLines) {
-      final performed =
-          DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+      final performed = DayWorkoutPerformedSetCodec.decode(
+        line.performedSetsJson,
+      );
       final exScore = performed.isNotEmpty
           ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
           : scoring.prescribedExerciseLineScore(
@@ -1063,16 +1097,14 @@ class AppDatabase extends _$AppDatabase {
       sumByWorkout[line.dayWorkoutId] =
           (sumByWorkout[line.dayWorkoutId] ?? 0) + exScore;
       await (update(dayWorkoutExercises)..where((x) => x.id.equals(line.id)))
-          .write(
-        DayWorkoutExercisesCompanion(exerciseScore: Value(exScore)),
-      );
+          .write(DayWorkoutExercisesCompanion(exerciseScore: Value(exScore)));
     }
     await customStatement(
       "UPDATE day_workouts SET workout_score = NULL WHERE status IS NOT NULL AND status != 'completed'",
     );
-    final completed = await (select(dayWorkouts)
-          ..where((w) => w.status.equals('completed')))
-        .get();
+    final completed = await (select(
+      dayWorkouts,
+    )..where((w) => w.status.equals('completed'))).get();
     for (final w in completed) {
       final sumEx = sumByWorkout[w.id] ?? 0;
       final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
@@ -1086,19 +1118,20 @@ class AppDatabase extends _$AppDatabase {
 
   /// v26: [workout_score] = (Σ score só linhas concluídas) × 10 ÷ min × nº concluídas.
   Future<void> _recomputeWorkoutScoresCompletedExerciseFormulaV26() async {
-    final completed = await (select(dayWorkouts)
-          ..where((w) => w.status.equals('completed')))
-        .get();
+    final completed = await (select(
+      dayWorkouts,
+    )..where((w) => w.status.equals('completed'))).get();
     for (final w in completed) {
-      final lines = await (select(dayWorkoutExercises)
-            ..where((e) => e.dayWorkoutId.equals(w.id)))
-          .get();
+      final lines = await (select(
+        dayWorkoutExercises,
+      )..where((e) => e.dayWorkoutId.equals(w.id))).get();
       var sumDone = 0.0;
       var nDone = 0;
       for (final line in lines) {
         if (line.sets <= 0) continue;
-        final performed =
-            DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+        final performed = DayWorkoutPerformedSetCodec.decode(
+          line.performedSetsJson,
+        );
         if (performed.length < line.sets) continue;
         nDone++;
         sumDone += performed.isNotEmpty
@@ -1113,6 +1146,63 @@ class AppDatabase extends _$AppDatabase {
       final ws = scoring.workoutFinalScoreFromExerciseScores(
         exerciseScoresSum: sumDone,
         activeDurationSeconds: sec,
+        completedExerciseCount: nDone,
+      );
+      await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(
+        DayWorkoutsCompanion(workoutScore: Value(ws)),
+      );
+    }
+  }
+
+  /// v32: score exercício = Σ(carga×reps); treino = Σ(concluídos) × nº concluídos.
+  Future<void> _recomputeScoresVolumeFormulaV32() async {
+    final allLines = await select(dayWorkoutExercises).get();
+    final sumByWorkout = <String, double>{};
+    for (final line in allLines) {
+      final performed = DayWorkoutPerformedSetCodec.decode(
+        line.performedSetsJson,
+      );
+      final exScore = performed.isNotEmpty
+          ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+          : scoring.prescribedExerciseLineScore(
+              sets: line.sets,
+              loadKg: line.loadKg ?? 0,
+              reps: line.reps,
+            );
+      sumByWorkout[line.dayWorkoutId] =
+          (sumByWorkout[line.dayWorkoutId] ?? 0) + exScore;
+      await (update(dayWorkoutExercises)..where((x) => x.id.equals(line.id)))
+          .write(DayWorkoutExercisesCompanion(exerciseScore: Value(exScore)));
+    }
+    await customStatement(
+      "UPDATE day_workouts SET workout_score = NULL WHERE status IS NOT NULL AND status != 'completed'",
+    );
+    final completed = await (select(
+      dayWorkouts,
+    )..where((w) => w.status.equals('completed'))).get();
+    for (final w in completed) {
+      final lines = await (select(
+        dayWorkoutExercises,
+      )..where((e) => e.dayWorkoutId.equals(w.id))).get();
+      var sumDone = 0.0;
+      var nDone = 0;
+      for (final line in lines) {
+        if (line.sets <= 0) continue;
+        final performed = DayWorkoutPerformedSetCodec.decode(
+          line.performedSetsJson,
+        );
+        if (performed.length < line.sets) continue;
+        nDone++;
+        sumDone += performed.isNotEmpty
+            ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+            : scoring.prescribedExerciseLineScore(
+                sets: line.sets,
+                loadKg: line.loadKg ?? 0,
+                reps: line.reps,
+              );
+      }
+      final ws = scoring.workoutFinalScoreFromExerciseScores(
+        exerciseScoresSum: sumDone,
         completedExerciseCount: nDone,
       );
       await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(

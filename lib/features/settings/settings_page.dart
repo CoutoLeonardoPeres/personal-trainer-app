@@ -18,9 +18,11 @@ import '../../core/supabase/supabase_constants.dart';
 import '../../core/supabase/supabase_prefs_config.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../../core/preferences/rest_timer_prefs.dart';
+import '../../core/preferences/workout_runtime_prefs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../core/ui/keyboard_bottom_inset.dart';
+import '../../core/workout/ios_lock_screen_live_activity.dart';
 import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../data/local/app_database.dart';
@@ -50,6 +52,8 @@ class SettingsPage extends StatelessWidget {
             const _BiometricLockTile(),
             const SizedBox(height: 8),
             const _SupabaseSyncSection(),
+            const SizedBox(height: 8),
+            const _BatterySaverWorkoutSection(),
             const SizedBox(height: 8),
             const _RestTimerSoundTile(),
             const SizedBox(height: 8),
@@ -1936,6 +1940,145 @@ class _RestTimerSoundTileState extends State<_RestTimerSoundTile> {
           : (v) async {
               await RestTimerPrefs.setSoundEnabled(v);
               if (mounted) setState(() => _soundEnabled = v);
+            },
+    );
+  }
+}
+
+class _BatterySaverWorkoutSection extends StatelessWidget {
+  const _BatterySaverWorkoutSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: AppColors.barBackground.withValues(alpha: 0.94),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Bateria (treino)',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Desative recursos que gastam mais bateria durante o treino.',
+              style: TextStyle(
+                color: AppColors.textMuted.withValues(alpha: 0.95),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const _RestIntervalEnabledTile(),
+            const _LiveActivityEnabledTile(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RestIntervalEnabledTile extends StatefulWidget {
+  const _RestIntervalEnabledTile();
+
+  @override
+  State<_RestIntervalEnabledTile> createState() =>
+      _RestIntervalEnabledTileState();
+}
+
+class _RestIntervalEnabledTileState extends State<_RestIntervalEnabledTile> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    WorkoutRuntimePrefs.isRestIntervalEnabled().then((v) {
+      if (mounted) setState(() => _enabled = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _enabled;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(
+        Icons.timer_outlined,
+        color: AppColors.accentGreen,
+      ),
+      title: const Text(
+        'Timer de intervalo entre séries',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      subtitle: Text(
+        v == null
+            ? 'Carregando…'
+            : 'Quando desligado, o app não abre o countdown automático após registrar uma série.',
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
+      value: v ?? true,
+      onChanged: v == null
+          ? null
+          : (nv) async {
+              await WorkoutRuntimePrefs.setRestIntervalEnabled(nv);
+              if (mounted) setState(() => _enabled = nv);
+            },
+    );
+  }
+}
+
+class _LiveActivityEnabledTile extends StatefulWidget {
+  const _LiveActivityEnabledTile();
+
+  @override
+  State<_LiveActivityEnabledTile> createState() =>
+      _LiveActivityEnabledTileState();
+}
+
+class _LiveActivityEnabledTileState extends State<_LiveActivityEnabledTile> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    WorkoutRuntimePrefs.isLiveActivityEnabled().then((v) {
+      if (mounted) setState(() => _enabled = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _enabled;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(
+        Icons.sensors_rounded,
+        color: AppColors.accentGreen,
+      ),
+      title: const Text(
+        'Atividade ao vivo (iOS)',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      subtitle: Text(
+        v == null
+            ? 'Carregando…'
+            : 'Mostra progresso no ecrã bloqueado/Dynamic Island. Desative para economizar bateria.',
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
+      value: v ?? true,
+      onChanged: v == null
+          ? null
+          : (nv) async {
+              await WorkoutRuntimePrefs.setLiveActivityEnabled(nv);
+              if (!nv) {
+                await IosLockScreenLiveActivity.endIfAny();
+              }
+              if (mounted) setState(() => _enabled = nv);
             },
     );
   }

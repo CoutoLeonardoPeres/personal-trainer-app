@@ -1,10 +1,10 @@
-/// Contribuição de uma série para o score do exercício: (carga × repetições) ÷ 10.
+/// Contribuição de uma série para o score do exercício: carga × repetições.
 double perSetScoreContribution({required double loadKg, required int reps}) {
   if (reps < 1) return 0;
-  return loadKg * reps / 10.0;
+  return loadKg * reps;
 }
 
-/// Score prescrito da linha (sem séries registadas): nº de séries × (carga × reps ÷ 10).
+/// Score prescrito da linha (sem séries registadas): nº de séries × (carga × reps).
 double prescribedExerciseLineScore({
   required int sets,
   required double loadKg,
@@ -14,18 +14,15 @@ double prescribedExerciseLineScore({
   return sets * perSetScoreContribution(loadKg: loadKg, reps: reps);
 }
 
-/// Score final do treino: (Σ score dos exercícios **concluídos**) × 10 ÷ minutos ativos × (nº concluídos).
+/// Score final do treino: (Σ score dos exercícios **concluídos**) × nº concluídos.
 ///
 /// Exercício concluído: `sets > 0` e pelo menos `sets` entradas em `performed_sets_json`.
+/// [activeDurationSeconds] é ignorado (mantido só para compatibilidade de chamadas antigas).
 double workoutFinalScoreFromExerciseScores({
   required double exerciseScoresSum,
-  required int activeDurationSeconds,
   required int completedExerciseCount,
+  int? activeDurationSeconds,
 }) {
-  if (activeDurationSeconds <= 0) return 0;
   if (completedExerciseCount <= 0) return 0;
-  final minutes = activeDurationSeconds / 60.0;
-  if (minutes <= 0) return 0;
-  return exerciseScoresSum * 10.0 / minutes * completedExerciseCount;
+  return exerciseScoresSum * completedExerciseCount;
 }
-

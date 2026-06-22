@@ -35,6 +35,68 @@ class _PlanningPageState extends State<PlanningPage> {
   late int _weekIndex;
   String? _studentId;
   final Set<String> _expandedGroupKeys = <String>{};
+  final Set<String> _collapsedGroupKeys = <String>{};
+
+  void _hydrateVisibleWeekPlanning(AppDataRepository repo) {
+    final studentId = _studentId;
+    if (studentId == null) return;
+    final weekMonday = _mondayForPage(_weekIndex);
+    unawaited(
+      repo.hydrateWeekPlanningForStudentWeek(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      ),
+    );
+  }
+
+  Future<void> _applyPlanningScheduleRequest({
+    required AppDataRepository repo,
+    required String studentId,
+    required DateTime weekMonday,
+    required PlanningScheduleWorkoutRequest request,
+  }) async {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Agendando ${request.groupName}...'),
+        duration: const Duration(seconds: 30),
+      ),
+    );
+    try {
+      final r = await repo.scheduleEditedWorkoutGroupRowsForWeeks(
+        studentId: studentId,
+        startWeekMonday: weekMonday,
+        workoutGroupId: request.workoutGroupId,
+        weekCount: request.weekCount,
+        rows: request.rows,
+      );
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      for (var wi = 0; wi < request.weekCount; wi++) {
+        final mon = weekMonday.add(Duration(days: wi * 7));
+        await repo.publishWeekScheduleRowsNow(
+          studentId: studentId,
+          weekMonday: mon,
+        );
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            r.itemsAdded == 0
+                ? 'Treino já estava na semana; planejamento atualizado.'
+                : 'Grupo agendado em ${r.weeksWithAdds} semana(s) · ${r.itemsAdded} exercício(s) no planejamento.',
+          ),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Não foi possível agendar: $err')),
+      );
+    }
+  }
 
   static final _epochMonday = _mondayOf(DateTime(2020, 1, 6));
 
@@ -86,6 +148,13 @@ class _PlanningPageState extends State<PlanningPage> {
     final weekMonday = _mondayForPage(_weekIndex);
     final studentId = _studentId;
 
+    if (studentId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _studentId != studentId) return;
+        _hydrateVisibleWeekPlanning(repo);
+      });
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -102,7 +171,9 @@ class _PlanningPageState extends State<PlanningPage> {
               if (studentId == null && students.length == 1) {
                 final only = students.single.id;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _studentId = only);
+                  if (!mounted) return;
+                  setState(() => _studentId = only);
+                  _hydrateVisibleWeekPlanning(repo);
                 });
               }
 
@@ -140,19 +211,9 @@ class _PlanningPageState extends State<PlanningPage> {
                 enabled: students.isNotEmpty,
                 onChanged: (v) {
                   setState(() => _studentId = v);
-                  final sid = v;
-                  if (sid == null) return;
-                  final mon = _mondayForPage(_weekIndex);
-                  // Garantia: ao trocar o aluno, forçar pull da semana (calendário pode
-                  // já ter `day_workouts`, mas o planejamento depende de `week_schedule_*`).
-                  unawaited(
-                    repo
-                        .refreshStudentWeekScheduleFromCloud(
-                          sid,
-                          weekMonday: mon,
-                        )
-                        .timeout(const Duration(seconds: 25), onTimeout: () {}),
-                  );
+                  if (v != null) {
+                    _hydrateVisibleWeekPlanning(repo);
+                  }
                 },
               );
             },
@@ -178,18 +239,7 @@ class _PlanningPageState extends State<PlanningPage> {
                   controller: _weekController,
                   onPageChanged: (p) {
                     setState(() => _weekIndex = p);
-                    final sid = _studentId;
-                    if (sid == null) return;
-                    final mon = _mondayForPage(p);
-                    // Garantia: ao trocar a semana, forçar pull do planejamento daquela semana.
-                    unawaited(
-                      repo
-                          .refreshStudentWeekScheduleFromCloud(
-                            sid,
-                            weekMonday: mon,
-                          )
-                          .timeout(const Duration(seconds: 25), onTimeout: () {}),
-                    );
+                    _hydrateVisibleWeekPlanning(repo);
                   },
                   itemBuilder: (context, pageIndex) {
                     final pageMonday = _mondayForPage(pageIndex);
@@ -233,141 +283,41 @@ class _PlanningPageState extends State<PlanningPage> {
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             children: [
                               _sectionTitle('Grupos de treino na semana'),
-                              StreamBuilder<List<WeekScheduleRow>>(
-                                key: ValueKey(
-                                  '$studentId-${pageMonday.toIso8601String()}',
-                                ),
-                                stream: repo.watchWeekScheduleRows(
-                                  studentId: studentId,
-                                  weekMonday: pageMonday,
-                                ),
-                                builder: (context, snap) {
-                                  if (snap.hasError) {
-                                    return _emptyHint(
-                                      'Não foi possível carregar o planejamento deste aluno.\n'
-                                      '${snap.error}',
-                                    );
-                                  }
-                                  final rows = snap.data ?? [];
-                                  if (rows.isEmpty) {
-                                    // Fallback: é possível ter treinos programados no calendário
-                                    // (day_workouts) sem existir bloco/itens de planejamento
-                                    // (week_schedule_*). Nesse caso, ainda assim mostrar os
-                                    // grupos agendados da semana para não “sumir” na UI.
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        _emptyHint(
-                                          'Nenhum exercício agendado nesta semana.\n'
-                                          'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
+                              _WeekPlanningGroupsLoader(
+                                studentId: studentId,
+                                pageMonday: pageMonday,
+                                child: StreamBuilder<List<WeekScheduleRow>>(
+                                  key: ValueKey(
+                                    '$studentId-${pageMonday.toIso8601String()}',
+                                  ),
+                                  stream: repo.watchWeekScheduleRows(
+                                    studentId: studentId,
+                                    weekMonday: pageMonday,
+                                  ),
+                                  builder: (context, snap) {
+                                    if (snap.hasError) {
+                                      return _emptyHint(
+                                        'Não foi possível carregar o planejamento deste aluno.\n'
+                                        '${snap.error}',
+                                      );
+                                    }
+                                    final rows = snap.data ?? [];
+                                    final waitingFirst =
+                                        snap.connectionState ==
+                                            ConnectionState.waiting &&
+                                        !snap.hasData;
+                                    if (waitingFirst) {
+                                      return const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: 24,
                                         ),
-                                        const SizedBox(height: 10),
-                                        StreamBuilder<List<DayWorkoutEntity>>(
-                                          stream: repo.watchStudentWeekDayWorkouts(
-                                            studentId: studentId,
-                                            weekMonday: pageMonday,
+                                        child: Center(
+                                          child: ModernLoadingIndicator(
+                                            size: 36,
                                           ),
-                                          builder: (context, wSnap) {
-                                            final all = wSnap.data ?? const [];
-                                            final byGroup =
-                                                <String, List<DayWorkoutEntity>>{};
-                                            for (final w in all) {
-                                              final gid =
-                                                  (w.sourceWorkoutGroupId ?? '')
-                                                      .trim();
-                                              if (gid.isEmpty) continue;
-                                              byGroup
-                                                  .putIfAbsent(gid, () => [])
-                                                  .add(w);
-                                            }
-                                            if (byGroup.isEmpty) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            return StreamBuilder<
-                                              List<WorkoutGroupEntity>
-                                            >(
-                                              stream: repo
-                                                  .watchWorkoutGroupsAlphabetical(),
-                                              builder: (context, gSnap) {
-                                                final groupById = <String,
-                                                  WorkoutGroupEntity>{
-                                                  for (final g
-                                                      in gSnap.data ??
-                                                          <WorkoutGroupEntity>[])
-                                                    g.id: g,
-                                                };
-                                                final keys = byGroup.keys.toList()
-                                                  ..sort((a, b) {
-                                                    final na =
-                                                        groupById[a]?.name ??
-                                                        a;
-                                                    final nb =
-                                                        groupById[b]?.name ??
-                                                        b;
-                                                    return na
-                                                        .toLowerCase()
-                                                        .compareTo(
-                                                          nb.toLowerCase(),
-                                                        );
-                                                  });
-                                                return Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.stretch,
-                                                  children: [
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                        top: 6,
-                                                        bottom: 8,
-                                                      ),
-                                                      child: Text(
-                                                        'Grupos programados no calendário',
-                                                        style: TextStyle(
-                                                          color: AppColors
-                                                              .accentGreen
-                                                              .withValues(
-                                                            alpha: 0.85,
-                                                          ),
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                          fontSize: 13,
-                                                          letterSpacing: 0.2,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    for (final gid in keys)
-                                                      Padding(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                          bottom: 10,
-                                                        ),
-                                                        child:
-                                                            SwipeableRegistryCard(
-                                                          slidableKey:
-                                                              'week_calendar_group_${studentId}_${pageMonday.toIso8601String()}_$gid',
-                                                          translucentBlueExerciseStyle:
-                                                              true,
-                                                          showEditOnSwipe: false,
-                                                          title: groupById[gid]
-                                                                  ?.name ??
-                                                              'Grupo',
-                                                          subtitle:
-                                                              '${byGroup[gid]!.length} treino(s) na semana (calendário)',
-                                                          onCardTap: () {},
-                                                          onEdit: () {},
-                                                          onDelete: () {},
-                                                        ),
-                                                      ),
-                                                  ],
-                                                );
-                                              },
-                                            );
-                                          },
                                         ),
-                                      ],
-                                    );
-                                  }
+                                      );
+                                    }
                                   return StreamBuilder<
                                     List<WorkoutGroupEntity>
                                   >(
@@ -395,9 +345,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                                   e.id: e,
                                               };
                                           final grouped =
-                                              _partitionWeekRowsByGroup(
-                                            rows,
-                                          );
+                                              _partitionWeekRowsByGroup(rows);
                                           final keys = grouped.keys.toList()
                                             ..sort(
                                               (a, b) => _compareGroupKeys(
@@ -406,6 +354,12 @@ class _PlanningPageState extends State<PlanningPage> {
                                                 groupById,
                                               ),
                                             );
+                                          if (keys.isEmpty) {
+                                            return _emptyHint(
+                                              'Nenhum exercício agendado nesta semana.\n'
+                                              'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
+                                            );
+                                          }
                                           return Column(
                                             children: [
                                               for (final key in keys)
@@ -429,6 +383,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                   );
                                 },
                               ),
+                            ),
                               const SizedBox(height: 20),
                               StreamBuilder<List<DayWorkoutEntity>>(
                                 key: ValueKey(
@@ -515,14 +470,35 @@ class _PlanningPageState extends State<PlanningPage> {
                 child: ElevatedButton.icon(
                   onPressed: studentId == null
                       ? null
-                      : () {
-                          showPlanningScheduleWorkoutSheet(
+                      : () async {
+                          final scheduleRequest =
+                              await showPlanningScheduleWorkoutSheet(
                             context: context,
                             repo: repo,
                             studentId: studentId,
                             weekMonday: weekMonday,
                             weekLabel: _weekLabel(weekMonday),
                           );
+                          if (!mounted || scheduleRequest == null) return;
+
+                          final expKeyFull =
+                              '${weekMonday.toIso8601String()}::${scheduleRequest.workoutGroupId}';
+                          setState(() {
+                            _expandedGroupKeys.add(expKeyFull);
+                            _collapsedGroupKeys.remove(expKeyFull);
+                          });
+
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            unawaited(
+                              _applyPlanningScheduleRequest(
+                                repo: repo,
+                                studentId: studentId,
+                                weekMonday: weekMonday,
+                                request: scheduleRequest,
+                              ),
+                            );
+                          });
                         },
                   icon: const Icon(Icons.event_note),
                   label: const Text('Agendar treino'),
@@ -691,7 +667,8 @@ class _PlanningPageState extends State<PlanningPage> {
   ) {
     final map = <String?, List<WeekScheduleRow>>{};
     for (final r in rows) {
-      final k = r.item.sourceWorkoutGroupId;
+      final raw = r.item.sourceWorkoutGroupId?.trim();
+      final k = (raw != null && raw.isNotEmpty) ? raw : null;
       map.putIfAbsent(k, () => []).add(r);
     }
     for (final list in map.values) {
@@ -735,7 +712,10 @@ class _PlanningPageState extends State<PlanningPage> {
     if (ok != true || !context.mounted) return;
 
     // Mantém o bloco expandido após a atualização do stream.
-    setState(() => _expandedGroupKeys.add(keepExpandedKey));
+    setState(() {
+      _collapsedGroupKeys.remove(keepExpandedKey);
+      _expandedGroupKeys.add(keepExpandedKey);
+    });
     for (final r in groupRows) {
       await repo.deleteWeekScheduleItem(r.item.id);
     }
@@ -936,7 +916,9 @@ class _PlanningPageState extends State<PlanningPage> {
                       setState(() {
                         if (expanded) {
                           _expandedGroupKeys.remove(expKeyFull);
+                          _collapsedGroupKeys.add(expKeyFull);
                         } else {
+                          _collapsedGroupKeys.remove(expKeyFull);
                           _expandedGroupKeys.add(expKeyFull);
                         }
                       });
@@ -1249,9 +1231,8 @@ class _PlanningPageState extends State<PlanningPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (block.any(
-            (r) => exerciseEntityHasAnyVideoUrl(
-              idToExercise[r.item.exerciseId],
-            ),
+            (r) =>
+                exerciseEntityHasAnyVideoUrl(idToExercise[r.item.exerciseId]),
           ))
             IconButton(
               tooltip: 'Vídeos do bloco',
@@ -1337,7 +1318,10 @@ class _PlanningPageState extends State<PlanningPage> {
         if (ok == true && context.mounted) {
           final parentKey = row.item.sourceWorkoutGroupId ?? 'avulsos';
           final keepKey = '${weekMonday.toIso8601String()}::$parentKey';
-          setState(() => _expandedGroupKeys.add(keepKey));
+          setState(() {
+            _collapsedGroupKeys.remove(keepKey);
+            _expandedGroupKeys.add(keepKey);
+          });
           await repo.deleteWeekScheduleItem(i.id);
         }
       },
@@ -1509,4 +1493,52 @@ class _PlanningPageState extends State<PlanningPage> {
       trainingMethodId: res.trainingMethodId,
     );
   }
+}
+
+/// Dispara hidratação do planejamento ao montar a semana (aluno + segunda-feira).
+class _WeekPlanningGroupsLoader extends StatefulWidget {
+  const _WeekPlanningGroupsLoader({
+    required this.studentId,
+    required this.pageMonday,
+    required this.child,
+  });
+
+  final String studentId;
+  final DateTime pageMonday;
+  final Widget child;
+
+  @override
+  State<_WeekPlanningGroupsLoader> createState() =>
+      _WeekPlanningGroupsLoaderState();
+}
+
+class _WeekPlanningGroupsLoaderState extends State<_WeekPlanningGroupsLoader> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _hydrate());
+  }
+
+  @override
+  void didUpdateWidget(covariant _WeekPlanningGroupsLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.studentId != widget.studentId ||
+        oldWidget.pageMonday != widget.pageMonday) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _hydrate());
+    }
+  }
+
+  void _hydrate() {
+    if (!mounted) return;
+    final repo = context.read<AppDataRepository>();
+    unawaited(
+      repo.hydrateWeekPlanningForStudentWeek(
+        studentId: widget.studentId,
+        weekMonday: widget.pageMonday,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

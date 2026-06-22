@@ -9,6 +9,14 @@
 --      já persistida). A anon key sozinha deixa de conseguir SELECT/INSERT nas tabelas
 --      quando a fase "revogar anon" estiver aplicada.
 --
+-- ALERTA CRÍTICO:
+--   O app atual usa autenticação própria com password_hash local + AppSession.
+--   Enquanto o login não chamar Supabase Auth, auth.uid() será null e estas
+--   políticas bloquearão o acesso do app às tabelas. Use este script só depois
+--   de migrar para Supabase Auth e preencher auth_user_id em personals/students.
+--   Para MVP com login local, mantenha a service_role key fora do cliente final
+--   ou faça as escritas/leitura via Edge Functions que validem a sessão local.
+--
 -- Modo de execução sugerido:
 --   A) Correr secção 1 (colunas + funções) — seguro, não remove políticas antigas.
 --   B) Testar login com JWT e queries manuais no SQL Editor (role authenticated).
@@ -49,8 +57,32 @@ alter table public.students
 alter table public.students
   add column if not exists premium_plan_expires_at timestamptz null;
 
+alter table public.workout_groups
+  add column if not exists created_by_personal_id text null references public.personals(id) on delete set null;
+
+alter table public.workout_groups
+  add column if not exists is_shared boolean not null default false;
+
+alter table public.workout_groups
+  add column if not exists revision integer not null default 0;
+
+alter table public.workout_groups
+  add column if not exists last_modified_by_device_id text null;
+
+alter table public.audit_logs
+  add column if not exists device_id text null;
+
+alter table public.audit_logs
+  add column if not exists personal_id text null references public.personals(id) on delete set null;
+
+alter table public.audit_logs
+  add column if not exists student_id text null references public.students(id) on delete set null;
+
 create index if not exists idx_personals_auth_user_id on public.personals (auth_user_id);
 create index if not exists idx_students_auth_user_id on public.students (auth_user_id);
+create index if not exists idx_workout_groups_created_by_personal
+  on public.workout_groups (created_by_personal_id)
+  where created_by_personal_id is not null;
 
 create or replace function public.app_is_admin_personal () returns boolean
 language sql
@@ -193,6 +225,39 @@ as $$
       from public.students s
       where s.auth_user_id = auth.uid()
         and s.created_by_personal_id is not distinct from pid
+    );
+$$;
+
+create or replace function public.app_can_access_workout_group (gid text) returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.app_is_admin_personal()
+    or exists (
+      select 1
+      from public.workout_groups g
+      where g.id = gid
+        and (
+          coalesce(g.is_shared, false)
+          or g.created_by_personal_id is not distinct from public.app_my_personal_id ()
+        )
+    );
+$$;
+
+create or replace function public.app_can_mutate_workout_group (gid text) returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.app_is_admin_personal()
+    or exists (
+      select 1
+      from public.workout_groups g
+      where g.id = gid
+        and g.created_by_personal_id is not distinct from public.app_my_personal_id ()
     );
 $$;
 
@@ -370,38 +435,50 @@ create policy training_methods_del_auth on public.training_methods
 
 create policy workout_groups_select_auth on public.workout_groups
   for select to authenticated
-  using (public.app_is_linked_user ());
+  using (public.app_can_access_workout_group (id));
 
 create policy workout_groups_ins_auth on public.workout_groups
   for insert to authenticated
-  with check (public.app_may_mutate_catalog ());
+  with check (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  );
 
 create policy workout_groups_upd_auth on public.workout_groups
   for update to authenticated
-  using (public.app_may_mutate_catalog ())
-  with check (public.app_may_mutate_catalog ());
+  using (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  )
+  with check (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  );
 
 create policy workout_groups_del_auth on public.workout_groups
   for delete to authenticated
-  using (public.app_may_mutate_catalog ());
+  using (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  );
 
 -- workout_group_exercises
 create policy wge_select_auth on public.workout_group_exercises
   for select to authenticated
-  using (public.app_is_linked_user ());
+  using (public.app_can_access_workout_group (workout_group_id));
 
 create policy wge_ins_auth on public.workout_group_exercises
   for insert to authenticated
-  with check (public.app_may_mutate_catalog ());
+  with check (public.app_can_mutate_workout_group (workout_group_id));
 
 create policy wge_upd_auth on public.workout_group_exercises
   for update to authenticated
-  using (public.app_may_mutate_catalog ())
-  with check (public.app_may_mutate_catalog ());
+  using (public.app_can_mutate_workout_group (workout_group_id))
+  with check (public.app_can_mutate_workout_group (workout_group_id));
 
 create policy wge_del_auth on public.workout_group_exercises
   for delete to authenticated
-  using (public.app_may_mutate_catalog ());
+  using (public.app_can_mutate_workout_group (workout_group_id));
 
 -- week_schedule_blocks
 create policy wsb_all_auth on public.week_schedule_blocks

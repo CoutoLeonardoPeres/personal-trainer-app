@@ -72,11 +72,10 @@ class GruposTreinosPage extends StatelessWidget {
     required int weekItemsUpdated,
     required int dayExercisesUpdated,
   }) async {
-    final msg =
-        (weekItemsUpdated == 0 && dayExercisesUpdated == 0)
-            ? 'Grupo salvo. Nada para alinhar agora.'
-            : 'Grupo salvo.\n'
-                  'Planejamento: $weekItemsUpdated · Calendário: $dayExercisesUpdated';
+    final msg = (weekItemsUpdated == 0 && dayExercisesUpdated == 0)
+        ? 'Grupo salvo. Nada para alinhar agora.'
+        : 'Grupo salvo.\n'
+              'Planejamento: $weekItemsUpdated · Calendário: $dayExercisesUpdated';
     await showFuturisticInfoDialog(
       context,
       title: 'Tudo certo',
@@ -182,26 +181,44 @@ class GruposTreinosPage extends StatelessWidget {
             onPressed: () async {
               if (name.text.trim().isEmpty || desc.text.trim().isEmpty) return;
               final displayName = name.text.trim();
-              final ok = await _confirmSaveGroupDialog(
-                context,
-                isEditing: x != null,
-                groupName: displayName,
-              );
+              final ok = x == null
+                  ? true
+                  : await _confirmSaveGroupDialog(
+                      context,
+                      isEditing: true,
+                      groupName: displayName,
+                    );
               if (!ok) return;
-              final gid = await repo.upsertWorkoutGroup(
-                id: x?.id,
-                name: displayName,
-                description: desc.text.trim(),
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
-              if (context.mounted) {
-                final r = await repo.propagateWorkoutGroupTemplateFromNow(gid);
-                if (!context.mounted) return;
-                await _showGroupSavedSummaryDialog(
-                  context,
-                  weekItemsUpdated: r.weekItemsUpdated,
-                  dayExercisesUpdated: r.dayExercisesUpdated,
+              try {
+                final gid = await repo.upsertWorkoutGroup(
+                  id: x?.id,
+                  name: displayName,
+                  description: desc.text.trim(),
                 );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  final r = await repo.propagateWorkoutGroupTemplateFromNow(
+                    gid,
+                  );
+                  if (!context.mounted) return;
+                  await _showGroupSavedSummaryDialog(
+                    context,
+                    weekItemsUpdated: r.weekItemsUpdated,
+                    dayExercisesUpdated: r.dayExercisesUpdated,
+                  );
+                }
+              } on ArgumentError catch (e) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text(e.message ?? 'Não foi possível salvar.'),
+                  ),
+                );
+              } catch (e) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(
+                  ctx,
+                ).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
               }
             },
           ),
@@ -242,12 +259,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
   void dispose() {
     _searchC.dispose();
     super.dispose();
-  }
-
-  Future<void> _propagateAfterGroupMutation() async {
-    try {
-      await widget.repo.propagateWorkoutGroupTemplateFromNow(widget.group.id);
-    } catch (_) {}
   }
 
   Future<void> _showGroupSavedFinishDialog(BuildContext context) async {
@@ -352,8 +363,9 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
     String exerciseName,
     List<WorkoutGroupExerciseEntity> currentLines,
   ) async {
-    final already =
-        currentLines.where((l) => l.exerciseId == exerciseId).length;
+    final already = currentLines
+        .where((l) => l.exerciseId == exerciseId)
+        .length;
     if (already >= 1) {
       final ok = await _confirmRepeatExerciseDialog(
         context,
@@ -368,8 +380,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       exerciseId: exerciseId,
     );
     if (!inserted || !context.mounted) return;
-    await _propagateAfterGroupMutation();
-    if (!context.mounted) return;
 
     final after =
         already + 1; // nova linha = ocorrências após insert bem-sucedido
@@ -404,7 +414,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       workoutGroupId: widget.group.id,
       orderedLineIds: ids,
     );
-    await _propagateAfterGroupMutation();
   }
 
   Future<ExerciseEntity?> _pickExerciseToCombine(
@@ -518,12 +527,13 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                   subtitle: _addExerciseRowSubtitle(groups, e),
                                   scale: 0.62,
                                   onTap: () => Navigator.pop(ctx, e),
-                                  trailing: exerciseRegistryVideoTrailingButtons(
-                                    ctx,
-                                    e,
-                                    e.name,
-                                    iconSize: 22 * _iconScale,
-                                  ),
+                                  trailing:
+                                      exerciseRegistryVideoTrailingButtons(
+                                        ctx,
+                                        e,
+                                        e.name,
+                                        iconSize: 22 * _iconScale,
+                                      ),
                                 ),
                           ],
                         );
@@ -582,8 +592,6 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Não foi possível combinar.')),
       );
-    } else {
-      await _propagateAfterGroupMutation();
     }
   }
 
@@ -688,7 +696,8 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                       color: kExerciseRegistryRowIconTint,
                       size: 22 * _iconScale,
                     ),
-                    onPressed: () => _tryAddExercise(context, e.id, e.name, lines),
+                    onPressed: () =>
+                        _tryAddExercise(context, e.id, e.name, lines),
                   ),
                 ],
               ),
@@ -782,22 +791,112 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                       newIndex,
                                     ),
                                 itemBuilder: (context, bi) {
-                                final block = blocks[bi];
-                                final needs = block.any(_wgLineIncomplete);
-                                if (block.length == 1) {
-                                  final line = block.single;
-                                  final ex = idToExercise[line.exerciseId];
-                                  final name = _wgResolveExerciseName(
-                                    idToExercise,
-                                    line.exerciseId,
-                                  );
-                                  final reps = _wgRepsDisplay(line);
+                                  final block = blocks[bi];
+                                  final needs = block.any(_wgLineIncomplete);
+                                  if (block.length == 1) {
+                                    final line = block.single;
+                                    final ex = idToExercise[line.exerciseId];
+                                    final name = _wgResolveExerciseName(
+                                      idToExercise,
+                                      line.exerciseId,
+                                    );
+                                    final reps = _wgRepsDisplay(line);
+                                    return KeyedSubtree(
+                                      key: ValueKey('wg_line_${line.id}'),
+                                      child: ExerciseRegistryListRow(
+                                        title: name,
+                                        urgent: needs,
+                                        slidableKey: line.id,
+                                        scale: 0.62,
+                                        borderColor: AppColors.accentGreen
+                                            .withValues(alpha: 0.55),
+                                        subtitleColor: Colors.white.withValues(
+                                          alpha: 0.62,
+                                        ),
+                                        backgroundGradient: [
+                                          AppColors.accentGreen.withValues(
+                                            alpha: 0.16,
+                                          ),
+                                          AppColors.splashMint.withValues(
+                                            alpha: 0.1,
+                                          ),
+                                          Colors.black.withValues(alpha: 0.22),
+                                        ],
+                                        subtitle:
+                                            'Séries: ${line.lastSets ?? '—'}  Reps: ${reps.isEmpty ? '—' : reps}  '
+                                            'Descanso: ${line.restBetweenSetsSec}s  '
+                                            'Carga: ${line.lastLoadKg != null ? '${line.lastLoadKg} kg' : '—'}',
+                                        onTap: () =>
+                                            _lineDialog(context, line, name),
+                                        onSlidableCombine: () =>
+                                            _combineAfterAnchor(
+                                              context,
+                                              line,
+                                              flatAvailable,
+                                              groups,
+                                            ),
+                                        onSlidableDelete: () async {
+                                          await widget.repo
+                                              .removeWorkoutGroupExerciseLine(
+                                                line.id,
+                                              );
+                                        },
+                                        trailing: [
+                                          ...exerciseRegistryVideoTrailingButtons(
+                                            context,
+                                            ex,
+                                            name,
+                                            iconSize: 22 * _iconScale,
+                                          ),
+                                          if (blocks.length > 1)
+                                            ReorderableDragStartListener(
+                                              index: bi,
+                                              child: SizedBox(
+                                                width: kMinInteractiveDimension,
+                                                height:
+                                                    kMinInteractiveDimension,
+                                                child: Center(
+                                                  child: Icon(
+                                                    Icons
+                                                        .drag_indicator_rounded,
+                                                    color: Colors.white
+                                                        .withValues(
+                                                          alpha: 0.58,
+                                                        ),
+                                                    size: 26 * _iconScale,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  final names = block
+                                      .map(
+                                        (l) => _wgResolveExerciseName(
+                                          idToExercise,
+                                          l.exerciseId,
+                                        ),
+                                      )
+                                      .join(' · ');
+                                  final cid = block.first.comboId ?? '';
+                                  final sub = block
+                                      .map((l) {
+                                        final r = _wgRepsDisplay(l);
+                                        final nm = _wgResolveExerciseName(
+                                          idToExercise,
+                                          l.exerciseId,
+                                        );
+                                        return '$nm: ${l.lastSets ?? '—'}×${r.isEmpty ? '—' : r}';
+                                      })
+                                      .join('  |  ');
                                   return KeyedSubtree(
-                                    key: ValueKey('wg_line_${line.id}'),
+                                    key: ValueKey('wg_combo_${cid}_$bi'),
                                     child: ExerciseRegistryListRow(
-                                      title: name,
+                                      title: 'Combinação: $names',
                                       urgent: needs,
-                                      slidableKey: line.id,
+                                      slidableKey: 'combo_$cid',
                                       scale: 0.62,
                                       borderColor: AppColors.accentGreen
                                           .withValues(alpha: 0.55),
@@ -813,33 +912,133 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                         ),
                                         Colors.black.withValues(alpha: 0.22),
                                       ],
-                                      subtitle:
-                                          'Séries: ${line.lastSets ?? '—'}  Reps: ${reps.isEmpty ? '—' : reps}  '
-                                          'Descanso: ${line.restBetweenSetsSec}s  '
-                                          'Carga: ${line.lastLoadKg != null ? '${line.lastLoadKg} kg' : '—'}',
-                                      onTap: () =>
-                                          _lineDialog(context, line, name),
+                                      subtitle: sub,
+                                      onTap: () async {
+                                        final choice =
+                                            await showModalBottomSheet<
+                                              WorkoutGroupExerciseEntity
+                                            >(
+                                              context: context,
+                                              backgroundColor:
+                                                  AppColors.barBackground,
+                                              builder: (ctx) => SafeArea(
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
+                                                    const Padding(
+                                                      padding: EdgeInsets.all(
+                                                        16,
+                                                      ),
+                                                      child: Text(
+                                                        'Editar exercício do bloco',
+                                                        style: TextStyle(
+                                                          color: AppColors
+                                                              .textPrimary,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          fontSize: 16,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    for (final line in block)
+                                                      ListTile(
+                                                        title: Text(
+                                                          _wgResolveExerciseName(
+                                                            idToExercise,
+                                                            line.exerciseId,
+                                                          ),
+                                                          style: const TextStyle(
+                                                            color: AppColors
+                                                                .textPrimary,
+                                                          ),
+                                                        ),
+                                                        onTap: () =>
+                                                            Navigator.pop(
+                                                              ctx,
+                                                              line,
+                                                            ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                        if (!context.mounted ||
+                                            choice == null) {
+                                          return;
+                                        }
+                                        final nm = _wgResolveExerciseName(
+                                          idToExercise,
+                                          choice.exerciseId,
+                                        );
+                                        await _lineDialog(context, choice, nm);
+                                      },
                                       onSlidableCombine: () =>
                                           _combineAfterAnchor(
                                             context,
-                                            line,
+                                            block.last,
                                             flatAvailable,
                                             groups,
                                           ),
                                       onSlidableDelete: () async {
-                                        await widget.repo
-                                            .removeWorkoutGroupExerciseLine(
-                                              line.id,
-                                            );
-                                        await _propagateAfterGroupMutation();
+                                        final cid0 = block.first.comboId;
+                                        if (cid0 == null || cid0.isEmpty) {
+                                          return;
+                                        }
+                                        final ok = await confirmDeleteDialog(
+                                          context,
+                                          itemName: names,
+                                        );
+                                        if (ok == true && context.mounted) {
+                                          await widget.repo
+                                              .removeWorkoutGroupComboBlock(
+                                                workoutGroupId: widget.group.id,
+                                                comboId: cid0,
+                                              );
+                                        }
                                       },
                                       trailing: [
-                                        ...exerciseRegistryVideoTrailingButtons(
-                                          context,
-                                          ex,
-                                          name,
-                                          iconSize: 22 * _iconScale,
-                                        ),
+                                        if (block.any(
+                                          (l) => exerciseEntityHasAnyVideoUrl(
+                                            idToExercise[l.exerciseId],
+                                          ),
+                                        ))
+                                          IconButton(
+                                            tooltip: 'Vídeos do bloco',
+                                            padding: EdgeInsets.zero,
+                                            constraints:
+                                                const BoxConstraints.tightFor(
+                                                  width: 40,
+                                                  height: 40,
+                                                ),
+                                            icon: Icon(
+                                              Icons.ondemand_video_rounded,
+                                              color:
+                                                  kExerciseRegistryRowIconTint,
+                                              size: 24 * _iconScale,
+                                            ),
+                                            onPressed: () =>
+                                                showExerciseBlockVideoLinksBottomSheet(
+                                                  context,
+                                                  title: 'Vídeos do bloco',
+                                                  lines: [
+                                                    for (final line in block)
+                                                      (
+                                                        name:
+                                                            _wgResolveExerciseName(
+                                                              idToExercise,
+                                                              line.exerciseId,
+                                                            ),
+                                                        exercise:
+                                                            idToExercise[line
+                                                                .exerciseId],
+                                                      ),
+                                                  ],
+                                                ),
+                                          ),
                                         if (blocks.length > 1)
                                           ReorderableDragStartListener(
                                             index: bi,
@@ -859,191 +1058,9 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
                                       ],
                                     ),
                                   );
-                                }
-                                final names = block
-                                    .map(
-                                      (l) => _wgResolveExerciseName(
-                                        idToExercise,
-                                        l.exerciseId,
-                                      ),
-                                    )
-                                    .join(' · ');
-                                final cid = block.first.comboId ?? '';
-                                final sub = block
-                                    .map((l) {
-                                      final r = _wgRepsDisplay(l);
-                                      final nm = _wgResolveExerciseName(
-                                        idToExercise,
-                                        l.exerciseId,
-                                      );
-                                      return '$nm: ${l.lastSets ?? '—'}×${r.isEmpty ? '—' : r}';
-                                    })
-                                    .join('  |  ');
-                                return KeyedSubtree(
-                                  key: ValueKey('wg_combo_${cid}_$bi'),
-                                  child: ExerciseRegistryListRow(
-                                    title: 'Combinação: $names',
-                                    urgent: needs,
-                                    slidableKey: 'combo_$cid',
-                                    scale: 0.62,
-                                    borderColor: AppColors.accentGreen
-                                        .withValues(alpha: 0.55),
-                                    subtitleColor: Colors.white.withValues(
-                                      alpha: 0.62,
-                                    ),
-                                    backgroundGradient: [
-                                      AppColors.accentGreen.withValues(
-                                        alpha: 0.16,
-                                      ),
-                                      AppColors.splashMint.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      Colors.black.withValues(alpha: 0.22),
-                                    ],
-                                    subtitle: sub,
-                                    onTap: () async {
-                                      final choice =
-                                          await showModalBottomSheet<
-                                            WorkoutGroupExerciseEntity
-                                          >(
-                                            context: context,
-                                            backgroundColor:
-                                                AppColors.barBackground,
-                                            builder: (ctx) => SafeArea(
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.stretch,
-                                                children: [
-                                                  const Padding(
-                                                    padding: EdgeInsets.all(16),
-                                                    child: Text(
-                                                      'Editar exercício do bloco',
-                                                      style: TextStyle(
-                                                        color: AppColors
-                                                            .textPrimary,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        fontSize: 16,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  for (final line in block)
-                                                    ListTile(
-                                                      title: Text(
-                                                        _wgResolveExerciseName(
-                                                          idToExercise,
-                                                          line.exerciseId,
-                                                        ),
-                                                        style: const TextStyle(
-                                                          color: AppColors
-                                                              .textPrimary,
-                                                        ),
-                                                      ),
-                                                      onTap: () =>
-                                                          Navigator.pop(
-                                                            ctx,
-                                                            line,
-                                                          ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                      if (!context.mounted || choice == null) {
-                                        return;
-                                      }
-                                      final nm = _wgResolveExerciseName(
-                                        idToExercise,
-                                        choice.exerciseId,
-                                      );
-                                      await _lineDialog(context, choice, nm);
-                                    },
-                                    onSlidableCombine: () =>
-                                        _combineAfterAnchor(
-                                          context,
-                                          block.last,
-                                          flatAvailable,
-                                          groups,
-                                        ),
-                                    onSlidableDelete: () async {
-                                      final cid0 = block.first.comboId;
-                                      if (cid0 == null || cid0.isEmpty) {
-                                        return;
-                                      }
-                                      final ok = await confirmDeleteDialog(
-                                        context,
-                                        itemName: names,
-                                      );
-                                      if (ok == true && context.mounted) {
-                                        await widget.repo
-                                            .removeWorkoutGroupComboBlock(
-                                              workoutGroupId: widget.group.id,
-                                              comboId: cid0,
-                                            );
-                                        await _propagateAfterGroupMutation();
-                                      }
-                                    },
-                                    trailing: [
-                                      if (block.any(
-                                        (l) => exerciseEntityHasAnyVideoUrl(
-                                          idToExercise[l.exerciseId],
-                                        ),
-                                      ))
-                                        IconButton(
-                                          tooltip: 'Vídeos do bloco',
-                                          padding: EdgeInsets.zero,
-                                          constraints:
-                                              const BoxConstraints.tightFor(
-                                            width: 40,
-                                            height: 40,
-                                          ),
-                                          icon: Icon(
-                                            Icons.ondemand_video_rounded,
-                                            color: kExerciseRegistryRowIconTint,
-                                            size: 24 * _iconScale,
-                                          ),
-                                          onPressed: () =>
-                                              showExerciseBlockVideoLinksBottomSheet(
-                                            context,
-                                            title: 'Vídeos do bloco',
-                                            lines: [
-                                              for (final line in block)
-                                                (
-                                                  name: _wgResolveExerciseName(
-                                                    idToExercise,
-                                                    line.exerciseId,
-                                                  ),
-                                                  exercise: idToExercise[
-                                                    line.exerciseId
-                                                  ],
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (blocks.length > 1)
-                                        ReorderableDragStartListener(
-                                          index: bi,
-                                          child: SizedBox(
-                                            width: kMinInteractiveDimension,
-                                            height: kMinInteractiveDimension,
-                                            child: Center(
-                                              child: Icon(
-                                                Icons.drag_indicator_rounded,
-                                                color: Colors.white.withValues(
-                                                  alpha: 0.58,
-                                                ),
-                                                size: 26 * _iconScale,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
+                                },
+                              ),
                             ),
-                          ),
                     ),
                     Divider(
                       height: 1,
@@ -1166,6 +1183,5 @@ class _GroupExercisesBodyState extends State<_GroupExercisesBody> {
       restBetweenSetsSec: res.restBetweenSetsSec,
       trainingMethodId: res.trainingMethodId,
     );
-    await _propagateAfterGroupMutation();
   }
 }

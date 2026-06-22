@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:live_activities/live_activities.dart';
 
+import '../preferences/workout_runtime_prefs.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
 import 'rest_live_activity_controller.dart';
@@ -44,10 +45,19 @@ final class IosLockScreenLiveActivity {
     required DayWorkoutEntity? workout,
     required RestLiveActivityController rest,
     required AppDataRepository repo,
+
     /// Ignora throttle de 1s (útil ao ir para background / ecrã bloqueado).
     bool force = false,
   }) async {
     if (!Platform.isIOS) return;
+    final liveActivityEnabled =
+        await WorkoutRuntimePrefs.isLiveActivityEnabled();
+    if (!liveActivityEnabled) {
+      try {
+        await _plugin.endActivity(kIosWorkoutLiveActivityId);
+      } catch (_) {}
+      return;
+    }
     await ensureInit();
     if (!_inited) return;
 
@@ -88,9 +98,7 @@ final class IosLockScreenLiveActivity {
     }
 
     final tick = now.millisecondsSinceEpoch;
-    if (!force &&
-        _lastThrottleMs != 0 &&
-        tick - _lastThrottleMs < 1000) {
+    if (!force && _lastThrottleMs != 0 && tick - _lastThrottleMs < 1000) {
       return;
     }
     _lastThrottleMs = tick;
@@ -112,7 +120,8 @@ final class IosLockScreenLiveActivity {
       }
       if (rest.inPostPhase && rest.postPhaseStartedAt != null) {
         phase = 'rest_post';
-        postStartMs = rest.postPhaseStartedAt!.millisecondsSinceEpoch.toDouble();
+        postStartMs = rest.postPhaseStartedAt!.millisecondsSinceEpoch
+            .toDouble();
         postEndMs = postStartMs + 6 * 60 * 60 * 1000;
       } else if (end != null && now.isBefore(end)) {
         phase = 'rest';

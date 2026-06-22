@@ -31,8 +31,18 @@ class _CalendarPageState extends State<CalendarPage> {
   static final _reference = DateTime(2000, 1, 1);
 
   static const _monthNames = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+    'Janeiro',
+    'Fevereiro',
+    'Março',
+    'Abril',
+    'Maio',
+    'Junho',
+    'Julho',
+    'Agosto',
+    'Setembro',
+    'Outubro',
+    'Novembro',
+    'Dezembro',
   ];
 
   @override
@@ -94,8 +104,14 @@ class _CalendarPageState extends State<CalendarPage> {
   /// Passado: verde só concluídos, vermelho se ainda há pendência.
   /// Futuro: azul se há programado/iniciado/agendado.
   /// Hoje: usa-se só para o ícone (fundo sempre branco).
-  Color? _workoutAccentForDay(DateTime date, List<DayWorkoutEntity> list) {
-    final active = list.where((w) => w.status != 'cancelled').toList();
+  Color? _workoutAccentForDay(
+    DateTime date,
+    List<DayWorkoutEntity> list, {
+    required bool includeCancelled,
+  }) {
+    final active = includeCancelled
+        ? list
+        : list.where((w) => w.status != 'cancelled').toList();
     if (active.isEmpty) return null;
 
     final day = _dateOnly(date);
@@ -158,6 +174,7 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<AppDataRepository>();
+    final isAdmin = repo.session.hasFullOrgAccess;
     final showCurrent = _isCalendarShowingCurrentMonth();
     final monthStart = DateTime(_currentDate.year, _currentDate.month, 1);
     final rangeEnd = DateTime(_currentDate.year, _currentDate.month + 1, 1);
@@ -184,7 +201,11 @@ class _CalendarPageState extends State<CalendarPage> {
                     shaderCallback: (bounds) => const LinearGradient(
                       colors: [AppColors.accentPink, AppColors.accentGreen],
                     ).createShader(bounds),
-                    child: const Icon(Icons.calendar_today, size: 24, color: Colors.white),
+                    child: const Icon(
+                      Icons.calendar_today,
+                      size: 24,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   const Text(
@@ -209,7 +230,10 @@ class _CalendarPageState extends State<CalendarPage> {
                   Expanded(
                     child: Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: showCurrent
                               ? AppColors.accentGreen.withValues(alpha: 0.2)
@@ -235,7 +259,10 @@ class _CalendarPageState extends State<CalendarPage> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.chevron_right, color: Colors.white70),
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white70,
+                    ),
                     onPressed: () => _changeMonth(1),
                   ),
                 ],
@@ -245,13 +272,83 @@ class _CalendarPageState extends State<CalendarPage> {
               padding: EdgeInsets.all(8),
               child: Row(
                 children: [
-                  Expanded(child: Center(child: Text('Seg', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
-                  Expanded(child: Center(child: Text('Ter', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
-                  Expanded(child: Center(child: Text('Qua', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
-                  Expanded(child: Center(child: Text('Qui', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
-                  Expanded(child: Center(child: Text('Sex', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
-                  Expanded(child: Center(child: Text('Sáb', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
-                  Expanded(child: Center(child: Text('Dom', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentGreen)))),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Seg',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Ter',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Qua',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Qui',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Sex',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Sáb',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Dom',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -284,44 +381,57 @@ class _CalendarPageState extends State<CalendarPage> {
                   return GridView.builder(
                     padding: const EdgeInsets.all(8),
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 7,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 7,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
                     itemCount: days.length,
                     itemBuilder: (context, i) {
                       final date = days[i];
                       final inMonth = _isCurrentMonthForDate(date, monthDate);
                       final today = _isToday(date);
                       final selected = _isSameDay(date, _selectedDay);
-                      final key =
-                          '${date.year}-${date.month}-${date.day}';
+                      final key = '${date.year}-${date.month}-${date.day}';
                       final dayList = byDay[key] ?? const [];
-                      final activeList =
-                          dayList.where((w) => w.status != 'cancelled').toList();
+                      final activeList = isAdmin
+                          ? dayList
+                          : dayList
+                                .where((w) => w.status != 'cancelled')
+                                .toList();
                       final hasWork = inMonth && activeList.isNotEmpty;
-                      final accent =
-                          activeList.isEmpty ? null : _workoutAccentForDay(date, dayList);
+                      final accent = activeList.isEmpty
+                          ? null
+                          : _workoutAccentForDay(
+                              date,
+                              dayList,
+                              includeCancelled: isAdmin,
+                            );
 
                       final borderColor = today
                           ? Colors.white.withValues(alpha: 0.75)
                           : selected
-                              ? AppColors.accentGreen.withValues(alpha: 0.85)
-                              : (hasWork && accent != null)
-                                  ? accent.withValues(alpha: 0.5)
-                                  : Colors.transparent;
+                          ? AppColors.accentGreen.withValues(alpha: 0.85)
+                          : (hasWork && accent != null)
+                          ? accent.withValues(alpha: 0.5)
+                          : Colors.transparent;
                       final borderWidth =
-                          today || selected || (hasWork && accent != null) ? 2.0 : 0.0;
+                          today || selected || (hasWork && accent != null)
+                          ? 2.0
+                          : 0.0;
 
                       Widget dayBackground;
                       if (today) {
-                        dayBackground =
-                            ColoredBox(color: Colors.white.withValues(alpha: 0.42));
+                        dayBackground = ColoredBox(
+                          color: Colors.white.withValues(alpha: 0.42),
+                        );
                       } else if (hasWork && accent != null) {
                         dayBackground = ColoredBox(color: _tint(accent));
                       } else {
-                        dayBackground = const ColoredBox(color: Colors.transparent);
+                        dayBackground = const ColoredBox(
+                          color: Colors.transparent,
+                        );
                       }
 
                       return GestureDetector(
@@ -338,7 +448,10 @@ class _CalendarPageState extends State<CalendarPage> {
                         },
                         child: Container(
                           decoration: BoxDecoration(
-                            border: Border.all(color: borderColor, width: borderWidth),
+                            border: Border.all(
+                              color: borderColor,
+                              width: borderWidth,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           clipBehavior: Clip.antiAlias,
@@ -355,10 +468,11 @@ class _CalendarPageState extends State<CalendarPage> {
                                       color: today
                                           ? Colors.black87
                                           : inMonth
-                                              ? Colors.white
-                                              : Colors.white.withValues(alpha: 0.3),
-                                      fontWeight:
-                                          today || selected ? FontWeight.bold : FontWeight.normal,
+                                          ? Colors.white
+                                          : Colors.white.withValues(alpha: 0.3),
+                                      fontWeight: today || selected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
                                       fontSize: 16,
                                       shadows: [
                                         if (today)
@@ -367,7 +481,10 @@ class _CalendarPageState extends State<CalendarPage> {
                                             color: Color(0x99000000),
                                           )
                                         else
-                                          const Shadow(blurRadius: 3, color: Color(0x88000000)),
+                                          const Shadow(
+                                            blurRadius: 3,
+                                            color: Color(0x88000000),
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -382,7 +499,9 @@ class _CalendarPageState extends State<CalendarPage> {
                                         if (today)
                                           Shadow(
                                             blurRadius: 2,
-                                            color: accent.withValues(alpha: 0.35),
+                                            color: accent.withValues(
+                                              alpha: 0.35,
+                                            ),
                                           )
                                         else
                                           const Shadow(
@@ -407,5 +526,4 @@ class _CalendarPageState extends State<CalendarPage> {
       },
     );
   }
-
 }

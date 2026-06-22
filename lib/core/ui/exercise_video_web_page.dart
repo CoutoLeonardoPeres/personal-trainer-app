@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -31,19 +32,52 @@ class ExerciseVideoWebPage extends StatefulWidget {
   final String title;
   final ExerciseVideoPresentation presentation;
 
+  static bool _isYouTubeUri(Uri uri) {
+    var host = uri.host.toLowerCase();
+    if (host.startsWith('www.')) host = host.substring(4);
+    return host.contains('youtube.com') || host == 'youtu.be';
+  }
+
+  /// Abre YouTube no visualizador nativo (mais estável que WKWebView em alguns links).
+  static Future<bool> _openYouTubeExternally(Uri uri) async {
+    try {
+      return await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    } catch (_) {
+      try {
+        return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
   /// Abre o vídeo num **popup suspenso** ao centro (~60% da altura da tela, WebView embutido).
   static Future<void> showInAppWindow(
     BuildContext context, {
     required String initialUrl,
     String title = 'Vídeo',
   }) async {
-    if (normalizeVideoUri(initialUrl) == null) {
+    final target = normalizeVideoUri(initialUrl);
+    if (target == null) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         const SnackBar(content: Text('Endereço de vídeo inválido.')),
       );
       return;
     }
     if (!context.mounted) return;
+
+    if (_isYouTubeUri(target)) {
+      final ok = await _openYouTubeExternally(target);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir o vídeo. Tente novamente.'),
+          ),
+        );
+      }
+      return;
+    }
+
     await showGeneralDialog<void>(
       context: context,
       useRootNavigator: true,
@@ -126,6 +160,7 @@ class ExerciseVideoWebPage extends StatefulWidget {
   /// Ajusta URLs conhecidas para formato compatível com WebView; demais https mantêm o endereço original.
   static Uri? normalizeVideoUri(String raw) {
     final t = raw.trim();
+    if (t.isEmpty) return null;
     final uri = Uri.tryParse(t);
     if (uri == null || !uri.hasScheme) return null;
     final scheme = uri.scheme.toLowerCase();
@@ -170,6 +205,7 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
   WebViewController? _controller;
   var _loading = true;
   String? _error;
+  var _disposed = false;
 
   @override
   void initState() {
@@ -181,40 +217,78 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
       return;
     }
 
-    late final PlatformWebViewControllerCreationParams creationParams;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      creationParams = WebKitWebViewControllerCreationParams(
-        allowsInlineMediaPlayback: true,
-      );
-    } else {
-      creationParams = const PlatformWebViewControllerCreationParams();
+    if (ExerciseVideoWebPage._isYouTubeUri(target)) {
+      _loading = false;
+      _error = 'Abrindo vídeo…';
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final ok = await ExerciseVideoWebPage._openYouTubeExternally(target);
+        if (!mounted || _disposed) return;
+        if (ok) {
+          Navigator.of(context, rootNavigator: true).maybePop();
+          return;
+        }
+        setState(() {
+          _error = 'Não foi possível abrir este vídeo.';
+          _loading = false;
+        });
+      });
+      return;
     }
 
-    final controller = WebViewController.fromPlatformCreationParams(
-      creationParams,
-    )
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(AppColors.background)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) => setState(() => _loading = true),
-          onPageFinished: (_) => setState(() => _loading = false),
-          onWebResourceError: (err) {
-            setState(() {
-              _loading = false;
-              _error = err.description.isNotEmpty ? err.description : 'Erro ao carregar a página.';
-            });
-          },
-        ),
-      );
+    try {
+      late final PlatformWebViewControllerCreationParams creationParams;
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        creationParams = WebKitWebViewControllerCreationParams(
+          allowsInlineMediaPlayback: true,
+        );
+      } else {
+        creationParams = const PlatformWebViewControllerCreationParams();
+      }
 
-    if (controller.platform is AndroidWebViewController) {
-      (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
+      final controller = WebViewController.fromPlatformCreationParams(
+        creationParams,
+      )
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(AppColors.background)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageStarted: (_) {
+              if (!mounted || _disposed) return;
+              setState(() => _loading = true);
+            },
+            onPageFinished: (_) {
+              if (!mounted || _disposed) return;
+              setState(() => _loading = false);
+            },
+            onWebResourceError: (err) {
+              if (!mounted || _disposed) return;
+              setState(() {
+                _loading = false;
+                _error = err.description.isNotEmpty
+                    ? err.description
+                    : 'Erro ao carregar a página.';
+              });
+            },
+          ),
+        );
+
+      if (controller.platform is AndroidWebViewController) {
+        (controller.platform as AndroidWebViewController)
+            .setMediaPlaybackRequiresUserGesture(false);
+      }
+
+      controller.loadRequest(target);
+      _controller = controller;
+    } catch (e) {
+      _error = 'Não foi possível iniciar o player de vídeo.';
+      _loading = false;
     }
+  }
 
-    controller.loadRequest(target);
-    _controller = controller;
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   Widget _buildBody() {

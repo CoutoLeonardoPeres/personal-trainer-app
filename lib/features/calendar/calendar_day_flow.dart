@@ -568,22 +568,29 @@ class CalendarDayFlow {
       final w = await pickWorkoutFromStudentDayList(studentKey, list);
       if (w == null) return;
       if (!context.mounted) return;
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 2), () async {
+          await Future.wait(
+            list.map(
+              (x) => repo
+                  .refreshDayWorkoutFromCloud(x.id)
+                  .timeout(
+                    const Duration(milliseconds: 1200),
+                    onTimeout: () {},
+                  ),
+            ),
+          );
+        }),
+      );
       await _onWorkoutSelected(
         context,
         repo,
         day,
         w,
+        initialStudentName: nameMap[studentKey],
+        initialStudentInactive: inactiveByStudentId[studentKey] ?? false,
         // Mantém abertura rápida da modal; sincronismo fino acontece em background.
         skipCloudPrewarmAndLoader: true,
-      );
-      unawaited(
-        Future.wait(
-          list.map(
-            (x) => repo
-                .refreshDayWorkoutFromCloud(x.id)
-                .timeout(const Duration(milliseconds: 1200), onTimeout: () {}),
-          ),
-        ),
       );
     }
 
@@ -920,49 +927,83 @@ class CalendarDayFlow {
     DayWorkoutEntity w, {
     bool skipCloudPrewarmAndLoader = false,
     bool showRestTimerOverlayFromLive = false,
+    String? initialStudentName,
+    bool initialStudentInactive = false,
   }) async {
     if (!context.mounted) return;
     if (_openingWorkoutSheet) return;
     _openingWorkoutSheet = true;
 
     Future<void> Function(BuildContext sheetContext)? onSwap;
-    String studentName = 'Aluno';
-    var studentInactive = false;
+    String studentName = initialStudentName?.trim().isNotEmpty == true
+        ? initialStudentName!.trim()
+        : 'Aluno';
+    var studentInactive = initialStudentInactive;
     DayWorkoutEntity workout = w;
     String? badge;
     try {
-      // Offline-first: abre usando local imediatamente.
-      final refreshed = await repo.getDayWorkout(w.id);
-      workout = refreshed ?? w;
+      Future<void> prepareWorkoutSheet() async {
+        if (!skipCloudPrewarmAndLoader) {
+          // Atualização pontual antes de abrir para diminuir estado "atrasado"
+          // quando o treino mudou noutro dispositivo há poucos segundos.
+          await repo
+              .refreshDayWorkoutFromCloud(w.id)
+              .timeout(const Duration(milliseconds: 1200), onTimeout: () {});
+          await repo
+              .prewarmCompletedHistoryForWorkout(w.id, limit: 60)
+              .timeout(const Duration(milliseconds: 1600), onTimeout: () {});
+        }
+        if (!context.mounted) return;
+        if (!skipCloudPrewarmAndLoader) {
+          final refreshed = await repo.getDayWorkout(w.id);
+          workout = refreshed ?? w;
+        }
 
-      final found = await repo
-          .getStudentById(workout.studentId)
-          .timeout(const Duration(milliseconds: 500), onTimeout: () => null);
-      if (found != null) {
-        studentName = found.name;
-        studentInactive = found.isArchived;
-      } else {
-        studentInactive = false;
-      }
-      if (studentInactive) {
-        studentName = studentNameWithoutArchivePrefix(studentName);
-      }
-      badge = await repo.getDayWorkoutGroupBadgeLabel(workout);
+        if (initialStudentName == null || !skipCloudPrewarmAndLoader) {
+          final found = await repo
+              .getStudentById(workout.studentId)
+              .timeout(
+                Duration(milliseconds: skipCloudPrewarmAndLoader ? 250 : 1200),
+                onTimeout: () => null,
+              );
+          if (found != null) {
+            studentName = found.name;
+            studentInactive = found.isArchived;
+          } else if (!skipCloudPrewarmAndLoader) {
+            // Timeout/rede: não tratar como «inativo» — só falta o nome.
+            studentInactive = false;
+          }
+        }
+        if (studentInactive) {
+          studentName = studentNameWithoutArchivePrefix(studentName);
+        }
+        if (!context.mounted) return;
+        if (!skipCloudPrewarmAndLoader) {
+          badge = await repo.getDayWorkoutGroupBadgeLabel(workout);
+        }
+        if (!context.mounted) return;
 
-      if (workout.status == 'programmed') {
-        onSwap = (sheetCtx) => _runSwapWorkoutFromSheet(
-          sheetContext: sheetCtx,
-          parentContext: context,
-          repo: repo,
-          day: day,
-          workout: workout,
+        if (workout.status == 'programmed') {
+          onSwap = (sheetCtx) => _runSwapWorkoutFromSheet(
+            sheetContext: sheetCtx,
+            parentContext: context,
+            repo: repo,
+            day: day,
+            workout: workout,
+          );
+        }
+      }
+
+      if (skipCloudPrewarmAndLoader) {
+        await prepareWorkoutSheet().timeout(
+          const Duration(milliseconds: 650),
+          onTimeout: () {},
         );
-      }
-
-      if (!skipCloudPrewarmAndLoader) {
-        // Convergência de nuvem em background: não bloqueia UI.
-        unawaited(repo.refreshDayWorkoutFromCloud(w.id));
-        unawaited(repo.prewarmCompletedHistoryForWorkout(w.id, limit: 60));
+      } else {
+        await _runWithWorkoutOpeningLoading(
+          context,
+          prepareWorkoutSheet,
+        ).timeout(const Duration(seconds: 8), onTimeout: () {});
       }
 
       if (!context.mounted) return;

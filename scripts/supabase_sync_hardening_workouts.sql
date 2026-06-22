@@ -1,0 +1,82 @@
+-- Hardening de sincronização para fluxo crítico de treino/séries.
+-- Objetivo:
+-- 1) impedir regressão de status completed -> started/programmed por update atrasado
+-- 2) adicionar índices de apoio para pull/realtime em alta frequência
+-- 3) consultas de diagnóstico de inconsistência
+--
+-- Seguro para reexecução (idempotente).
+
+-- ---------------------------------------------------------------------------
+-- 1) Trigger de proteção anti-downgrade de treino concluído
+-- ---------------------------------------------------------------------------
+create or replace function public.prevent_day_workout_completed_downgrade()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Se já estava concluído e uma escrita atrasada tentar regredir status,
+  -- preserva a conclusão gravada.
+  if old.status = 'completed' and new.status is distinct from 'completed' then
+    -- Escrita mais antiga ou empate temporal/revisão não pode rebaixar.
+    if coalesce(new.revision, 0) <= coalesce(old.revision, 0)
+       and coalesce(new.updated_at, old.updated_at) <= old.updated_at then
+      new.status := 'completed';
+      new.completed_at := coalesce(old.completed_at, new.completed_at);
+      new.started_at := coalesce(new.started_at, old.started_at);
+      new.workout_score := coalesce(new.workout_score, old.workout_score);
+      new.active_duration_seconds := greatest(
+        coalesce(new.active_duration_seconds, 0),
+        coalesce(old.active_duration_seconds, 0)
+      );
+      new.revision := greatest(coalesce(new.revision, 0), coalesce(old.revision, 0));
+      new.updated_at := greatest(coalesce(new.updated_at, old.updated_at), old.updated_at);
+      new.last_modified_by_device_id := coalesce(new.last_modified_by_device_id, old.last_modified_by_device_id);
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_prevent_day_workout_completed_downgrade on public.day_workouts;
+create trigger trg_prevent_day_workout_completed_downgrade
+before update on public.day_workouts
+for each row
+execute function public.prevent_day_workout_completed_downgrade();
+
+-- ---------------------------------------------------------------------------
+-- 2) Índices para caminho crítico de sincronização
+-- ---------------------------------------------------------------------------
+create index if not exists day_workouts_status_updated_idx
+  on public.day_workouts (status, updated_at desc);
+
+create index if not exists day_workout_exercises_updated_idx
+  on public.day_workout_exercises (updated_at desc);
+
+-- ---------------------------------------------------------------------------
+-- 3) Diagnóstico rápido (executar manualmente quando houver incidente)
+-- ---------------------------------------------------------------------------
+-- 3.1) Linhas órfãs (não deveria existir):
+-- select e.id, e.day_workout_id
+-- from public.day_workout_exercises e
+-- left join public.day_workouts w on w.id = e.day_workout_id
+-- where w.id is null;
+
+-- 3.2) Duplicidade de slots de exercício no mesmo treino:
+-- select
+--   day_workout_id,
+--   sort_order,
+--   exercise_id,
+--   count(*) as qty
+-- from public.day_workout_exercises
+-- where deleted_at is null
+-- group by day_workout_id, sort_order, exercise_id
+-- having count(*) > 1
+-- order by qty desc, day_workout_id, sort_order;
+
+-- 3.3) Treinos started sem progressão recente (indicativo de fila travada):
+-- select id, student_id, status, started_at, completed_at, updated_at, revision
+-- from public.day_workouts
+-- where status = 'started'
+--   and updated_at < now() - interval '20 minutes'
+-- order by updated_at asc;

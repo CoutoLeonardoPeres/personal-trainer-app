@@ -1,0 +1,41 @@
+---
+description: Planejamento semanal — stream, hidratação calendário↔grade e fluxo de agendar treino
+globs: lib/features/planning/**/*.dart,lib/data/repositories/app_data_repository.dart
+alwaysApply: false
+---
+
+# Planejamento semanal (`week_schedule_*`)
+
+## Modelo de dados
+
+- **Calendário**: `day_workouts` + `source_workout_group_id`
+- **Planejamento (cards editáveis)**: `week_schedule_blocks` + `week_schedule_items`
+- O card na tela de Planejamento só aparece com itens no bloco da semana; treino só no calendário não basta.
+
+## Listagem da semana
+
+- Carregar por **bloco canônico da segunda-feira** (`_findWeekBlockIdForMonday` + `_queryWeekScheduleRowsMapped`), não filtrar todos os itens do aluno por data no join.
+- `_weekPlanningAlreadyHasGroup` deve usar as **mesmas linhas visíveis** da listagem, não só contagem bruta no SQLite.
+
+## Stream `watchWeekScheduleRows`
+
+- **Não** aninhar `controller.onListen` dentro de `Stream.multi` — o callback do `multi` já roda ao escutar; aninhar causa loading infinito sem emissão.
+- Ao escutar: emitir cache ou `[]` **síncrono**, depois `_queryWeekScheduleRowsMapped` e escutar o broadcast interno (drift + push manual).
+- `_publishWeekScheduleRowsSnapshot`: usar `putIfAbsent` no `StreamController` manual e sempre fazer `add(rows)`.
+- Hidratação pesada (`hydrateWeekPlanningForStudentWeek`) em background; não `await` antes de `setState` ao escolher aluno.
+
+## Reconciliação calendário → planejamento
+
+- `hydrateWeekPlanningForStudentWeek`: publicar snapshot local → nuvem em paralelo → `_repairWeekPlanningFromCalendar` se faltar grupo.
+- `_ensureWeekPlanningGroupVisible` para itens fantasmas (existem no DB mas não na listagem).
+- `_WeekPlanningGroupsLoader` na UI dispara hidratação por aluno+semana ao montar a página do `PageView`.
+
+## Fluxo “Agendar treino”
+
+- Usar `hostContext` (tela de Planejamento) para `Navigator.pop` e `SnackBar`; **não** `context` do `StreamBuilder` (some após async).
+- Fechar modal de grupos no **próximo frame** após o diálogo de semanas; agendar em `addPostFrameCallback` na PlanningPage (`PlanningScheduleWorkoutRequest`).
+- Diálogo de semanas: `useRootNavigator: true`.
+
+## Contexto Flutter
+
+- `showAppModalSheet` + `showDialog` + sheets aninhados invalidam `BuildContext` capturado em closures async.

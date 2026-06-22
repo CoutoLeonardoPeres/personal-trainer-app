@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
+import '../models/day_workout_performed_set.dart';
 import 'remote_sync_service.dart';
 import 'supabase_catalog_cloud_reconcile.dart';
 import 'supabase_pull_sync_service.dart';
@@ -105,10 +106,27 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required String entityType,
     required String action,
   }) {
-    if (_isHighPriorityAudit(entityType: entityType, action: action)) {
+    if (entityType == 'day_workout_exercise') {
+      if (action == 'append_set' ||
+          action == 'remove_set' ||
+          action == 'update_set' ||
+          action == 'patch_set_rest') {
+        // Prioridade máxima: registro de série em treino ao vivo.
+        return -2;
+      }
+      return -1;
+    }
+    if (entityType == 'day_workout') {
+      if (action == 'start' ||
+          action == 'pause' ||
+          action == 'resume' ||
+          action == 'complete') {
+        // Estado de treino em tempo real deve chegar antes de programações/cancelamentos.
+        return -1;
+      }
       return 0;
     }
-    if (entityType == 'day_workout' || entityType == 'day_workout_exercise') {
+    if (_isHighPriorityAudit(entityType: entityType, action: action)) {
       return 0;
     }
     if (entityType == 'week_schedule' ||
@@ -138,6 +156,11 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       if (action == 'touch') return 'workout::$entityId::touch';
       return 'workout::$entityId::$action';
     }
+    if (entityType == 'workout_group' ||
+        entityType == 'workout_group_exercise') {
+      if (action == 'delete') return '$entityType::$entityId::delete';
+      return '$entityType::$entityId::model';
+    }
     if (action == 'update' || action == 'touch') {
       return '$entityType::$entityId::state';
     }
@@ -160,11 +183,19 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     final encodedPayload = payload == null ? null : jsonEncode(payload);
     if (dedupeKey != null) {
       final nonNullDedupeKey = dedupeKey;
-      final existing =
-          await (_db.select(_db.syncQueue)
-                ..where((t) => t.dedupeKey.equals(nonNullDedupeKey)))
-              .getSingleOrNull();
+      final existing = await (_db.select(
+        _db.syncQueue,
+      )..where((t) => t.dedupeKey.equals(nonNullDedupeKey))).getSingleOrNull();
       if (existing != null && existing.status != 'syncing') {
+        if (entityType == 'day_workout_exercise' ||
+            entityType == 'day_workout') {
+          debugPrint(
+            'SupabaseRemoteSyncService: queue upsert reuse '
+            'id=${existing.id} dedupe=$nonNullDedupeKey '
+            'status=${existing.status} action=$action '
+            'entity=$entityType/$entityId',
+          );
+        }
         await (_db.update(
           _db.syncQueue,
         )..where((t) => t.id.equals(existing.id))).write(
@@ -184,29 +215,103 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         return existing.id;
       }
       if (existing != null && existing.status == 'syncing') {
+        // Para eventos coalescíveis, não criar novo item enquanto já há envio ativo.
+        // Isso evita tempestade de fila (ex.: centenas de "resync_local"/"touch")
+        // que atrasava a propagação em tempo real entre dispositivos.
+        if (action == 'resync_local' || action == 'touch') {
+          if (entityType == 'day_workout_exercise' ||
+              entityType == 'day_workout') {
+            debugPrint(
+              'SupabaseRemoteSyncService: queue coalesce while syncing '
+              'existing=${existing.id} dedupe=$nonNullDedupeKey '
+              'action=$action entity=$entityType/$entityId',
+            );
+          }
+          return existing.id;
+        }
+        if (entityType == 'day_workout_exercise' ||
+            entityType == 'day_workout') {
+          debugPrint(
+            'SupabaseRemoteSyncService: queue upsert while syncing '
+            'existing=${existing.id} dedupe=$nonNullDedupeKey '
+            'action=$action entity=$entityType/$entityId',
+          );
+        }
         // Evita violação de unicidade quando a mesma entidade recebe novo evento
         // durante um envio em progresso.
         dedupeKey = null;
       }
     }
     final id = const Uuid().v4();
-    await _db.into(_db.syncQueue).insert(
-          SyncQueueCompanion.insert(
-            id: id,
-            entityType: entityType,
-            entityId: entityId,
-            operation: action,
+    try {
+      await _db
+          .into(_db.syncQueue)
+          .insert(
+            SyncQueueCompanion.insert(
+              id: id,
+              entityType: entityType,
+              entityId: entityId,
+              operation: action,
+              payloadJson: Value(encodedPayload),
+              priority: Value(
+                _priorityFor(entityType: entityType, action: action),
+              ),
+              status: const Value('pending'),
+              retryCount: const Value(0),
+              nextRetryAt: const Value(null),
+              dedupeKey: Value(dedupeKey),
+              auditLogId: Value(auditLogId),
+              createdAt: Value(now),
+              updatedAt: Value(now),
+            ),
+          );
+      if (entityType == 'day_workout_exercise' || entityType == 'day_workout') {
+        debugPrint(
+          'SupabaseRemoteSyncService: queue insert id=$id '
+          'dedupe=${dedupeKey ?? '-'} action=$action '
+          'entity=$entityType/$entityId',
+        );
+      }
+    } catch (e) {
+      // Corrida entre produtores concorrentes para a mesma dedupe_key:
+      // em vez de falhar o enqueue (e perder sync), reaproveita o item existente.
+      final isDedupeConflict =
+          dedupeKey != null &&
+          e.toString().contains(
+            'UNIQUE constraint failed: sync_queue.dedupe_key',
+          );
+      if (!isDedupeConflict) rethrow;
+      final existing = await (_db.select(
+        _db.syncQueue,
+      )..where((t) => t.dedupeKey.equals(dedupeKey!))).getSingleOrNull();
+      if (existing == null) rethrow;
+      if (entityType == 'day_workout_exercise' || entityType == 'day_workout') {
+        debugPrint(
+          'SupabaseRemoteSyncService: queue dedupe conflict recovered '
+          'existing=${existing.id} dedupe=$dedupeKey '
+          'action=$action entity=$entityType/$entityId',
+        );
+      }
+      if (existing.status != 'syncing') {
+        await (_db.update(
+          _db.syncQueue,
+        )..where((t) => t.id.equals(existing.id))).write(
+          SyncQueueCompanion(
+            operation: Value(action),
             payloadJson: Value(encodedPayload),
-            priority: Value(_priorityFor(entityType: entityType, action: action)),
             status: const Value('pending'),
             retryCount: const Value(0),
             nextRetryAt: const Value(null),
-            dedupeKey: Value(dedupeKey),
             auditLogId: Value(auditLogId),
-            createdAt: Value(now),
             updatedAt: Value(now),
+            priority: Value(
+              _priorityFor(entityType: entityType, action: action),
+            ),
           ),
         );
+      }
+      return existing.id;
+    }
     return id;
   }
 
@@ -235,15 +340,52 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       entityId: safeEntityId,
       payload: payload,
     );
+    if (entityType == 'day_workout_exercise' || entityType == 'day_workout') {
+      debugPrint(
+        'SupabaseRemoteSyncService: enqueue action=$action '
+        'entity=$entityType/$safeEntityId queueItem=$queueItemId audit=$auditLogId',
+      );
+    }
     _enqueueInternal(q);
   }
 
   void _enqueueInternal(_QueuedAudit q) {
-    if (!_queuedItemIds.add(q.queueItemId)) return;
+    if (!_queuedItemIds.add(q.queueItemId)) {
+      // Mesmo queueItemId já enfileirado: substitui pelo evento mais recente
+      // e reposiciona para não perder "último write" (ex.: 1ª série some, 2ª fica).
+      _priorityQueue.removeWhere((x) => x.queueItemId == q.queueItemId);
+      _queue.removeWhere((x) => x.queueItemId == q.queueItemId);
+      if (_isHighPriorityAudit(entityType: q.entityType, action: q.action)) {
+        _priorityQueue.insert(0, q);
+      } else {
+        _queue.add(q);
+      }
+      if (q.entityType == 'day_workout_exercise' ||
+          q.entityType == 'day_workout') {
+        debugPrint(
+          'SupabaseRemoteSyncService: enqueue replace '
+          'queueItem=${q.queueItemId} action=${q.action} '
+          'entity=${q.entityType}/${q.entityId ?? '-'} '
+          'sizes(priority=${_priorityQueue.length},normal=${_queue.length})',
+        );
+      }
+      return;
+    }
     if (_isHighPriorityAudit(entityType: q.entityType, action: q.action)) {
-      _priorityQueue.add(q);
+      // Fluxo crítico (treino/séries): item mais recente deve sair primeiro,
+      // evitando ficar atrás de backlog antigo após recover.
+      _priorityQueue.insert(0, q);
     } else {
       _queue.add(q);
+    }
+    if (q.entityType == 'day_workout_exercise' ||
+        q.entityType == 'day_workout') {
+      debugPrint(
+        'SupabaseRemoteSyncService: enqueue push '
+        'queueItem=${q.queueItemId} action=${q.action} '
+        'entity=${q.entityType}/${q.entityId ?? '-'} '
+        'sizes(priority=${_priorityQueue.length},normal=${_queue.length})',
+      );
     }
     unawaited(_pumpQueue());
   }
@@ -272,8 +414,13 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
               '${retry.entityType}/${retry.entityId ?? retry.auditLogId} '
               'attempt=$nextAttempt in ${delay.inMilliseconds}ms',
             );
-            await Future<void>.delayed(delay);
-            _enqueueInternal(retry);
+            // Não bloquear a fila por causa de 1 item com falha:
+            // agenda retry assíncrono e segue processando os demais jobs.
+            unawaited(
+              Future<void>.delayed(delay).then((_) {
+                _enqueueInternal(retry);
+              }),
+            );
           } else {
             debugPrint(
               'SupabaseRemoteSyncService: retry limit reached '
@@ -300,18 +447,28 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     _recovering = true;
     try {
       // Compatibilidade: converte auditorias legadas sem item de fila.
-      final audits =
-          await (_db.select(_db.auditLogs)..orderBy([
-                (t) => OrderingTerm.asc(t.at),
-              ]))
-              .get();
+      final now = DateTime.now();
+      final staleAuditCutoff = now.subtract(const Duration(hours: 24));
+      final audits = await (_db.select(
+        _db.auditLogs,
+      )..orderBy([(t) => OrderingTerm.asc(t.at)])).get();
       for (final row in audits) {
+        final existing = await (_db.select(
+          _db.syncQueue,
+        )..where((q) => q.auditLogId.equals(row.id))).getSingleOrNull();
+        if (row.at.isBefore(staleAuditCutoff) && existing == null) {
+          // Evita reprocessar backlog histórico importado da nuvem em todo boot,
+          // o que atrasava eventos críticos atuais de séries/treino ao vivo.
+          await _discardAuditLog(row.id);
+          continue;
+        }
         final entityId = row.entityId?.trim();
         if (entityId == null || entityId.isEmpty) continue;
-        final existing =
-            await (_db.select(_db.syncQueue)
-                  ..where((q) => q.auditLogId.equals(row.id)))
-                .getSingleOrNull();
+        if (row.entityType == 'day_workout_exercise' &&
+            await _isOrphanDayWorkoutExerciseEntity(entityId)) {
+          await _discardAuditLog(row.id);
+          continue;
+        }
         if (existing != null) continue;
         Map<String, Object?>? payload;
         final raw = row.payloadJson?.trim();
@@ -331,18 +488,34 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         );
       }
 
-      final now = DateTime.now();
+      final nowForPending = DateTime.now();
       final pending =
-          await (_db.select(_db.syncQueue)..where(
-                (q) =>
-                    q.status.isIn(const ['pending', 'failed']) &
-                    (q.nextRetryAt.isNull() | q.nextRetryAt.isSmallerThanValue(now)),
-              )..orderBy([
-                (q) => OrderingTerm.asc(q.priority),
-                (q) => OrderingTerm.asc(q.updatedAt),
-              ]))
+          await (_db.select(_db.syncQueue)
+                ..where(
+                  (q) =>
+                      q.status.isIn(const ['pending', 'failed']) &
+                      (q.nextRetryAt.isNull() |
+                          q.nextRetryAt.isSmallerThanValue(nowForPending)),
+                )
+                ..orderBy([
+                  (q) => OrderingTerm.asc(q.priority),
+                  (q) => OrderingTerm.desc(q.updatedAt),
+                ]))
               .get();
-      for (final item in pending) {
+      // Mantém a ordenação efetiva "mais novo primeiro" mesmo usando
+      // _enqueueInternal() com inserção no início da fila prioritária.
+      for (final item in pending.reversed) {
+        if (item.entityType == 'day_workout_exercise' &&
+            await _isOrphanDayWorkoutExerciseEntity(item.entityId)) {
+          await (_db.delete(
+            _db.syncQueue,
+          )..where((q) => q.id.equals(item.id))).go();
+          final aid = item.auditLogId?.trim();
+          if (aid != null && aid.isNotEmpty) {
+            await _discardAuditLog(aid);
+          }
+          continue;
+        }
         Map<String, Object?>? payload;
         final raw = item.payloadJson?.trim();
         if (raw != null && raw.isNotEmpty) {
@@ -368,6 +541,19 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     }
   }
 
+  Future<bool> _isOrphanDayWorkoutExerciseEntity(String? entityId) async {
+    final id = entityId?.trim();
+    if (id == null || id.isEmpty) return true;
+    final line = await (_db.select(
+      _db.dayWorkoutExercises,
+    )..where((x) => x.id.equals(id))).getSingleOrNull();
+    if (line == null) return true;
+    final parent = await (_db.select(
+      _db.dayWorkouts,
+    )..where((w) => w.id.equals(line.dayWorkoutId))).getSingleOrNull();
+    return parent == null;
+  }
+
   Future<bool> _syncOneJob(_QueuedAudit job) async {
     if (!supabaseAppEnabled) return true;
 
@@ -376,14 +562,14 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       _db.syncQueue,
     )..where((q) => q.id.equals(job.queueItemId))).getSingleOrNull();
     if (queueItem == null) return true;
-    await (_db.update(_db.syncQueue)
-          ..where((q) => q.id.equals(queueItem.id)))
-        .write(
-          SyncQueueCompanion(
-            status: const Value('syncing'),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
+    await (_db.update(
+      _db.syncQueue,
+    )..where((q) => q.id.equals(queueItem.id))).write(
+      SyncQueueCompanion(
+        status: const Value('syncing'),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
     await _markLocalEntitySyncStatus(
       entityType: job.entityType,
       entityId: job.entityId,
@@ -471,6 +657,30 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       _controller.noteBackgroundPushSuccess();
       return true;
     } catch (e, st) {
+      if (job.entityType == 'day_workout_exercise' &&
+          _isDayWorkoutParentFkError(e)) {
+        final recovered = await _recoverDayWorkoutParentFkAndRetry(
+          client: client,
+          job: job,
+        );
+        if (recovered) {
+          await _markQueueItemSynced(job.queueItemId);
+          await _markLocalEntitySyncStatus(
+            entityType: job.entityType,
+            entityId: job.entityId,
+            status: 'synced',
+          );
+          await _discardAuditLog(job.auditLogId);
+          _controller.noteConnected();
+          _controller.noteBackgroundPushSuccess();
+          debugPrint(
+            'SupabaseRemoteSyncService: recovered FK and synced '
+            'entity=${job.entityType}/${job.entityId ?? '-'} '
+            'audit=${job.auditLogId}',
+          );
+          return true;
+        }
+      }
       if (job.entityType == 'day_workout_exercise' ||
           job.entityType == 'day_workout') {
         debugPrint(
@@ -497,7 +707,74 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     }
   }
 
+  Future<bool> _recoverDayWorkoutParentFkAndRetry({
+    required SupabaseClient client,
+    required _QueuedAudit job,
+  }) async {
+    final lineId = job.entityId?.trim();
+    if (lineId == null || lineId.isEmpty) return false;
+    final line = await (_db.select(
+      _db.dayWorkoutExercises,
+    )..where((x) => x.id.equals(lineId))).getSingleOrNull();
+    if (line == null) {
+      // Auditoria órfã/antiga não deve bloquear a fila crítica.
+      return true;
+    }
+    final parentReady = await _ensureParentDayWorkoutMirrored(
+      client,
+      line.dayWorkoutId,
+      auditLogId: job.auditLogId,
+    );
+    if (!parentReady) return false;
+    try {
+      await _mirrorAfterAudit(
+        client,
+        auditLogId: job.auditLogId,
+        action: job.action,
+        entityType: job.entityType,
+        entityId: job.entityId,
+        payload: job.payload,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   String _isoUpdatedAt(DateTime d) => d.toUtc().toIso8601String();
+
+  DateTime _parseTs(dynamic v) {
+    if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
+    if (v is String) return DateTime.parse(v);
+    return DateTime.parse(v.toString());
+  }
+
+  int _parseIntOpt(Map<String, dynamic> row, String key, int fallback) {
+    final v = row[key];
+    if (v == null) return fallback;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? fallback;
+  }
+
+  bool _localWinsConflictByVersion({
+    required int localRevision,
+    required int remoteRevision,
+    required DateTime localUpdatedAt,
+    required DateTime remoteUpdatedAt,
+    required String? localDeviceId,
+    required String? remoteDeviceId,
+  }) {
+    if (localRevision != remoteRevision) {
+      return localRevision > remoteRevision;
+    }
+    if (localUpdatedAt != remoteUpdatedAt) {
+      return localUpdatedAt.isAfter(remoteUpdatedAt);
+    }
+    final ld = (localDeviceId ?? '').trim();
+    final rd = (remoteDeviceId ?? '').trim();
+    if (ld.isEmpty || rd.isEmpty) return false;
+    return ld.compareTo(rd) >= 0;
+  }
 
   Future<bool> _lwwUpdateById({
     required SupabaseClient client,
@@ -506,48 +783,61 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required Map<String, dynamic> map,
     required DateTime localUpdatedAt,
   }) async {
-    final localRevision = map['revision'];
-    if (localRevision is num) {
-      final rev = localRevision.toInt();
-      final byLowerRevision = await client
-          .from(table)
-          .update(map)
-          .eq('id', id)
-          .lt('revision', rev)
-          .select('id');
-      final updatedByRevision = byLowerRevision as List<dynamic>;
-      if (updatedByRevision.isNotEmpty) return true;
+    Future<bool> runWithMap(Map<String, dynamic> data) async {
+      final localRevision = data['revision'];
+      if (localRevision is num) {
+        final rev = localRevision.toInt();
+        final byLowerRevision = await client
+            .from(table)
+            .update(data)
+            .eq('id', id)
+            .lt('revision', rev)
+            .select('id');
+        final updatedByRevision = byLowerRevision as List<dynamic>;
+        if (updatedByRevision.isNotEmpty) return true;
 
-      final bySameRevisionOlderTs = await client
+        final bySameRevisionOlderTs = await client
+            .from(table)
+            .update(data)
+            .eq('id', id)
+            .eq('revision', rev)
+            .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
+            .select('id');
+        final updatedByTimestamp = bySameRevisionOlderTs as List<dynamic>;
+        if (updatedByTimestamp.isNotEmpty) return true;
+
+        final byNullRevision = await client
+            .from(table)
+            .update(data)
+            .eq('id', id)
+            .isFilter('revision', null)
+            .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
+            .select('id');
+        final updatedByNullRevision = byNullRevision as List<dynamic>;
+        return updatedByNullRevision.isNotEmpty;
+      }
+
+      final res = await client
           .from(table)
-          .update(map)
+          .update(data)
           .eq('id', id)
-          .eq('revision', rev)
           .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
           .select('id');
-      final updatedByTimestamp = bySameRevisionOlderTs as List<dynamic>;
-      if (updatedByTimestamp.isNotEmpty) return true;
-
-      final byNullRevision = await client
-          .from(table)
-          .update(map)
-          .eq('id', id)
-          .isFilter('revision', null)
-          .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
-          .select('id');
-      final updatedByNullRevision = byNullRevision as List<dynamic>;
-      return updatedByNullRevision.isNotEmpty;
+      final list = res as List<dynamic>;
+      return list.isNotEmpty;
     }
 
-    // LWW fallback: só atualiza se a nuvem for mais antiga.
-    final res = await client
-        .from(table)
-        .update(map)
-        .eq('id', id)
-        .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
-        .select('id');
-    final list = res as List<dynamic>;
-    return list.isNotEmpty;
+    try {
+      return await runWithMap(map);
+    } catch (e) {
+      if (_isMissingSchemaColumn(e)) {
+        final compat = _compatMapWithoutNewSyncColumns(map);
+        if (compat.length != map.length) {
+          return runWithMap(compat);
+        }
+      }
+      rethrow;
+    }
   }
 
   Future<bool> _tryInsert({
@@ -555,8 +845,19 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required String table,
     required Map<String, dynamic> map,
   }) async {
-    await client.from(table).insert(map);
-    return true;
+    try {
+      await client.from(table).insert(map);
+      return true;
+    } catch (e) {
+      if (_isMissingSchemaColumn(e)) {
+        final compat = _compatMapWithoutNewSyncColumns(map);
+        if (compat.length != map.length) {
+          await client.from(table).insert(compat);
+          return true;
+        }
+      }
+      rethrow;
+    }
   }
 
   bool _looksLikeDuplicateKey(Object e) {
@@ -565,6 +866,221 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         s.contains('duplicate key') ||
         s.contains('duplicate') ||
         s.contains('already exists');
+  }
+
+  bool _isMissingSchemaColumn(Object e) {
+    final s = e.toString();
+    final lower = s.toLowerCase();
+    final isPgrstMissing =
+        s.contains('PGRST204') && s.contains('Could not find the');
+    final isPgMissing =
+        (s.contains('42703') || lower.contains('undefined column')) &&
+        lower.contains('column') &&
+        lower.contains('does not exist');
+    return isPgrstMissing || isPgMissing;
+  }
+
+  bool _isDayWorkoutParentFkError(Object e) {
+    final s = e.toString();
+    return s.contains('23503') &&
+        s.contains('day_workout_exercises_day_workout_id_fkey');
+  }
+
+  Map<String, dynamic> _compatMapWithoutNewSyncColumns(
+    Map<String, dynamic> map,
+  ) {
+    final out = Map<String, dynamic>.from(map);
+    out.remove('revision');
+    out.remove('last_modified_by_device_id');
+    out.remove('sync_status');
+    out.remove('deleted_at');
+    return out;
+  }
+
+  int _maxLoggedAtMs(List<DayWorkoutPerformedSet> sets) {
+    var max = 0;
+    for (final s in sets) {
+      final v = s.loggedAtMs ?? 0;
+      if (v > max) max = v;
+    }
+    return max;
+  }
+
+  bool _localPerformedSetsAheadOfRemote({
+    required List<DayWorkoutPerformedSet> local,
+    required List<DayWorkoutPerformedSet> remote,
+  }) {
+    if (local.length != remote.length) {
+      return local.length > remote.length;
+    }
+    if (local.isEmpty) return false;
+    return _maxLoggedAtMs(local) > _maxLoggedAtMs(remote);
+  }
+
+  DateTime? _dateTimeFromMapValue(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return DateTime.tryParse(trimmed);
+    }
+    return DateTime.tryParse(value.toString());
+  }
+
+  int _intFromMapValue(dynamic value, {int fallback = 0}) {
+    if (value == null) return fallback;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? fallback;
+  }
+
+  String? _stringFromMapValue(dynamic value) {
+    if (value == null) return null;
+    final s = value.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  Future<bool> _forceUpdateById({
+    required SupabaseClient client,
+    required String table,
+    required String id,
+    required Map<String, dynamic> map,
+  }) async {
+    Future<bool> runWithMap(Map<String, dynamic> data) async {
+      final res = await client
+          .from(table)
+          .update(data)
+          .eq('id', id)
+          .select('id');
+      final rows = res as List<dynamic>;
+      return rows.isNotEmpty;
+    }
+
+    try {
+      return await runWithMap(map);
+    } catch (e) {
+      if (_isMissingSchemaColumn(e)) {
+        final compat = _compatMapWithoutNewSyncColumns(map);
+        if (compat.length != map.length) {
+          return runWithMap(compat);
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<bool> _shouldForceCriticalConflictResolution({
+    required SupabaseClient client,
+    required String table,
+    required String id,
+    required Map<String, dynamic> map,
+    required DateTime localUpdatedAt,
+  }) async {
+    if (table != 'day_workouts' && table != 'day_workout_exercises') {
+      return false;
+    }
+
+    List<dynamic> rows;
+    try {
+      if (table == 'day_workout_exercises') {
+        rows = await client
+            .from(table)
+            .select(
+              'id,updated_at,revision,last_modified_by_device_id,performed_sets_json',
+            )
+            .eq('id', id)
+            .limit(1);
+      } else {
+        rows = await client
+            .from(table)
+            .select(
+              'id,updated_at,revision,last_modified_by_device_id,status,completed_at',
+            )
+            .eq('id', id)
+            .limit(1);
+      }
+    } catch (e) {
+      if (_isMissingSchemaColumn(e)) {
+        rows = await client
+            .from(table)
+            .select('id,updated_at')
+            .eq('id', id)
+            .limit(1);
+      } else {
+        rethrow;
+      }
+    }
+    if (rows.isEmpty) return false;
+
+    final remote = Map<String, dynamic>.from(rows.first as Map);
+    final remoteUpdatedAt =
+        _dateTimeFromMapValue(remote['updated_at']) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    final remoteRevision = _intFromMapValue(remote['revision']);
+    final remoteDeviceId = _stringFromMapValue(
+      remote['last_modified_by_device_id'],
+    );
+    final localRevision = _intFromMapValue(map['revision']);
+    final localDeviceId = _stringFromMapValue(
+      map['last_modified_by_device_id'],
+    );
+
+    var localWins = _localWinsConflictByVersion(
+      localRevision: localRevision,
+      remoteRevision: remoteRevision,
+      localUpdatedAt: localUpdatedAt,
+      remoteUpdatedAt: remoteUpdatedAt,
+      localDeviceId: localDeviceId,
+      remoteDeviceId: remoteDeviceId,
+    );
+
+    if (!localWins && table == 'day_workout_exercises') {
+      final localSets = DayWorkoutPerformedSetCodec.decode(
+        _stringFromMapValue(map['performed_sets_json']),
+      );
+      final remoteSets = DayWorkoutPerformedSetCodec.decode(
+        _stringFromMapValue(remote['performed_sets_json']),
+      );
+      localWins = _localPerformedSetsAheadOfRemote(
+        local: localSets,
+        remote: remoteSets,
+      );
+    }
+
+    if (!localWins && table == 'day_workouts') {
+      final localStatus =
+          _stringFromMapValue(map['status'])?.toLowerCase() ?? '';
+      final remoteStatus =
+          _stringFromMapValue(remote['status'])?.toLowerCase() ?? '';
+      if (localStatus == 'completed' && remoteStatus != 'completed') {
+        final localCompleted =
+            _dateTimeFromMapValue(map['completed_at']) ?? localUpdatedAt;
+        final remoteCompleted = _dateTimeFromMapValue(remote['completed_at']);
+        localWins =
+            remoteCompleted == null ||
+            localCompleted.isAfter(remoteCompleted) ||
+            localUpdatedAt.isAfter(
+              remoteUpdatedAt.subtract(const Duration(seconds: 2)),
+            );
+      }
+    }
+
+    if (!localWins) return false;
+    final forced = await _forceUpdateById(
+      client: client,
+      table: table,
+      id: id,
+      map: map,
+    );
+    if (forced) {
+      debugPrint(
+        'SupabaseRemoteSyncService: forced critical conflict resolution '
+        'table=$table id=$id local_updated=${localUpdatedAt.toIso8601String()} '
+        'remote_updated=${remoteUpdatedAt.toIso8601String()} '
+        'local_rev=$localRevision remote_rev=$remoteRevision',
+      );
+    }
+    return forced;
   }
 
   Future<void> _discardAuditLog(String auditLogId) async {
@@ -611,23 +1127,15 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     final eid = entityId?.trim();
     if (eid == null || eid.isEmpty) return;
     if (entityType == 'day_workout') {
-      await (_db.update(
-        _db.dayWorkouts,
-      )..where((w) => w.id.equals(eid))).write(
-        DayWorkoutsCompanion(
-          syncStatus: Value(status),
-        ),
+      await (_db.update(_db.dayWorkouts)..where((w) => w.id.equals(eid))).write(
+        DayWorkoutsCompanion(syncStatus: Value(status)),
       );
       return;
     }
     if (entityType == 'day_workout_exercise') {
-      await (_db.update(
-        _db.dayWorkoutExercises,
-      )..where((x) => x.id.equals(eid))).write(
-        DayWorkoutExercisesCompanion(
-          syncStatus: Value(status),
-        ),
-      );
+      await (_db.update(_db.dayWorkoutExercises)
+            ..where((x) => x.id.equals(eid)))
+          .write(DayWorkoutExercisesCompanion(syncStatus: Value(status)));
     }
   }
 
@@ -686,11 +1194,28 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       localUpdatedAt: effectiveLocalUpdatedAt,
     );
     if (ok) return true;
+    final forcedCritical = await _shouldForceCriticalConflictResolution(
+      client: client,
+      table: table,
+      id: id,
+      map: map,
+      localUpdatedAt: effectiveLocalUpdatedAt,
+    );
+    if (forcedCritical) return true;
     try {
       await _tryInsert(client: client, table: table, map: map);
       return true;
     } catch (e) {
       if (_looksLikeDuplicateKey(e)) {
+        final forcedAfterDuplicate =
+            await _shouldForceCriticalConflictResolution(
+              client: client,
+              table: table,
+              id: id,
+              map: map,
+              localUpdatedAt: effectiveLocalUpdatedAt,
+            );
+        if (forcedAfterDuplicate) return true;
         await _discardAuditLog(auditLogId);
         await _pullAfterConflict(entityType: entityTypeForPull, entityId: id);
         return false;
@@ -899,6 +1424,13 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     if (!supabaseAppEnabled) return;
     final pull = SupabasePullSyncService(_db, _controller, session: null);
     await pull.pullExercisesCatalog();
+  }
+
+  @override
+  Future<void> refreshWorkoutGroupsCatalogFromCloud() async {
+    if (!supabaseAppEnabled) return;
+    final pull = SupabasePullSyncService(_db, _controller, session: null);
+    await pull.pullWorkoutGroupsCatalog();
   }
 
   @override
@@ -1208,7 +1740,11 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
               .eq('day_workout_id', eid);
           await client.from('day_workouts').delete().eq('id', eid);
         } else {
-          await _mirrorDayWorkoutBundle(client, eid, auditLogId: auditLogId);
+          if (action == 'touch' || action == 'resync_local') {
+            await _mirrorDayWorkoutTouch(client, eid, auditLogId: auditLogId);
+          } else {
+            await _mirrorDayWorkoutBundle(client, eid, auditLogId: auditLogId);
+          }
         }
       case 'day_workout_exercise':
         if (isDelete) {
@@ -1218,11 +1754,20 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             _db.dayWorkoutExercises,
           )..where((t) => t.id.equals(eid))).getSingleOrNull();
           if (row == null) return;
+          // Garantia de causalidade: a linha depende do treino pai no Supabase.
+          // Em cenários com backlog/out-of-order, o push da linha podia chegar
+          // antes do day_workout e falhar por FK (23503), quebrando sincronismo
+          // tablet <-> iPhone. Forçamos upsert do pai primeiro.
+          await _ensureParentDayWorkoutMirrored(
+            client,
+            row.dayWorkoutId,
+            auditLogId: auditLogId,
+          );
           // Hot path de treino: não depender de reconcile de catálogo aqui.
           // Se a FK do exercício já existe na nuvem (cenário normal), o upsert da
           // linha deve seguir direto para reduzir latência e evitar falha em cascata
           // por chamadas adicionais (ex.: muscle_groups) durante instabilidade de rede.
-          await _lwwUpsertOrConflictPull(
+          final pushed = await _lwwUpsertOrConflictPull(
             auditLogId: auditLogId,
             client: client,
             table: 'day_workout_exercises',
@@ -1231,10 +1776,53 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             map: supabaseDayWorkoutExercise(row),
             localUpdatedAt: row.updatedAt,
           );
+          if (!pushed) {
+            throw StateError(
+              'day_workout_exercise push not acknowledged by LWW '
+              '(kept pending for retry) id=$eid',
+            );
+          }
         }
       default:
         break;
     }
+  }
+
+  Future<bool> _ensureParentDayWorkoutMirrored(
+    SupabaseClient client,
+    String workoutId, {
+    String? auditLogId,
+  }) async {
+    final parent = await (_db.select(
+      _db.dayWorkouts,
+    )..where((d) => d.id.equals(workoutId))).getSingleOrNull();
+    if (parent == null) return false;
+    if (auditLogId != null) {
+      final pushed = await _lwwUpsertOrConflictPull(
+        auditLogId: auditLogId,
+        client: client,
+        table: 'day_workouts',
+        entityTypeForPull: 'day_workout',
+        id: workoutId,
+        map: supabaseDayWorkout(parent),
+        localUpdatedAt: parent.updatedAt,
+      );
+      if (pushed) return true;
+      // Conflito/LWW sem update também pode significar que o pai já existe na nuvem.
+      // Para a FK da linha, basta garantir existência.
+      try {
+        final probe = await client
+            .from('day_workouts')
+            .select('id')
+            .eq('id', workoutId)
+            .limit(1);
+        final rows = probe as List<dynamic>;
+        if (rows.isNotEmpty) return true;
+      } catch (_) {}
+      return false;
+    }
+    await client.from('day_workouts').upsert(supabaseDayWorkout(parent));
+    return true;
   }
 
   Future<void> _mirrorWeekScheduleBlock(
@@ -1294,6 +1882,57 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       _db.dayWorkouts,
     )..where((d) => d.id.equals(workoutId))).getSingleOrNull();
     if (w == null) return;
+
+    // Guard rail de convergência multi-dispositivo:
+    // se a nuvem já está "completed" e este snapshot local está em estado anterior,
+    // não permitir downgrade remoto para started/programmed/cancelled por push atrasado.
+    if (w.status != 'completed') {
+      try {
+        final probe = await client
+            .from('day_workouts')
+            .select(
+              'id,status,updated_at,revision,last_modified_by_device_id,completed_at',
+            )
+            .eq('id', workoutId)
+            .limit(1);
+        final rows = probe as List<dynamic>;
+        if (rows.isNotEmpty) {
+          final rr = Map<String, dynamic>.from(rows.first as Map);
+          final remoteStatus = (rr['status'] as String?)?.trim().toLowerCase();
+          if (remoteStatus == 'completed') {
+            final remoteUpdatedAt = rr['updated_at'] == null
+                ? DateTime.fromMillisecondsSinceEpoch(0)
+                : _parseTs(rr['updated_at']);
+            final remoteRevision = _parseIntOpt(rr, 'revision', 0);
+            final remoteDeviceId = (rr['last_modified_by_device_id'] as String?)
+                ?.trim();
+            final localWins = _localWinsConflictByVersion(
+              localRevision: w.revision,
+              remoteRevision: remoteRevision,
+              localUpdatedAt: w.updatedAt,
+              remoteUpdatedAt: remoteUpdatedAt,
+              localDeviceId: w.lastModifiedByDeviceId,
+              remoteDeviceId: remoteDeviceId,
+            );
+            if (!localWins) {
+              debugPrint(
+                'SupabaseRemoteSyncService: skip stale day_workout push '
+                'id=$workoutId localStatus=${w.status} remoteStatus=completed '
+                'localRev=${w.revision} remoteRev=$remoteRevision',
+              );
+              await _pullAfterConflict(
+                entityType: 'day_workout',
+                entityId: workoutId,
+              );
+              return;
+            }
+          }
+        }
+      } catch (_) {
+        // Best effort: se falhar o probe, segue fluxo normal LWW.
+      }
+    }
+
     if (auditLogId != null) {
       final ok = await _lwwUpsertOrConflictPull(
         auditLogId: auditLogId,
@@ -1316,7 +1955,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       // Mesmo racional do hot path: evitar dependências de catálogo durante
       // sincronização de treino em execução.
       if (auditLogId != null) {
-        await _lwwUpsertOrConflictPull(
+        final pushed = await _lwwUpsertOrConflictPull(
           auditLogId: auditLogId,
           client: client,
           table: 'day_workout_exercises',
@@ -1325,6 +1964,12 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
           map: supabaseDayWorkoutExercise(line),
           localUpdatedAt: line.updatedAt,
         );
+        if (!pushed) {
+          throw StateError(
+            'day_workout_exercises bundle push not acknowledged by LWW '
+            '(kept pending for retry) id=${line.id}',
+          );
+        }
       } else {
         await client
             .from('day_workout_exercises')
@@ -1332,5 +1977,29 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       }
       if (i % 8 == 7) await Future<void>.delayed(Duration.zero);
     }
+  }
+
+  Future<void> _mirrorDayWorkoutTouch(
+    SupabaseClient client,
+    String workoutId, {
+    String? auditLogId,
+  }) async {
+    final w = await (_db.select(
+      _db.dayWorkouts,
+    )..where((d) => d.id.equals(workoutId))).getSingleOrNull();
+    if (w == null) return;
+    if (auditLogId != null) {
+      await _lwwUpsertOrConflictPull(
+        auditLogId: auditLogId,
+        client: client,
+        table: 'day_workouts',
+        entityTypeForPull: 'day_workout',
+        id: workoutId,
+        map: supabaseDayWorkout(w),
+        localUpdatedAt: w.updatedAt,
+      );
+      return;
+    }
+    await client.from('day_workouts').upsert(supabaseDayWorkout(w));
   }
 }

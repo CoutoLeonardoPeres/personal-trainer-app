@@ -21,6 +21,7 @@ class AppSession extends ChangeNotifier {
   static const _kRole = 'app_session_role';
   static const _kPersonalId = 'app_session_personal_id';
   static const _kStudentId = 'app_session_student_id';
+
   /// Após «Sair da conta»: o app exige login (e-mail + senha) antes do [MainShell].
   static const _kRequiresLocalRelogin = 'app_requires_local_relogin';
 
@@ -66,8 +67,9 @@ class AppSession extends ChangeNotifier {
       }
       return;
     }
-    final p = await (db.select(db.personals)..where((x) => x.id.equals(pid)))
-        .getSingleOrNull();
+    final p = await (db.select(
+      db.personals,
+    )..where((x) => x.id.equals(pid))).getSingleOrNull();
     final next = p?.isAdmin ?? false;
     if (_personalDbIsAdmin != next) {
       _personalDbIsAdmin = next;
@@ -85,6 +87,19 @@ class AppSession extends ChangeNotifier {
     }
     if (_role == SessionRole.student) {
       return student.id == _studentId;
+    }
+    return false;
+  }
+
+  /// Grupo visto por admin, pelo personal dono ou por compartilhamento explícito.
+  bool canAccessWorkoutGroup(WorkoutGroupEntity group) {
+    if (hasFullOrgAccess) return true;
+    if (group.isShared) return true;
+    if (_role == SessionRole.personalTrainer) {
+      final pid = _personalId;
+      if (pid == null) return false;
+      return group.createdByPersonalId == null ||
+          group.createdByPersonalId == pid;
     }
     return false;
   }
@@ -180,9 +195,9 @@ class AppSession extends ChangeNotifier {
       await loadFromPrefs();
       return;
     }
-    final personals = await (db.select(db.personals)
-          ..orderBy([(t) => OrderingTerm.asc(t.name)]))
-        .get();
+    final personals = await (db.select(
+      db.personals,
+    )..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
     if (personals.isEmpty) {
       await setSession(role: SessionRole.adminPersonal, personalId: null);
       return;
@@ -196,15 +211,9 @@ class AppSession extends ChangeNotifier {
     }
     admin ??= personals.first;
     if (admin.isAdmin) {
-      await setSession(
-        role: SessionRole.adminPersonal,
-        personalId: admin.id,
-      );
+      await setSession(role: SessionRole.adminPersonal, personalId: admin.id);
     } else {
-      await setSession(
-        role: SessionRole.personalTrainer,
-        personalId: admin.id,
-      );
+      await setSession(role: SessionRole.personalTrainer, personalId: admin.id);
     }
   }
 
@@ -214,9 +223,9 @@ class AppSession extends ChangeNotifier {
   Future<void> repairSessionIfInconsistent(AppDatabase db) async {
     if (_requiresLocalRelogin) return;
     if (_role == SessionRole.personalTrainer && _personalId == null) {
-      final personals = await (db.select(db.personals)
-            ..orderBy([(t) => OrderingTerm.asc(t.name)]))
-          .get();
+      final personals = await (db.select(
+        db.personals,
+      )..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
       if (personals.isEmpty) {
         await setSession(
           role: SessionRole.adminPersonal,

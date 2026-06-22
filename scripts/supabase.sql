@@ -154,6 +154,22 @@ create table if not exists public.workout_groups (
 alter table public.workout_groups
   add column if not exists deleted_at timestamptz null;
 
+alter table public.workout_groups
+  add column if not exists created_by_personal_id text null references public.personals(id) on delete set null;
+
+alter table public.workout_groups
+  add column if not exists is_shared boolean not null default false;
+
+alter table public.workout_groups
+  add column if not exists revision integer not null default 0;
+
+alter table public.workout_groups
+  add column if not exists last_modified_by_device_id text null;
+
+create index if not exists idx_workout_groups_created_by_personal
+  on public.workout_groups(created_by_personal_id)
+  where created_by_personal_id is not null;
+
 create table if not exists public.workout_group_exercises (
   id text primary key,
   workout_group_id text not null references public.workout_groups(id) on delete cascade,
@@ -232,8 +248,20 @@ create table if not exists public.audit_logs (
   action text not null,
   entity_type text not null,
   entity_id text null,
-  payload_json text null
+  payload_json text null,
+  device_id text null,
+  personal_id text null references public.personals(id) on delete set null,
+  student_id text null references public.students(id) on delete set null
 );
+
+alter table public.audit_logs
+  add column if not exists device_id text null;
+
+alter table public.audit_logs
+  add column if not exists personal_id text null references public.personals(id) on delete set null;
+
+alter table public.audit_logs
+  add column if not exists student_id text null references public.students(id) on delete set null;
 
 -- -----------------------------
 -- NOVAS TABELAS (ANAMNESE + RELATÓRIOS)

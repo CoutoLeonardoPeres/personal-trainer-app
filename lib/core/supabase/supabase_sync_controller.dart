@@ -84,6 +84,26 @@ class SupabaseSyncController extends ChangeNotifier {
 
   bool get isTrafficActive => _uploadDepth > 0 || _downloadDepth > 0;
 
+  /// Enquanto ativo, pulls pontuais de [day_workouts] / linhas são ignorados
+  /// (evita realtime/auto-pull a repor JSON antigo logo após registrar série).
+  DateTime? _dayWorkoutPullMutedUntil;
+
+  bool get isDayWorkoutPullMuted {
+    final until = _dayWorkoutPullMutedUntil;
+    if (until == null) return false;
+    if (DateTime.now().isBefore(until)) return true;
+    _dayWorkoutPullMutedUntil = null;
+    return false;
+  }
+
+  void muteDayWorkoutPullFor(Duration duration) {
+    final until = DateTime.now().add(duration);
+    final cur = _dayWorkoutPullMutedUntil;
+    if (cur == null || until.isAfter(cur)) {
+      _dayWorkoutPullMutedUntil = until;
+    }
+  }
+
   void beginUpload() {
     _uploadDepth++;
     _refreshTrafficKind();

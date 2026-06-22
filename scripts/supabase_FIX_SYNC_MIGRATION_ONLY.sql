@@ -1,0 +1,44 @@
+-- =============================================================================
+-- App Personal — MIGRATION ONLY: sync ownership + audit traceability
+-- =============================================================================
+-- Use este arquivo quando o schema base já existe no Supabase.
+-- Ele NÃO recria a tabela personals e NÃO contém a linha "email text not null".
+-- Seguro para rodar várias vezes.
+-- =============================================================================
+
+alter table public.workout_groups
+  add column if not exists created_by_personal_id text null references public.personals(id) on delete set null;
+
+alter table public.workout_groups
+  add column if not exists is_shared boolean not null default false;
+
+alter table public.workout_groups
+  add column if not exists revision integer not null default 0;
+
+alter table public.workout_groups
+  add column if not exists last_modified_by_device_id text null;
+
+create index if not exists idx_workout_groups_created_by_personal
+  on public.workout_groups(created_by_personal_id)
+  where created_by_personal_id is not null;
+
+alter table public.audit_logs
+  add column if not exists device_id text null;
+
+alter table public.audit_logs
+  add column if not exists personal_id text null references public.personals(id) on delete set null;
+
+alter table public.audit_logs
+  add column if not exists student_id text null references public.students(id) on delete set null;
+
+create index if not exists idx_audit_logs_device
+  on public.audit_logs(device_id, at desc)
+  where device_id is not null;
+
+create index if not exists idx_audit_logs_personal
+  on public.audit_logs(personal_id, at desc)
+  where personal_id is not null;
+
+create index if not exists idx_audit_logs_student
+  on public.audit_logs(student_id, at desc)
+  where student_id is not null;
