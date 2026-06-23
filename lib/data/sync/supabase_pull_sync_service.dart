@@ -365,16 +365,8 @@ bool _remoteLineProgressAheadOfLocal({
   if (_remotePerformedSetsAheadOfLocal(remote: remoteSets, local: localSets)) {
     return true;
   }
-
-  // Score prescrito na nuvem não pode “ganhar” de séries já registradas localmente.
-  if (remoteSets.length >= localSets.length) {
-    final remoteScore = _dblOpt(remoteRow, 'exercise_score');
-    final localScore = local.exerciseScore;
-    if (remoteScore != null &&
-        (localScore == null || remoteScore > localScore)) {
-      return true;
-    }
-  }
+  // Progresso = só séries executadas. exercise_score legado (escala antiga)
+  // não deve fazer a nuvem «ganhar» com o mesmo performed_sets_json.
   return false;
 }
 

@@ -1,4 +1,5 @@
 import '../local/app_database.dart';
+import '../models/day_workout_performed_set.dart';
 
 String supabaseTs(DateTime d) => d.toUtc().toIso8601String();
 
@@ -180,7 +181,12 @@ Map<String, dynamic> supabaseDayWorkout(DayWorkoutEntity e) => {
   'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
 };
 
-Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
+Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) {
+  final performed = DayWorkoutPerformedSetCodec.decode(e.performedSetsJson);
+  final score = performed.isNotEmpty
+      ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+      : e.exerciseScore;
+  return {
   'id': e.id,
   'day_workout_id': e.dayWorkoutId,
   'exercise_id': e.exerciseId,
@@ -189,7 +195,7 @@ Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
   'reps': e.reps,
   'reps_text': e.repsText,
   'load_kg': e.loadKg,
-  'exercise_score': e.exerciseScore,
+  'exercise_score': score,
   'performed_sets_json': e.performedSetsJson,
   'rest_between_sets_sec': e.restBetweenSetsSec,
   'training_method_id': e.trainingMethodId,
@@ -200,6 +206,7 @@ Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) => {
   'sync_status': e.syncStatus,
   'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
 };
+}
 
 Map<String, dynamic> supabaseAuditLog(AuditLogEntity e) => {
   'id': e.id,

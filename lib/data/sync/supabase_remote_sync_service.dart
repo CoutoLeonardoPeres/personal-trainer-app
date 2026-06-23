@@ -1045,6 +1045,14 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         local: localSets,
         remote: remoteSets,
       );
+      if (!localWins &&
+          localSets.isNotEmpty &&
+          localSets.length == remoteSets.length &&
+          DayWorkoutPerformedSetCodec.encode(localSets) ==
+              DayWorkoutPerformedSetCodec.encode(remoteSets)) {
+        // Mesmas séries: permitir push de score/metadata corrigidos (ex.: escala ÷10).
+        localWins = true;
+      }
     }
 
     if (!localWins && table == 'day_workouts') {
@@ -1081,6 +1089,65 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       );
     }
     return forced;
+  }
+
+  /// Após conflito LWW em série ao vivo: re-lê local/nuvem e força push se o local
+  /// ainda tiver progresso (ou as mesmas séries com metadata corrigida).
+  Future<bool> _recoverHotPathLinePushAfterLwwConflict({
+    required SupabaseClient client,
+    required String lineId,
+  }) async {
+    final row = await (_db.select(
+      _db.dayWorkoutExercises,
+    )..where((t) => t.id.equals(lineId))).getSingleOrNull();
+    if (row == null) return true;
+
+    List<dynamic> remoteRows;
+    try {
+      remoteRows = await client
+          .from('day_workout_exercises')
+          .select('performed_sets_json')
+          .eq('id', lineId)
+          .limit(1);
+    } catch (_) {
+      return false;
+    }
+    final map = supabaseDayWorkoutExercise(row);
+    if (remoteRows.isEmpty) {
+      try {
+        await _tryInsert(
+          client: client,
+          table: 'day_workout_exercises',
+          map: map,
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final remote = Map<String, dynamic>.from(remoteRows.first as Map);
+    final localSets = DayWorkoutPerformedSetCodec.decode(row.performedSetsJson);
+    final remoteSets = DayWorkoutPerformedSetCodec.decode(
+      _stringFromMapValue(remote['performed_sets_json']),
+    );
+    final localAhead = _localPerformedSetsAheadOfRemote(
+      local: localSets,
+      remote: remoteSets,
+    );
+    final sameSets =
+        localSets.isNotEmpty &&
+        localSets.length == remoteSets.length &&
+        DayWorkoutPerformedSetCodec.encode(localSets) ==
+            DayWorkoutPerformedSetCodec.encode(remoteSets);
+    if (!localAhead && !sameSets) return false;
+
+    return _forceUpdateById(
+      client: client,
+      table: 'day_workout_exercises',
+      id: lineId,
+      map: map,
+    );
   }
 
   Future<void> _discardAuditLog(String auditLogId) async {
@@ -1776,6 +1843,17 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             map: supabaseDayWorkoutExercise(row),
             localUpdatedAt: row.updatedAt,
           );
+          if (!pushed &&
+              (action == 'append_set' ||
+                  action == 'remove_set' ||
+                  action == 'update_set' ||
+                  action == 'patch_set_rest')) {
+            final recovered = await _recoverHotPathLinePushAfterLwwConflict(
+              client: client,
+              lineId: eid,
+            );
+            if (recovered) return;
+          }
           if (!pushed) {
             throw StateError(
               'day_workout_exercise push not acknowledged by LWW '
