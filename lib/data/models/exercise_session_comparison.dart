@@ -28,7 +28,7 @@ class ExerciseSetComparisonRow {
   final double currentPctOfPrescribed;
   final double? previousPctOfPrescribed;
 
-  /// (atual − anterior) / anterior × 100, quando há série homóloga no treino anterior.
+  /// Percentual de execução vs série homóloga no treino anterior (100 = igual; 110 = 10% acima).
   final double? scoreEvolutionPctVsPrevious;
 
   /// Descanso após esta série (timer), no treino atual; última série costuma ser null.

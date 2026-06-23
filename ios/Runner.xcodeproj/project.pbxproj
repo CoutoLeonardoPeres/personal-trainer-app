@@ -23,6 +23,7 @@
 		E4D8B3021ED2DC5600515812 /* FlutterTouchRateCrashFix.m in Sources */ = {isa = PBXBuildFile; fileRef = E4D8B3011ED2DC5600515811 /* FlutterTouchRateCrashFix.m */; };
 		F4C8E2021ED2DC5600515812 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C8E2011ED2DC5600515811 /* SceneDelegate.swift */; };
 		F9532095908E203E1EF882E2 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3D02DA10B2472A7A86AECFE /* Pods_RunnerTests.framework */; };
+		RESTBEEP1A2B3C4D5E6F001 /* rest_timer_beep.wav in Resources */ = {isa = PBXBuildFile; fileRef = RESTBEEP1A2B3C4D5E6F002 /* rest_timer_beep.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +101,7 @@
 		E4D8B3011ED2DC5600515811 /* FlutterTouchRateCrashFix.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FlutterTouchRateCrashFix.m; sourceTree = "<group>"; };
 		F3D02DA10B2472A7A86AECFE /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F4C8E2011ED2DC5600515811 /* SceneDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		RESTBEEP1A2B3C4D5E6F002 /* rest_timer_beep.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = rest_timer_beep.wav; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -210,6 +212,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				F4C8E2011ED2DC5600515811 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
+				RESTBEEP1A2B3C4D5E6F002 /* rest_timer_beep.wav */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -346,6 +349,7 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+				RESTBEEP1A2B3C4D5E6F001 /* rest_timer_beep.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -14,6 +15,11 @@ class WorkoutActivityLocalNotifier {
   static const int _notificationId = 0x776f7274; // "wort" — id estável
   static const int _restTimerNotificationId = 0x72657374; // "rest"
 
+  /// Som customizado (Android: res/raw; iOS: bundle Runner).
+  static const String restTimerSoundName = 'rest_timer_beep';
+  static const AndroidNotificationSound _restTimerAndroidSound =
+      RawResourceAndroidNotificationSound(restTimerSoundName);
+
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
@@ -23,6 +29,14 @@ class WorkoutActivityLocalNotifier {
   Future<void> _ensureTimezoneInitialized() async {
     if (_timezoneInitialized) return;
     tz_data.initializeTimeZones();
+    try {
+      final tzInfo = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('WorkoutActivityLocalNotifier: timezone fallback UTC: $e\n$st');
+      }
+    }
     _timezoneInitialized = true;
   }
 
@@ -32,9 +46,9 @@ class WorkoutActivityLocalNotifier {
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwin = DarwinInitializationSettings(
-      requestAlertPermission: false,
+      requestAlertPermission: true,
       requestBadgePermission: false,
-      requestSoundPermission: false,
+      requestSoundPermission: true,
     );
     await _plugin.initialize(
       settings: const InitializationSettings(
@@ -48,10 +62,23 @@ class WorkoutActivityLocalNotifier {
       final androidImpl = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
       await androidImpl?.requestNotificationsPermission();
+      await androidImpl?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'rest_timer_end',
+          'Timer de descanso',
+          description:
+              'Alarme ao fim do intervalo entre séries (inclusive com tela bloqueada).',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+          sound: _restTimerAndroidSound,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
+        ),
+      );
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       final iosImpl = _plugin.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
-      await iosImpl?.requestPermissions(alert: true, badge: true, sound: true);
+      await iosImpl?.requestPermissions(alert: true, badge: false, sound: true);
     }
 
     _initialized = true;
@@ -90,6 +117,7 @@ class WorkoutActivityLocalNotifier {
     );
   }
 
+  /// Agenda alarme sonoro para [at] (funciona com app em segundo plano / tela bloqueada).
   Future<void> scheduleRestTimerEnd({
     required DateTime at,
     String title = 'Descanso finalizado',
@@ -100,6 +128,8 @@ class WorkoutActivityLocalNotifier {
     if (!_initialized) return;
     await _ensureTimezoneInitialized();
 
+    await cancelRestTimerEnd();
+
     final when = at.isAfter(DateTime.now())
         ? at
         : DateTime.now().add(const Duration(seconds: 1));
@@ -108,18 +138,23 @@ class WorkoutActivityLocalNotifier {
       'rest_timer_end',
       'Timer de descanso',
       channelDescription:
-          'Avisos sonoros ao final do intervalo entre séries, inclusive com a tela bloqueada.',
+          'Alarme ao fim do intervalo entre séries, inclusive com a tela bloqueada.',
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,
       enableVibration: true,
+      sound: _restTimerAndroidSound,
       category: AndroidNotificationCategory.alarm,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+      fullScreenIntent: true,
+      visibility: NotificationVisibility.public,
     );
 
     const darwin = DarwinNotificationDetails(
       presentAlert: true,
-      presentBadge: true,
+      presentBadge: false,
       presentSound: true,
+      sound: 'rest_timer_beep.wav',
       interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
@@ -133,7 +168,7 @@ class WorkoutActivityLocalNotifier {
         iOS: darwin,
         macOS: darwin,
       ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
     );
   }
 

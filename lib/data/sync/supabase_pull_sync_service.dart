@@ -996,12 +996,14 @@ class SupabasePullSyncService {
           await _pullDayWorkouts(client, trackWorkoutGroupRefs: false),
         );
         tables.add(await _pullDayWorkoutExercises(client));
+        await _db.recomputeAllCompletedWorkoutScores();
         tables.add(await _pullAuditLogs(client));
       } else {
         tables.add(await _pullWeekBlocks(client));
         tables.add(await _pullWeekItems(client, trackWorkoutGroupRefs: true));
         tables.add(await _pullDayWorkouts(client, trackWorkoutGroupRefs: true));
         tables.add(await _pullDayWorkoutExercises(client));
+        await _db.recomputeAllCompletedWorkoutScores();
         tables.add(await _pullWorkoutGroups(client));
         tables.add(await _pullWorkoutGroupExercises(client));
         tables.add(SupabasePullTableResult('audit_logs', 0, true));
@@ -2249,6 +2251,12 @@ class SupabasePullSyncService {
       // Exclusão efetiva continua sendo tratada por:
       // - auditoria local + push; e
       // - pull pontual por id (quando linha realmente não existe).
+      final wAfter = await (_db.select(_db.dayWorkouts)
+            ..where((d) => d.id.equals(id)))
+          .getSingleOrNull();
+      if (wAfter?.status == 'completed') {
+        await _db.recomputeCompletedDayWorkoutScore(id);
+      }
       _sync.noteConnected();
     } catch (e, st) {
       debugPrint('SupabasePullSyncService pullDayWorkoutById: $e\n$st');

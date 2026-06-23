@@ -12,6 +12,7 @@ import '../core/supabase/supabase_app_init.dart';
 import '../core/supabase/supabase_auth_service.dart';
 import '../core/supabase/supabase_sync_controller.dart';
 import '../core/notifications/workout_activity_local_notifier.dart';
+import '../core/workout/rest_timer_sound.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../core/version/app_version_marker.dart';
@@ -270,6 +271,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     _realtimeSync = realtime;
     await realtime.start();
     unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
+    unawaited(RestTimerSound.preload());
   }
 
   bool _allowActivityToast(
@@ -501,6 +503,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
           unawaited(_realtimeSync!.reconnectAfterResume());
         }
         unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
+    unawaited(RestTimerSound.preload());
         unawaited(s.repo.applyPremiumTierExpiryDowngrades());
         SchedulerBinding.instance.scheduleTask(
           () {

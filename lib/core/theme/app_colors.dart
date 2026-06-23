@@ -24,4 +24,10 @@ abstract final class AppColors {
   static const Color registrySectionBlueLight = Color(0xFF81D4FA);
   /// Azul mais fechado — cartão de **linha** (exercício em lista, item agendado).
   static const Color registryRowBlueDeep = Color(0xFF1565C0);
+
+  /// Preenchimento translúcido de dia com treino no calendário (e cards concluídos).
+  static Color workoutDayFillTint(Color accent) => accent.withValues(alpha: 0.24);
+
+  /// Borda de dia com treino no calendário (e cards concluídos).
+  static Color workoutDayBorderTint(Color accent) => accent.withValues(alpha: 0.5);
 }

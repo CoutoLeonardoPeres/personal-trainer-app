@@ -74,24 +74,8 @@ String _workoutTagLabel(String status) => switch (status) {
   _ => 'Treino',
 };
 
-String _workoutHeaderDeltaPercentLabel(double current, double? previous) {
-  if (previous == null) return '--';
-  const eps = 0.0001;
-  final diff = current - previous;
-  if (diff.abs() <= eps) return '0%';
-  if (previous.abs() <= eps) {
-    final pctFromZeroBaseline = diff.abs() * 100.0;
-    final decimals = pctFromZeroBaseline >= 100 ? 0 : 1;
-    final txt = pctFromZeroBaseline
-        .toStringAsFixed(decimals)
-        .replaceAll('.', ',');
-    return '${diff > 0 ? '+' : '-'}$txt%';
-  }
-  final pct = (diff / previous) * 100.0;
-  final decimals = pct.abs() >= 100 ? 0 : 1;
-  final txt = pct.toStringAsFixed(decimals).replaceAll('.', ',');
-  return '$txt%';
-}
+String _workoutHeaderDeltaPercentLabel(double current, double? previous) =>
+    scoring.formatExecutionPercentLabel(current: current, previous: previous);
 
 Color _workoutHeaderDeltaColor(double current, double? previous) {
   if (previous == null) return const Color(0xFF64B5F6);
@@ -126,48 +110,53 @@ class _CalendarSheetHeaderWorkoutScore extends StatelessWidget {
     );
 
     if (workout.status == 'completed') {
-      final cur = workout.workoutScore;
-      if (cur != null) {
-        return FutureBuilder<double?>(
-          future: repo.previousCompletedWorkoutScore(dayWorkoutId: workout.id),
-          builder: (context, snap) {
-            final prev = snap.data;
-            final color = _workoutHeaderDeltaColor(cur, prev);
+      return FutureBuilder<double?>(
+        future: repo.resolvedCompletedDayWorkoutScore(workout.id),
+        builder: (context, scoreSnap) {
+          final cur = scoreSnap.data;
+          if (cur == null) {
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
                 const SizedBox(width: 4),
-                CountUpScoreText(
-                  key: ValueKey('dw_header_score_${workout.id}'),
-                  target: cur,
-                  duration: const Duration(milliseconds: 900),
-                  format: (v) => v.toStringAsFixed(2),
-                  style: valueStyle.copyWith(color: color),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _workoutHeaderDeltaPercentLabel(cur, prev),
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                    fontSize: pctFs,
-                    height: 1.05,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
+                Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
               ],
             );
-          },
-        );
-      }
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
-          const SizedBox(width: 4),
-          Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
-        ],
+          }
+          return FutureBuilder<double?>(
+            future: repo.previousCompletedWorkoutScore(dayWorkoutId: workout.id),
+            builder: (context, snap) {
+              final prev = snap.data;
+              final color = _workoutHeaderDeltaColor(cur, prev);
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+                  const SizedBox(width: 4),
+                  CountUpScoreText(
+                    key: ValueKey('dw_header_score_${workout.id}'),
+                    target: cur,
+                    duration: const Duration(milliseconds: 900),
+                    format: (v) => v.toStringAsFixed(2),
+                    style: valueStyle.copyWith(color: color),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _workoutHeaderDeltaPercentLabel(cur, prev),
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w700,
+                      fontSize: pctFs,
+                      height: 1.05,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       );
     }
     if (workout.status == 'started') {
@@ -811,24 +800,8 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
     );
   }
 
-  String _scoreDeltaPercentLabel(double current, double? previous) {
-    if (previous == null) return '--';
-    const eps = 0.0001;
-    final diff = current - previous;
-    if (diff.abs() <= eps) return '0%';
-    if (previous.abs() <= eps) {
-      final pctFromZeroBaseline = diff.abs() * 100.0;
-      final decimals = pctFromZeroBaseline >= 100 ? 0 : 1;
-      final txt = pctFromZeroBaseline
-          .toStringAsFixed(decimals)
-          .replaceAll('.', ',');
-      return '${diff > 0 ? '+' : '-'}$txt%';
-    }
-    final pct = (diff / previous) * 100.0;
-    final decimals = pct.abs() >= 100 ? 0 : 1;
-    final txt = pct.toStringAsFixed(decimals).replaceAll('.', ',');
-    return '$txt%';
-  }
+  String _scoreDeltaPercentLabel(double current, double? previous) =>
+      scoring.formatExecutionPercentLabel(current: current, previous: previous);
 
   @override
   void didUpdateWidget(CalendarExerciseLineCard oldWidget) {
@@ -879,11 +852,12 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
     final scoreFromSets = DayWorkoutPerformedSetCodec.totalExerciseScore(
       _performed,
     );
-    final showStartedZeroScore =
-        widget.workoutStatus == 'started' && _performed.isEmpty;
-    final displayScore = showStartedZeroScore
+    final hasLoggedSetsThisSession = _performed.isNotEmpty;
+    final awaitingFirstSetThisSession =
+        widget.workoutStatus == 'started' && !hasLoggedSetsThisSession;
+    final displayScore = awaitingFirstSetThisSession
         ? 0.0
-        : _performed.isNotEmpty
+        : hasLoggedSetsThisSession
         ? scoreFromSets
         : (line.exerciseScore ??
               scoring.prescribedExerciseLineScore(
@@ -917,8 +891,9 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
       borderColor = AppColors.calendarIncomplete;
       titleAccent = const Color(0xFFFF8A80);
     } else if (allSetsDone) {
-      fillColor = const Color(0xFF15261C);
-      borderColor = const Color(0xFF43A047);
+      const completedGreen = Color(0xFF2E7D32);
+      fillColor = completedGreen.withValues(alpha: 0.20);
+      borderColor = completedGreen.withValues(alpha: 0.2);
       titleAccent = AppColors.splashMint;
     } else {
       fillColor = const Color(0xFF152A45);
@@ -1155,15 +1130,21 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                               FutureBuilder<double?>(
                                 future: _previousScore(),
                                 builder: (context, snap) {
-                                  final trend = showStartedZeroScore
-                                      ? _ExerciseScoreTrend.same
-                                      : _scoreTrend(displayScore, snap.data);
+                                  final previous = snap.data;
+                                  final trend = awaitingFirstSetThisSession
+                                      ? (previous == null
+                                            ? _ExerciseScoreTrend.noPrevious
+                                            : _ExerciseScoreTrend.same)
+                                      : _scoreTrend(displayScore, previous);
                                   final v = _scoreVisual(trend);
-                                  final percentLabel = showStartedZeroScore
-                                      ? '0%'
+                                  final percentLabel = awaitingFirstSetThisSession
+                                      ? scoring.formatExecutionPercentLabel(
+                                          current: 0,
+                                          previous: null,
+                                        )
                                       : _scoreDeltaPercentLabel(
                                           displayScore,
-                                          snap.data,
+                                          previous,
                                         );
                                   return Row(
                                     mainAxisSize: MainAxisSize.min,

@@ -91,15 +91,29 @@ int _comparePreferredExerciseLine(
   return (sumScores: sum, completedCount: n);
 }
 
-/// Rendimento do treino concluído: usa [DayWorkoutEntity.workoutScore] gravado;
-/// senão fórmula atual (só exercícios concluídos × nº concluídos × 10 ÷ min).
+/// Rendimento do treino concluído pela fórmula atual (não confia em valor gravado legado).
 double _rendimentoPorMinuto({
   required DayWorkoutEntity w,
   required List<DayWorkoutExerciseEntity> exercises,
 }) {
-  final stored = w.workoutScore;
-  if (stored != null) return stored;
   final agg = _completedExerciseScoreAgg(exercises);
+  if (agg.completedCount <= 0) return 0;
+  final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
+  return scoring.workoutFinalScoreFromExerciseScores(
+    exerciseScoresSum: agg.sumScores,
+    activeDurationSeconds: sec,
+    completedExerciseCount: agg.completedCount,
+  );
+}
+
+/// Score do treino concluído calculado a partir das séries registadas.
+double? computeCompletedDayWorkoutScore(
+  DayWorkoutEntity w,
+  List<DayWorkoutExerciseEntity> exercises,
+) {
+  if (w.status != 'completed') return null;
+  final agg = _completedExerciseScoreAgg(exercises);
+  if (agg.completedCount <= 0) return 0;
   final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
   return scoring.workoutFinalScoreFromExerciseScores(
     exerciseScoresSum: agg.sumScores,
@@ -5352,17 +5366,15 @@ class AppDataRepository {
     final row = await join.getSingleOrNull();
     if (row == null) return null;
     final line = row.readTable(_db.dayWorkoutExercises);
-    final stored = line.exerciseScore;
-    if (stored != null) return stored;
     final decoded = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
     if (decoded.isNotEmpty) {
       return DayWorkoutPerformedSetCodec.totalExerciseScore(decoded);
     }
-    return scoring.prescribedExerciseLineScore(
-      sets: line.sets,
-      loadKg: line.loadKg ?? 0,
-      reps: line.reps,
-    );
+    const eps = 0.0001;
+    final stored = line.exerciseScore;
+    if (stored != null && stored > eps) return stored;
+    // Sem séries gravadas no histórico: exercício nunca foi registrado de fato.
+    return null;
   }
 
   /// [DayWorkoutEntity.workoutScore] do treino concluído **imediatamente anterior**
@@ -5389,7 +5401,27 @@ class AppDataRepository {
                 (w) => OrderingTerm.desc(w.dayDate),
               ]))
             .getSingleOrNull();
-    return prev?.workoutScore;
+    return prev == null
+        ? null
+        : computeCompletedDayWorkoutScore(
+            prev,
+            await getDayWorkoutExercises(prev.id),
+          );
+  }
+
+  /// Score exibido no calendário: calcula pela fórmula e corrige o valor gravado se estiver errado.
+  Future<double?> resolvedCompletedDayWorkoutScore(String dayWorkoutId) async {
+    await _requireAccessForDayWorkoutId(dayWorkoutId);
+    final w = await _dayWorkoutRow(dayWorkoutId);
+    if (w == null || w.status != 'completed') return null;
+    final exercises = await getDayWorkoutExercises(dayWorkoutId);
+    final computed = computeCompletedDayWorkoutScore(w, exercises);
+    if (computed == null) return null;
+    final stored = w.workoutScore;
+    if (stored == null || (stored - computed).abs() > 0.01) {
+      unawaited(_refreshWorkoutScoreForDayWorkoutAtNow(dayWorkoutId));
+    }
+    return computed;
   }
 
   /// Maior [DayWorkoutPerformedSet.loadKg] entre as séries do **último treino
@@ -5635,8 +5667,12 @@ class AppDataRepository {
 
     double? totalEvol;
     if (prevTotal != null && prevTotal > 1e-6) {
-      final pt = prevTotal;
-      totalEvol = (curTotal - pt) / pt * 100.0;
+      totalEvol = scoring.executionPercentVsPrevious(
+        current: curTotal,
+        previous: prevTotal,
+      );
+    } else {
+      totalEvol = 100.0;
     }
 
     final rows = <ExerciseSetComparisonRow>[];
@@ -5659,7 +5695,10 @@ class AppDataRepository {
         );
         prevPct = (prevSetScore / prevPrescribedSafe) * 100.0;
         if (prevSetScore > 1e-6) {
-          evol = (curSetScore - prevSetScore) / prevSetScore * 100.0;
+          evol = scoring.executionPercentVsPrevious(
+            current: curSetScore,
+            previous: prevSetScore,
+          );
         }
       }
 
@@ -6507,11 +6546,10 @@ class AppDataRepository {
     final exercises = await getDayWorkoutExercises(dayWorkoutId);
     final agg = _completedExerciseScoreAgg(exercises);
     final now = DateTime.now();
-    final sec = effectiveActiveSeconds(w, now);
-    final activeClamped = sec > 0 ? sec : 1;
+    final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
     final ws = scoring.workoutFinalScoreFromExerciseScores(
       exerciseScoresSum: agg.sumScores,
-      activeDurationSeconds: activeClamped,
+      activeDurationSeconds: sec,
       completedExerciseCount: agg.completedCount,
     );
     await (_db.update(

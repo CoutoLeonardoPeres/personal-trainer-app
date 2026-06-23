@@ -66,24 +66,12 @@ class ExerciseVideoWebPage extends StatefulWidget {
     }
     if (!context.mounted) return;
 
-    if (_isYouTubeUri(target)) {
-      final ok = await _openYouTubeExternally(target);
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text('Não foi possível abrir o vídeo. Tente novamente.'),
-          ),
-        );
-      }
-      return;
-    }
-
     await showGeneralDialog<void>(
       context: context,
       useRootNavigator: true,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: Colors.black.withValues(alpha: 0.62),
+      barrierColor: Colors.black.withValues(alpha: 0.68),
       transitionDuration: const Duration(milliseconds: 240),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         final size = MediaQuery.sizeOf(dialogContext);
@@ -99,27 +87,16 @@ class ExerciseVideoWebPage extends StatefulWidget {
                 height: panelH,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.splashMint.withValues(alpha: 0.9),
-                      AppColors.cadastroCardBorder.withValues(alpha: 0.88),
-                      AppColors.headerGradientPink.withValues(alpha: 0.5),
-                    ],
-                    stops: const [0.0, 0.42, 1.0],
+                  color: Colors.black.withValues(alpha: 0.42),
+                  border: Border.all(
+                    color: const Color(0xFF1B5E20).withValues(alpha: 0.92),
+                    width: 1.5,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.splashMint.withValues(alpha: 0.2),
-                      blurRadius: 20,
-                      spreadRadius: 0,
-                      offset: const Offset(0, 5),
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      blurRadius: 26,
-                      offset: const Offset(0, 12),
+                      color: Colors.black.withValues(alpha: 0.65),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
                     ),
                   ],
                 ),
@@ -216,25 +193,10 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
       _loading = false;
       return;
     }
+    _initWebView(target);
+  }
 
-    if (ExerciseVideoWebPage._isYouTubeUri(target)) {
-      _loading = false;
-      _error = 'Abrindo vídeo…';
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final ok = await ExerciseVideoWebPage._openYouTubeExternally(target);
-        if (!mounted || _disposed) return;
-        if (ok) {
-          Navigator.of(context, rootNavigator: true).maybePop();
-          return;
-        }
-        setState(() {
-          _error = 'Não foi possível abrir este vídeo.';
-          _loading = false;
-        });
-      });
-      return;
-    }
-
+  void _initWebView(Uri target) {
     try {
       late final PlatformWebViewControllerCreationParams creationParams;
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
@@ -254,7 +216,10 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
           NavigationDelegate(
             onPageStarted: (_) {
               if (!mounted || _disposed) return;
-              setState(() => _loading = true);
+              setState(() {
+                _loading = true;
+                _error = null;
+              });
             },
             onPageFinished: (_) {
               if (!mounted || _disposed) return;
@@ -285,6 +250,12 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
     }
   }
 
+  Future<void> _openYouTubeFallback() async {
+    final target = ExerciseVideoWebPage.normalizeVideoUri(widget.initialUrl);
+    if (target == null) return;
+    await ExerciseVideoWebPage._openYouTubeExternally(target);
+  }
+
   @override
   void dispose() {
     _disposed = true;
@@ -292,6 +263,10 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
   }
 
   Widget _buildBody() {
+    final target = ExerciseVideoWebPage.normalizeVideoUri(widget.initialUrl);
+    final showYoutubeFallback =
+        target != null && ExerciseVideoWebPage._isYouTubeUri(target);
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -299,10 +274,25 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
           Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 15),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 15,
+                    ),
+                  ),
+                  if (showYoutubeFallback) ...[
+                    const SizedBox(height: 14),
+                    TextButton(
+                      onPressed: _openYouTubeFallback,
+                      child: const Text('Abrir no YouTube'),
+                    ),
+                  ],
+                ],
               ),
             ),
           )

@@ -124,7 +124,7 @@ abstract final class DayWorkoutPerformedSetCodec {
     return sum;
   }
 
-  /// Score do exercício na UI: soma de (carga × reps) por série.
+  /// Score do exercício na UI: soma de (carga × reps ÷ 10) por série.
   static double totalExerciseScore(List<DayWorkoutPerformedSet> list) {
     var sum = 0.0;
     for (final s in list) {

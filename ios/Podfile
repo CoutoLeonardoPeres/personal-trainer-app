@@ -470,4 +470,15 @@ OBJC
       File.write(phone_strategy, ph_patched) if ph_patched != ph
     end
   end
+
+  # audioplayers_darwin 6.4.0 (pub.dev): typo `continuation in Debug` impede compilar no Xcode.
+  patch_paths = Dir.glob(File.expand_path('~/.pub-cache/hosted/pub.dev/audioplayers_darwin-*/darwin/audioplayers_darwin/Sources/audioplayers_darwin/WrappedMediaPlayer.swift'))
+  symlink_path = File.expand_path('.symlinks/plugins/audioplayers_darwin/darwin/audioplayers_darwin/Sources/audioplayers_darwin/WrappedMediaPlayer.swift', __dir__)
+  patch_paths << symlink_path if File.file?(symlink_path)
+  patch_paths.uniq.each do |swift_path|
+    text = File.read(swift_path)
+    next unless text.include?('continuation in Debug')
+    File.write(swift_path, text.gsub('continuation in Debug', 'continuation in'))
+    Pod::UI.puts "Patched audioplayers_darwin: #{swift_path}"
+  end
 end

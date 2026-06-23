@@ -447,7 +447,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 35;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -688,6 +688,15 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 32) {
         await _recomputeScoresVolumeFormulaV32();
+      }
+      if (from < 33) {
+        await _recomputeScoresVolumeFormulaV32();
+      }
+      if (from < 34) {
+        await _recomputeWorkoutScoresTimeFormulaV34();
+      }
+      if (from < 35) {
+        await recomputeAllCompletedWorkoutScores();
       }
     },
     beforeOpen: (details) async {
@@ -1154,7 +1163,7 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// v32: score exercício = Σ(carga×reps); treino = Σ(concluídos) × nº concluídos.
+  /// v32–v33: score exercício = Σ(carga×reps÷10); treino (v34) = Σ(concluídos)×nº×10÷min.
   Future<void> _recomputeScoresVolumeFormulaV32() async {
     final allLines = await select(dayWorkoutExercises).get();
     final sumByWorkout = <String, double>{};
@@ -1203,11 +1212,68 @@ class AppDatabase extends _$AppDatabase {
       }
       final ws = scoring.workoutFinalScoreFromExerciseScores(
         exerciseScoresSum: sumDone,
+        activeDurationSeconds: w.activeDurationSeconds > 0
+            ? w.activeDurationSeconds
+            : 1,
         completedExerciseCount: nDone,
       );
       await (update(dayWorkouts)..where((x) => x.id.equals(w.id))).write(
         DayWorkoutsCompanion(workoutScore: Value(ws)),
       );
+    }
+  }
+
+  /// v34–v35: workout_score = (Σ scores concluídos) × nº concluídos × 10 ÷ min ativos.
+  Future<void> _recomputeWorkoutScoresTimeFormulaV34() async {
+    await recomputeAllCompletedWorkoutScores();
+  }
+
+  /// Recalcula [day_workouts.workout_score] de um treino concluído (fórmula atual).
+  Future<double?> recomputeCompletedDayWorkoutScore(String dayWorkoutId) async {
+    final w = await (select(dayWorkouts)
+          ..where((x) => x.id.equals(dayWorkoutId)))
+        .getSingleOrNull();
+    if (w == null || w.status != 'completed') return null;
+
+    final lines = await (select(dayWorkoutExercises)
+          ..where((e) => e.dayWorkoutId.equals(dayWorkoutId)))
+        .get();
+    var sumDone = 0.0;
+    var nDone = 0;
+    for (final line in lines) {
+      if (line.sets <= 0) continue;
+      final performed = DayWorkoutPerformedSetCodec.decode(
+        line.performedSetsJson,
+      );
+      if (performed.length < line.sets) continue;
+      nDone++;
+      sumDone += performed.isNotEmpty
+          ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+          : scoring.prescribedExerciseLineScore(
+              sets: line.sets,
+              loadKg: line.loadKg ?? 0,
+              reps: line.reps,
+            );
+    }
+    final sec = w.activeDurationSeconds > 0 ? w.activeDurationSeconds : 1;
+    final ws = scoring.workoutFinalScoreFromExerciseScores(
+      exerciseScoresSum: sumDone,
+      activeDurationSeconds: sec,
+      completedExerciseCount: nDone,
+    );
+    await (update(dayWorkouts)..where((x) => x.id.equals(dayWorkoutId))).write(
+      DayWorkoutsCompanion(workoutScore: Value(ws)),
+    );
+    return ws;
+  }
+
+  /// Recalcula [workout_score] de todos os treinos concluídos (pós-sync / migração).
+  Future<void> recomputeAllCompletedWorkoutScores() async {
+    final completed = await (select(dayWorkouts)
+          ..where((w) => w.status.equals('completed')))
+        .get();
+    for (final w in completed) {
+      await recomputeCompletedDayWorkoutScore(w.id);
     }
   }
 

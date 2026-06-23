@@ -11,7 +11,7 @@ import '../../data/sync/supabase_auto_pull_scheduler.dart';
 import 'calendar_day_flow.dart';
 
 /// Preenchimento das datas com treino — bem translúcido para o fundo aparecer.
-Color _tint(Color base) => base.withValues(alpha: 0.24);
+Color _tint(Color base) => AppColors.workoutDayFillTint(base);
 
 /// Calendário mensal em carrossel (PageView), alinhado ao [HomePage] do App_Calendar.
 class CalendarPage extends StatefulWidget {
@@ -414,7 +414,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           : selected
                           ? AppColors.accentGreen.withValues(alpha: 0.85)
                           : (hasWork && accent != null)
-                          ? accent.withValues(alpha: 0.5)
+                          ? AppColors.workoutDayBorderTint(accent)
                           : Colors.transparent;
                       final borderWidth =
                           today || selected || (hasWork && accent != null)
