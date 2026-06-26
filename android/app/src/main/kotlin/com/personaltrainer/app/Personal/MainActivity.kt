@@ -1,4 +1,4 @@
-package com.personaltrainer.app_personal
+package com.personaltrainer.app.Personal
 
 import io.flutter.embedding.android.FlutterActivity
 

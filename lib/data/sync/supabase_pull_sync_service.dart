@@ -16,6 +16,7 @@ import '../../core/utils/student_archive_display_utils.dart';
 import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
 import '../models/day_workout_performed_set.dart';
+import 'supabase_table_mappers.dart';
 
 class SupabasePullTableResult {
   SupabasePullTableResult(
@@ -884,6 +885,113 @@ class SupabasePullSyncService {
   void _noteWorkoutGroupRef(String? id) {
     if (id == null || id.isEmpty) return;
     _pullReferencedWorkoutGroupIds.add(id);
+  }
+
+  int _pullWorkoutGroupLineReps(WorkoutGroupExerciseEntity line) {
+    final direct = line.lastReps;
+    if (direct != null && direct > 0) return direct;
+    final text = line.lastRepsText?.trim();
+    if (text != null && text.isNotEmpty) {
+      final match = RegExp(r'\d+').firstMatch(text);
+      final parsed = match == null ? null : int.tryParse(match.group(0)!);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 12;
+  }
+
+  Future<bool> _replaceProgrammedDayWorkoutLinesFromGroupTemplate({
+    required SupabaseClient client,
+    required String dayWorkoutId,
+    required String workoutGroupId,
+    required List<Map<String, dynamic>> remoteLineRows,
+  }) async {
+    final template =
+        await (_db.select(_db.workoutGroupExercises)
+              ..where((t) => t.workoutGroupId.equals(workoutGroupId))
+              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+            .get();
+    if (template.isEmpty) return false;
+
+    final remoteByExerciseId = <String, List<Map<String, dynamic>>>{};
+    final sortedRemoteRows = List<Map<String, dynamic>>.from(remoteLineRows)
+      ..sort(
+        (a, b) =>
+            _intOpt(a, 'sort_order', 0).compareTo(_intOpt(b, 'sort_order', 0)),
+      );
+    for (final row in sortedRemoteRows) {
+      final exId = _resolvedExerciseId(_str(row, 'exercise_id'));
+      remoteByExerciseId.putIfAbsent(exId, () => []).add(row);
+    }
+
+    final keepRemoteIds = <String>{};
+    final now = DateTime.now();
+    await _db.transaction(() async {
+      final existing = await (_db.select(
+        _db.dayWorkoutExercises,
+      )..where((e) => e.dayWorkoutId.equals(dayWorkoutId))).get();
+      for (final row in existing) {
+        await (_db.delete(
+          _db.dayWorkoutExercises,
+        )..where((e) => e.id.equals(row.id))).go();
+      }
+
+      for (var i = 0; i < template.length; i++) {
+        final line = template[i];
+        final queue = remoteByExerciseId[line.exerciseId];
+        final remoteMatch = queue != null && queue.isNotEmpty
+            ? queue.removeAt(0)
+            : null;
+        final lineId = remoteMatch == null
+            ? _uuid.v4()
+            : _str(remoteMatch, 'id');
+        keepRemoteIds.add(lineId);
+        await _db
+            .into(_db.dayWorkoutExercises)
+            .insert(
+              DayWorkoutExercisesCompanion.insert(
+                id: lineId,
+                dayWorkoutId: dayWorkoutId,
+                exerciseId: line.exerciseId,
+                sortOrder: Value(i),
+                sets: line.lastSets != null && line.lastSets! > 0
+                    ? line.lastSets!
+                    : 3,
+                reps: _pullWorkoutGroupLineReps(line),
+                repsText: Value(line.lastRepsText),
+                loadKg: Value(line.lastLoadKg),
+                exerciseScore: const Value(null),
+                performedSetsJson: const Value(null),
+                restBetweenSetsSec: Value(line.restBetweenSetsSec),
+                trainingMethodId: Value(line.trainingMethodId),
+                comboId: Value(line.comboId),
+                updatedAt: Value(now),
+                revision: Value(_remoteRevision(remoteMatch ?? const {})),
+                lastModifiedByDeviceId: Value(
+                  _remoteDeviceId(remoteMatch ?? const {}),
+                ),
+                syncStatus: const Value('synced'),
+                deletedAt: const Value(null),
+              ),
+            );
+      }
+    });
+
+    for (final row in remoteLineRows) {
+      final lineId = _str(row, 'id');
+      if (keepRemoteIds.contains(lineId)) continue;
+      await client.from('day_workout_exercises').delete().eq('id', lineId);
+    }
+    final localLines =
+        await (_db.select(_db.dayWorkoutExercises)
+              ..where((e) => e.dayWorkoutId.equals(dayWorkoutId))
+              ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
+            .get();
+    for (final line in localLines) {
+      await client
+          .from('day_workout_exercises')
+          .upsert(supabaseDayWorkoutExercise(line));
+    }
+    return true;
   }
 
   Future<List<Map<String, dynamic>>> _selectInChunks(
@@ -2026,6 +2134,8 @@ class SupabasePullSyncService {
         local: local,
         remoteStatus: remoteStatus,
       );
+      final sourceWorkoutGroupId =
+          _strOpt(r, 'source_workout_group_id') ?? local?.sourceWorkoutGroupId;
 
       if (local != null &&
           local.updatedAt.isAfter(remoteUpd.add(const Duration(seconds: 3)))) {
@@ -2095,9 +2205,7 @@ class SupabasePullSyncService {
               ),
               createdAt: Value(_ts(r['created_at'])),
               updatedAt: Value(remoteUpd),
-              sourceWorkoutGroupId: Value(
-                _strOpt(r, 'source_workout_group_id'),
-              ),
+              sourceWorkoutGroupId: Value(sourceWorkoutGroupId),
               watchCaloriesKcal: Value(_dblOpt(r, 'watch_calories_kcal')),
               watchAvgHeartRateBpm: Value(
                 r['watch_avg_heart_rate_bpm'] == null
@@ -2118,8 +2226,27 @@ class SupabasePullSyncService {
           .select()
           .eq('day_workout_id', id);
       final lines = linesRes as List<dynamic>;
-      for (final e in lines) {
-        final m = Map<String, dynamic>.from(e as Map);
+      final remoteLineRows = lines
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      final shouldUseGroupTemplate =
+          (effectiveStatus == 'programmed' || effectiveStatus == 'scheduled') &&
+          sourceWorkoutGroupId != null &&
+          sourceWorkoutGroupId.trim().isNotEmpty;
+      if (shouldUseGroupTemplate) {
+        final replaced =
+            await _replaceProgrammedDayWorkoutLinesFromGroupTemplate(
+              client: c,
+              dayWorkoutId: id,
+              workoutGroupId: sourceWorkoutGroupId.trim(),
+              remoteLineRows: remoteLineRows,
+            );
+        if (replaced) {
+          _sync.noteConnected();
+          return;
+        }
+      }
+      for (final m in remoteLineRows) {
         final lineId = _str(m, 'id');
         final lineRemoteUpd =
             _tsOpt(m['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -2243,9 +2370,9 @@ class SupabasePullSyncService {
       // Exclusão efetiva continua sendo tratada por:
       // - auditoria local + push; e
       // - pull pontual por id (quando linha realmente não existe).
-      final wAfter = await (_db.select(_db.dayWorkouts)
-            ..where((d) => d.id.equals(id)))
-          .getSingleOrNull();
+      final wAfter = await (_db.select(
+        _db.dayWorkouts,
+      )..where((d) => d.id.equals(id))).getSingleOrNull();
       if (wAfter?.status == 'completed') {
         await _db.recomputeCompletedDayWorkoutScore(id);
       }
@@ -3437,12 +3564,25 @@ class SupabasePullSyncService {
         // o Supabase pode ainda estar com status antigo; não sobrepor enquanto o cancel local for mais novo.
         final localCancelAt = localCancelledAt[id];
         final remoteStatus = _str(r, 'status');
+        final localRow = localDayWorkoutById[id];
         if (localCancelAt != null &&
             remoteStatus != 'cancelled' &&
             !_remoteDayWorkoutStrictlyAfterTombstone(
               remoteUpdatedAt: remoteUpd,
               tombstone: localCancelAt,
             )) {
+          skippedNewer++;
+          continue;
+        }
+        if (localRow != null &&
+            localRow.status == 'completed' &&
+            remoteStatus != 'completed') {
+          await _enqueueLocalRepush(
+            _db,
+            entityType: 'day_workout',
+            entityId: id,
+            reason: 'completed_local_wins_bulk_pull_day_workout',
+          );
           skippedNewer++;
           continue;
         }
@@ -3455,7 +3595,6 @@ class SupabasePullSyncService {
           skippedNewer++;
           continue;
         }
-        final localRow = localDayWorkoutById[id];
         final forceRemoteCompletion =
             remoteStatus == 'completed' &&
             localRow != null &&
@@ -3510,9 +3649,7 @@ class SupabasePullSyncService {
                 startedAt: Value(
                   preserveCompletion && localRow?.startedAt != null
                       ? localRow!.startedAt
-                      : (r['started_at'] == null
-                            ? null
-                            : _ts(r['started_at'])),
+                      : (r['started_at'] == null ? null : _ts(r['started_at'])),
                 ),
                 completedAt: Value(
                   preserveCompletion && localRow != null

@@ -15,7 +15,7 @@ import 'rest_live_activity_controller.dart';
 /// App Group **idêntico** ao configurado no Xcode (Runner + extensão Widget).
 /// Criar em developer.apple.com → Identifiers → App Groups.
 const kIosWorkoutLiveActivitiesAppGroup =
-    'group.com.personaltrainer.appPersonal.workoutlive';
+    'group.com.personaltrainer.app.Personal.workoutlive';
 
 /// ID estável para createOrUpdate (plugin deriva UUID v5 internamente).
 const kIosWorkoutLiveActivityId = 'personal_trainer_workout_lock';

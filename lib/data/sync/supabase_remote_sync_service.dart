@@ -1150,6 +1150,30 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     );
   }
 
+  Future<bool> _recoverProgrammedLinePushAfterLwwConflict({
+    required SupabaseClient client,
+    required DayWorkoutExerciseEntity line,
+  }) async {
+    final workout = await (_db.select(
+      _db.dayWorkouts,
+    )..where((w) => w.id.equals(line.dayWorkoutId))).getSingleOrNull();
+    if (workout == null) return true;
+    if (workout.status == 'started' || workout.status == 'completed') {
+      return false;
+    }
+    if ((workout.sourceWorkoutGroupId ?? '').trim().isEmpty) return false;
+    final performed = DayWorkoutPerformedSetCodec.decode(
+      line.performedSetsJson,
+    );
+    if (performed.isNotEmpty) return false;
+    await _mirrorDayWorkoutBundle(
+      client,
+      workout.id,
+      deleteStaleRemoteLines: true,
+    );
+    return true;
+  }
+
   Future<void> _discardAuditLog(String auditLogId) async {
     await (_db.delete(
       _db.auditLogs,
@@ -1810,7 +1834,12 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
           if (action == 'touch' || action == 'resync_local') {
             await _mirrorDayWorkoutTouch(client, eid, auditLogId: auditLogId);
           } else {
-            await _mirrorDayWorkoutBundle(client, eid, auditLogId: auditLogId);
+            await _mirrorDayWorkoutBundle(
+              client,
+              eid,
+              auditLogId: auditLogId,
+              deleteStaleRemoteLines: action == 'replace_group_template',
+            );
           }
         }
       case 'day_workout_exercise':
@@ -1851,6 +1880,13 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             final recovered = await _recoverHotPathLinePushAfterLwwConflict(
               client: client,
               lineId: eid,
+            );
+            if (recovered) return;
+          }
+          if (!pushed) {
+            final recovered = await _recoverProgrammedLinePushAfterLwwConflict(
+              client: client,
+              line: row,
             );
             if (recovered) return;
           }
@@ -1955,6 +1991,7 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     SupabaseClient client,
     String workoutId, {
     String? auditLogId,
+    bool deleteStaleRemoteLines = false,
   }) async {
     final w = await (_db.select(
       _db.dayWorkouts,
@@ -2028,11 +2065,33 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     final lines = await (_db.select(
       _db.dayWorkoutExercises,
     )..where((e) => e.dayWorkoutId.equals(workoutId))).get();
+    final replaceRemoteTemplateLines =
+        deleteStaleRemoteLines &&
+        w.status != 'started' &&
+        w.status != 'completed';
+    if (deleteStaleRemoteLines &&
+        w.status != 'started' &&
+        w.status != 'completed') {
+      final keepIds = lines.map((line) => line.id).toSet();
+      final remoteLines = await client
+          .from('day_workout_exercises')
+          .select('id')
+          .eq('day_workout_id', workoutId);
+      for (final raw in remoteLines as List<dynamic>) {
+        final id = (raw as Map)['id'] as String?;
+        if (id == null || keepIds.contains(id)) continue;
+        await client.from('day_workout_exercises').delete().eq('id', id);
+      }
+    }
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
       // Mesmo racional do hot path: evitar dependências de catálogo durante
       // sincronização de treino em execução.
-      if (auditLogId != null) {
+      if (replaceRemoteTemplateLines) {
+        await client
+            .from('day_workout_exercises')
+            .upsert(supabaseDayWorkoutExercise(line));
+      } else if (auditLogId != null) {
         final pushed = await _lwwUpsertOrConflictPull(
           auditLogId: auditLogId,
           client: client,

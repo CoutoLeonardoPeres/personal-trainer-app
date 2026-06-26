@@ -202,8 +202,8 @@ class SupabaseRealtimeSyncService {
       // convergir rápido também quando este app ainda não marcou treino started
       // localmente (caso clássico: treino iniciado no outro dispositivo).
       final minGap = hasStartedLocal
-          ? const Duration(seconds: 25)
-          : const Duration(seconds: 15);
+          ? const Duration(seconds: 60)
+          : const Duration(seconds: 30);
       final shouldProbeRemote =
           lastProbe == null || now.difference(lastProbe) >= minGap;
       if (shouldProbeRemote && !_flushing) {
@@ -221,7 +221,7 @@ class SupabaseRealtimeSyncService {
             .inFilter('status', const ['programmed', 'started', 'completed'])
             .gte('updated_at', cutoff)
             .order('updated_at', ascending: false)
-            .limit(hasStartedLocal ? 50 : 40);
+            .limit(hasStartedLocal ? 20 : 12);
         final list = remoteRows as List<dynamic>;
         for (final raw in list) {
           final row = Map<String, dynamic>.from(raw as Map);

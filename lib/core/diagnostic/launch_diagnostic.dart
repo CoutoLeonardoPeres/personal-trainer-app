@@ -7,7 +7,7 @@ import 'package:flutter/scheduler.dart';
 /// Logs para Console/Xcode e DevTools (filtro: `app_personal`).
 ///
 /// **iOS:** no Mac, abra o app **Console.app** → dispositivo → filtre por
-/// `com.personaltrainer.appPersonal` (Swift) ou `app_personal` (Dart).
+/// `com.personaltrainer.app.Personal` (Swift) ou `app_personal` (Dart).
 void logLaunch(String message, {String phase = 'dart', Object? error, StackTrace? stackTrace}) {
   final ts = DateTime.now().toIso8601String();
   final line = '[$ts][$phase] $message';

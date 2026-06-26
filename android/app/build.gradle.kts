@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.personaltrainer.app_personal"
+    namespace = "com.personaltrainer.app.Personal"
     // API 36 (Android 16) — alinha com dispositivos recentes (ex. tablets A16).
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
@@ -23,7 +23,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.personaltrainer.app_personal"
+        applicationId = "com.personaltrainer.app.Personal"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

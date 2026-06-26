@@ -120,19 +120,28 @@ class _CalendarSheetHeaderWorkoutScore extends StatelessWidget {
               children: [
                 Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
                 const SizedBox(width: 4),
-                Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
+                Text(
+                  '—',
+                  style: valueStyle.copyWith(color: AppColors.textMuted),
+                ),
               ],
             );
           }
           return FutureBuilder<double?>(
-            future: repo.previousCompletedWorkoutScore(dayWorkoutId: workout.id),
+            future: repo.previousCompletedWorkoutScore(
+              dayWorkoutId: workout.id,
+            ),
             builder: (context, snap) {
               final prev = snap.data;
               final color = _workoutHeaderDeltaColor(cur, prev);
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+                  Icon(
+                    Icons.insights_rounded,
+                    size: iconSize,
+                    color: iconColor,
+                  ),
                   const SizedBox(width: 4),
                   CountUpScoreText(
                     key: ValueKey('dw_header_score_${workout.id}'),
@@ -1137,7 +1146,8 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                             : _ExerciseScoreTrend.same)
                                       : _scoreTrend(displayScore, previous);
                                   final v = _scoreVisual(trend);
-                                  final percentLabel = awaitingFirstSetThisSession
+                                  final percentLabel =
+                                      awaitingFirstSetThisSession
                                       ? scoring.formatExecutionPercentLabel(
                                           current: 0,
                                           previous: null,
@@ -1381,6 +1391,102 @@ String _formatWorkoutTimer(int sec) {
   return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
 }
 
+class _WorkoutTimerLeading extends StatefulWidget {
+  const _WorkoutTimerLeading({
+    required this.repo,
+    required this.workout,
+    this.compact = false,
+  });
+
+  final AppDataRepository repo;
+  final DayWorkoutEntity workout;
+  final bool compact;
+
+  @override
+  State<_WorkoutTimerLeading> createState() => _WorkoutTimerLeadingState();
+}
+
+class _WorkoutTimerLeadingState extends State<_WorkoutTimerLeading> {
+  Timer? _tick;
+
+  bool get _running =>
+      widget.workout.status == 'started' &&
+      widget.workout.timerResumeAt != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTick();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkoutTimerLeading oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workout.status != widget.workout.status ||
+        oldWidget.workout.timerResumeAt != widget.workout.timerResumeAt) {
+      _syncTick();
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  void _syncTick() {
+    _tick?.cancel();
+    _tick = _running
+        ? Timer.periodic(const Duration(seconds: 1), (_) {
+            if (mounted) setState(() {});
+          })
+        : null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = widget.compact;
+    final iconSz = compact ? 17.0 : 20.0;
+    final timeFs = compact ? 16.0 : 20.0;
+    final w = widget.workout;
+    final paused = w.status == 'started' && w.timerResumeAt == null;
+    final color = paused
+        ? const Color(0xFFFFB74D)
+        : AppColors.accentGreen.withValues(alpha: 0.9);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.timer_outlined, color: color, size: iconSz),
+        const SizedBox(width: 5),
+        Text(
+          _formatWorkoutTimer(
+            widget.repo.effectiveActiveSeconds(w, DateTime.now()),
+          ),
+          style: TextStyle(
+            color: paused ? const Color(0xFFFFE082) : AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+            fontSize: timeFs,
+            height: 1.05,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        if (paused) ...[
+          const SizedBox(width: 6),
+          Text(
+            'Pausado',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Evita tap-through: o toque que fecha o overlay não deve acionar botões por baixo
 /// (ex.: reabrir «Registrar série» logo após fechar o cronômetro entre séries).
 void _schedulePopDialogResult(BuildContext dialogContext, Object? result) {
@@ -1563,9 +1669,6 @@ class _DayExercisesSheetScaffoldState
     extends State<_DayExercisesSheetScaffold> {
   var _refreshKey = 0;
   final Map<String, bool> _useAlternativeByLineId = {};
-  Timer? _tick;
-  Timer? _liveWorkoutCloudRefreshTimer;
-  var _tickerRunning = false;
   var _restPopupOpenAttempted = false;
   var _focusCurrentExerciseAfterRestClose = false;
   var _repairingInitialExercises = false;
@@ -1634,13 +1737,6 @@ class _DayExercisesSheetScaffoldState
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateWorkoutLinesFromCloud());
-      if (widget.workout.status == 'started') {
-        // Resiliência multi-dispositivo sem disputar com o registro de séries.
-        _liveWorkoutCloudRefreshTimer = Timer.periodic(
-          const Duration(seconds: 45),
-          (_) => unawaited(_hydrateWorkoutLinesFromCloud(silentUi: true)),
-        );
-      }
     });
     // Evita loading infinito se pull/rede ou flags de hidratação ficarem presos.
     unawaited(
@@ -1810,21 +1906,7 @@ class _DayExercisesSheetScaffoldState
 
   @override
   void dispose() {
-    _tick?.cancel();
-    _liveWorkoutCloudRefreshTimer?.cancel();
     super.dispose();
-  }
-
-  void _syncTickerForWorkout(DayWorkoutEntity w) {
-    final run = w.status == 'started' && w.timerResumeAt != null;
-    if (run == _tickerRunning) return;
-    _tickerRunning = run;
-    _tick?.cancel();
-    _tick = run
-        ? Timer.periodic(const Duration(seconds: 1), (_) {
-            if (mounted) setState(() {});
-          })
-        : null;
   }
 
   Future<void> _onStartWorkout(
@@ -1939,7 +2021,6 @@ class _DayExercisesSheetScaffoldState
         stream: widget.repo.watchDayWorkout(widget.workout.id),
         builder: (context, workoutSnap) {
           final w = workoutSnap.data ?? widget.workout;
-          _syncTickerForWorkout(w);
           return Column(
             children: [
               const SizedBox(height: 10),
@@ -2060,57 +2141,10 @@ class _DayExercisesSheetScaffoldState
                         const kGapWorkoutToTimer = 12.0;
 
                         Widget timerLeading({bool compact = false}) {
-                          final iconSz = compact ? 17.0 : 20.0;
-                          final timeFs = compact ? 16.0 : 20.0;
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.timer_outlined,
-                                color:
-                                    w.status == 'started' &&
-                                        w.timerResumeAt == null
-                                    ? const Color(0xFFFFB74D)
-                                    : AppColors.accentGreen.withValues(
-                                        alpha: 0.9,
-                                      ),
-                                size: iconSz,
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                _formatWorkoutTimer(
-                                  widget.repo.effectiveActiveSeconds(
-                                    w,
-                                    DateTime.now(),
-                                  ),
-                                ),
-                                style: TextStyle(
-                                  color:
-                                      w.status == 'started' &&
-                                          w.timerResumeAt == null
-                                      ? const Color(0xFFFFE082)
-                                      : AppColors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: timeFs,
-                                  height: 1.05,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
-                              if (w.status == 'started' &&
-                                  w.timerResumeAt == null) ...[
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Pausado',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.45),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ],
+                          return _WorkoutTimerLeading(
+                            repo: widget.repo,
+                            workout: w,
+                            compact: compact,
                           );
                         }
 
@@ -2271,7 +2305,9 @@ class _DayExercisesSheetScaffoldState
                 child: KeyedSubtree(
                   key: ValueKey(_refreshKey),
                   child: StreamBuilder<List<ExerciseEntity>>(
-                    stream: widget.repo.watchExercisesAlphabetical(),
+                    stream: widget.repo.watchExercisesForDayWorkout(
+                      widget.workout.id,
+                    ),
                     builder: (context, exSnap) {
                       final loadingExercisesBase =
                           exSnap.connectionState == ConnectionState.waiting &&
@@ -2507,7 +2543,7 @@ class _DayExercisesSheetScaffoldState
                                   final name =
                                       ex?.name ??
                                       _exerciseNameCacheById[line.exerciseId] ??
-                                      '';
+                                      'Exercício a sincronizar';
                                   final outOfOrder =
                                       dayWorkoutLineExecutedOutOfPlannedOrder(
                                         plannedOrder,

@@ -9,7 +9,7 @@ CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)
 PRODUCT_NAME = app_personal
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.personaltrainer.appPersonal
+PRODUCT_BUNDLE_IDENTIFIER = com.personaltrainer.app.Personal
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.personaltrainer. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 com.personaltrainer.app.Personal. All rights reserved.

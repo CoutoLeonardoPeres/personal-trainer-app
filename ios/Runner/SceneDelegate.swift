@@ -2,7 +2,7 @@ import Flutter
 import UIKit
 
 /// Deve ser idêntico a NSUserActivityTypes e UISceneConfigurationName no Info.plist.
-private let kFlutterSceneActivityType = "com.personaltrainer.appPersonal.scene"
+private let kFlutterSceneActivityType = "com.personaltrainer.app.Personal.scene"
 
 private func sceneLog(_ message: String) {
   NSLog("[Runner/SceneDelegate] %@", message)

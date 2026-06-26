@@ -950,14 +950,12 @@ class CalendarDayFlow {
               .refreshDayWorkoutFromCloud(w.id)
               .timeout(const Duration(milliseconds: 1200), onTimeout: () {});
           await repo
-              .prewarmCompletedHistoryForWorkout(w.id, limit: 60)
-              .timeout(const Duration(milliseconds: 1600), onTimeout: () {});
+              .prewarmCompletedHistoryForWorkout(w.id, limit: 20)
+              .timeout(const Duration(milliseconds: 900), onTimeout: () {});
         }
         if (!context.mounted) return;
-        if (!skipCloudPrewarmAndLoader) {
-          final refreshed = await repo.getDayWorkout(w.id);
-          workout = refreshed ?? w;
-        }
+        final refreshed = await repo.getDayWorkout(w.id);
+        workout = refreshed ?? w;
 
         if (initialStudentName == null || !skipCloudPrewarmAndLoader) {
           final found = await repo

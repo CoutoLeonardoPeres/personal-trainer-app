@@ -27,7 +27,7 @@ extension LiveActivitiesAppAttributes {
 }
 
 /// Mesmo identificador que em Dart [kIosWorkoutLiveActivitiesAppGroup].
-private let kAppGroupId = "group.com.personaltrainer.appPersonal.workoutlive"
+private let kAppGroupId = "group.com.personaltrainer.app.Personal.workoutlive"
 
 /// Um único `UserDefaults(suiteName:)` por processo da extensão. Recriar o suite a cada
 /// `body` / tick do `TimelineView` faz o sistema ligar-se ao `cfprefsd` em loop e surgem
