@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- =============================================================================
 -- RLS restritivo com auth.uid() — Personal Gym
 -- =============================================================================

@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- =============================================================================
 -- RBAC + anamnese — colunas alinhadas ao SQLite (Drift)
 -- Execute no Supabase SQL Editor após atualizar o app. Idempotente.

@@ -1,0 +1,2 @@
+-- Intentionally empty in Phase 0.
+-- Deterministic development fixtures will be added with the versioned schema.

@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- =============================================================================
 -- Supabase / Postgres — único script SQL do projeto (schema + migrações + reparo)
 -- =============================================================================

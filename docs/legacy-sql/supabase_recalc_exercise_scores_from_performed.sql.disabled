@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- Recalcula public.day_workout_exercises.exercise_score para todas as linhas de
 -- treinos **concluídos** com data do treino **até hoje** (calendário em
 -- America/Sao_Paulo — ajuste o time zone se gravar day_date doutro modo).

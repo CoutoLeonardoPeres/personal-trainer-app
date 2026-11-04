@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- Recalcula day_workouts.workout_score (treinos concluídos) com a fórmula v26:
 -- (Σ score só exercícios concluídos) × 10 ÷ minutos_ativos × (nº concluídos).
 --

@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- =============================================================================
 -- Sprint 3 — Motor de sync: revision atômico + séries append-only
 -- =============================================================================

@@ -1,0 +1,2 @@
+-- Phase 0 baseline.
+-- The versioned application schema starts in the next approved phase.

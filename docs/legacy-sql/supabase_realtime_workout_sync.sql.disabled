@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- Realtime para manter treinos sincronizados entre aluno e personal/admin.
 -- Execute no SQL Editor do Supabase.
 

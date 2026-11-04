@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- =============================================================================
 -- App Personal — MIGRATION ONLY: sync ownership + audit traceability
 -- =============================================================================

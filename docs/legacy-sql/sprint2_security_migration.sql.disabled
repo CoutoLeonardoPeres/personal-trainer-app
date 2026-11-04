@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- =============================================================================
 -- Sprint 2 — Reset seguro, RBAC server-side e endurecimento de acesso
 -- =============================================================================

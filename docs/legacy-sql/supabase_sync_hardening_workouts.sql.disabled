@@ -1,3 +1,4 @@
+-- NÃO EXECUTAR: SQL legado preservado somente para auditoria e migração.
 -- Hardening de sincronização para fluxo crítico de treino/séries.
 -- Objetivo:
 -- 1) impedir regressão de status completed -> started/programmed por update atrasado
