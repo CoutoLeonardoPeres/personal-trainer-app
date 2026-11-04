@@ -99,7 +99,7 @@ create table if not exists public.personals (
   phone_mobile text null,
   email text not null,
   must_change_password boolean not null default true,
-  password_hash text null,
+  auth_user_id uuid null unique references auth.users (id) on delete set null,
   is_admin boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -122,7 +122,7 @@ create table if not exists public.students (
   phone_commercial text null,
   phone_mobile text null,
   must_change_password boolean not null default true,
-  password_hash text null,
+  auth_user_id uuid null unique references auth.users (id) on delete set null,
   created_by_personal_id text null references public.personals(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -363,6 +363,10 @@ where s.is_archived = false
   and (s.name like '(Inativo)%' or s.name like '(Excluído)%');
 create index if not exists idx_personals_auth_user_id on public.personals (auth_user_id);
 create index if not exists idx_students_auth_user_id on public.students (auth_user_id);
+
+-- Sprint 1: remover senhas em texto puro (credenciais só em auth.users)
+alter table public.personals drop column if exists password_hash;
+alter table public.students drop column if exists password_hash;
 
 -- Descanso entre séries (segundos): cria se faltar; se existir com tipo/default errados, alinha.
 do $$

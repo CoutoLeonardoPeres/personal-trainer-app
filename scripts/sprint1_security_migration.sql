@@ -1,0 +1,281 @@
+-- =============================================================================
+-- Sprint 1 — Migração de segurança (Personal Gym)
+-- =============================================================================
+-- Objetivo: eliminar senhas em texto puro no Postgres e ativar RLS por auth.uid().
+--
+-- ORDEM DE EXECUÇÃO NO SUPABASE SQL EDITOR:
+--   1) scripts/supabase_rls_strict_auth_uid.sql — secção 1 (colunas + funções)
+--   2) ESTE arquivo (remover senhas + políticas restritivas + revogar anon)
+--
+-- PRÉ-REQUISITO DE DADOS (antes de ativar RLS estrito):
+--   • Criar utilizadores em Authentication › Users (e-mail/senha) para cada personal/aluno.
+--   • Ligar perfis:
+--       UPDATE public.personals SET auth_user_id = '<uuid-auth>' WHERE email = '...';
+--       UPDATE public.students SET auth_user_id = '<uuid-auth>' WHERE email = '...';
+--   • Validar login no app Flutter (signInWithPassword) antes de revogar anon.
+--
+-- ROLLBACK: manter backup; reativar políticas permissivas só em emergência (não recomendado).
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- A) Remover colunas de senha (credenciais só em auth.users)
+-- ---------------------------------------------------------------------------
+alter table public.personals
+  drop column if exists password_hash;
+
+alter table public.students
+  drop column if exists password_hash;
+
+-- Garantir ligação Auth (idempotente)
+alter table public.personals
+  add column if not exists auth_user_id uuid unique references auth.users (id) on delete set null;
+
+alter table public.students
+  add column if not exists auth_user_id uuid unique references auth.users (id) on delete set null;
+
+create index if not exists idx_personals_auth_user_id on public.personals (auth_user_id);
+create index if not exists idx_students_auth_user_id on public.students (auth_user_id);
+
+-- ---------------------------------------------------------------------------
+-- B) Remover políticas permissivas (dev) e revogar anon
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  t text;
+  tables text[] := array[
+    'muscle_groups', 'exercises', 'gyms', 'personals', 'students',
+    'student_gyms', 'training_methods', 'workout_groups', 'workout_group_exercises',
+    'week_schedule_blocks', 'week_schedule_items', 'day_workouts',
+    'day_workout_exercises', 'audit_logs', 'anamnese_sessions',
+    'anamnese_answers', 'student_performance_reports'
+  ];
+begin
+  foreach t in array tables
+  loop
+    execute format('drop policy if exists app_sync_anon_all on public.%I', t);
+    execute format('drop policy if exists app_sync_authenticated_all on public.%I', t);
+  end loop;
+end $$;
+
+revoke all on all tables in schema public from anon;
+revoke all on all sequences in schema public from anon;
+
+-- ---------------------------------------------------------------------------
+-- C) Políticas RLS por auth.uid() (requer funções da secção 1 do script strict)
+-- ---------------------------------------------------------------------------
+-- muscle_groups
+create policy muscle_groups_select_auth on public.muscle_groups
+  for select to authenticated using (public.app_is_linked_user ());
+create policy muscle_groups_ins_auth on public.muscle_groups
+  for insert to authenticated with check (public.app_may_mutate_catalog ());
+create policy muscle_groups_upd_auth on public.muscle_groups
+  for update to authenticated
+  using (public.app_may_mutate_catalog ()) with check (public.app_may_mutate_catalog ());
+create policy muscle_groups_del_auth on public.muscle_groups
+  for delete to authenticated using (public.app_may_mutate_catalog ());
+
+-- exercises
+create policy exercises_select_auth on public.exercises
+  for select to authenticated using (public.app_is_linked_user ());
+create policy exercises_ins_auth on public.exercises
+  for insert to authenticated with check (public.app_may_mutate_catalog ());
+create policy exercises_upd_auth on public.exercises
+  for update to authenticated
+  using (public.app_may_mutate_catalog ()) with check (public.app_may_mutate_catalog ());
+create policy exercises_del_auth on public.exercises
+  for delete to authenticated using (public.app_may_mutate_catalog ());
+
+-- gyms
+create policy gyms_select_auth on public.gyms
+  for select to authenticated using (public.app_is_linked_user ());
+create policy gyms_ins_auth on public.gyms
+  for insert to authenticated with check (public.app_may_mutate_catalog ());
+create policy gyms_upd_auth on public.gyms
+  for update to authenticated
+  using (public.app_may_mutate_catalog ()) with check (public.app_may_mutate_catalog ());
+create policy gyms_del_auth on public.gyms
+  for delete to authenticated using (public.app_may_mutate_catalog ());
+
+-- personals
+create policy personals_select_auth on public.personals
+  for select to authenticated using (public.app_can_read_personal_row (id));
+create policy personals_insert_auth on public.personals
+  for insert to authenticated
+  with check (public.app_is_admin_personal () or auth_user_id = auth.uid ());
+create policy personals_update_auth on public.personals
+  for update to authenticated
+  using (public.app_is_admin_personal () or public.app_my_personal_id () is not distinct from id)
+  with check (public.app_is_admin_personal () or public.app_my_personal_id () is not distinct from id);
+create policy personals_delete_auth on public.personals
+  for delete to authenticated using (public.app_is_admin_personal ());
+
+-- students
+create policy students_select_auth on public.students
+  for select to authenticated using (public.app_can_access_student_row (id));
+create policy students_insert_auth on public.students
+  for insert to authenticated
+  with check (
+    public.app_is_admin_personal ()
+    or (public.app_my_personal_id () is not null
+        and created_by_personal_id is not distinct from public.app_my_personal_id ())
+  );
+create policy students_update_auth on public.students
+  for update to authenticated
+  using (public.app_can_access_student_row (id))
+  with check (public.app_can_access_student_row (id));
+create policy students_delete_auth on public.students
+  for delete to authenticated
+  using (
+    public.app_is_admin_personal ()
+    or (public.app_my_personal_id () is not null
+        and created_by_personal_id is not distinct from public.app_my_personal_id ())
+  );
+
+-- student_gyms
+create policy student_gyms_all_auth on public.student_gyms
+  for all to authenticated
+  using (public.app_can_access_student_training (student_id))
+  with check (public.app_can_access_student_training (student_id));
+
+-- training_methods
+create policy training_methods_select_auth on public.training_methods
+  for select to authenticated using (public.app_is_linked_user ());
+create policy training_methods_ins_auth on public.training_methods
+  for insert to authenticated with check (public.app_may_mutate_catalog ());
+create policy training_methods_upd_auth on public.training_methods
+  for update to authenticated
+  using (public.app_may_mutate_catalog ()) with check (public.app_may_mutate_catalog ());
+create policy training_methods_del_auth on public.training_methods
+  for delete to authenticated using (public.app_may_mutate_catalog ());
+
+-- workout_groups
+create policy workout_groups_select_auth on public.workout_groups
+  for select to authenticated using (public.app_can_access_workout_group (id));
+create policy workout_groups_ins_auth on public.workout_groups
+  for insert to authenticated
+  with check (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  );
+create policy workout_groups_upd_auth on public.workout_groups
+  for update to authenticated
+  using (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  )
+  with check (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  );
+create policy workout_groups_del_auth on public.workout_groups
+  for delete to authenticated
+  using (
+    public.app_is_admin_personal ()
+    or created_by_personal_id is not distinct from public.app_my_personal_id ()
+  );
+
+-- workout_group_exercises
+create policy wge_select_auth on public.workout_group_exercises
+  for select to authenticated using (public.app_can_access_workout_group (workout_group_id));
+create policy wge_ins_auth on public.workout_group_exercises
+  for insert to authenticated with check (public.app_can_mutate_workout_group (workout_group_id));
+create policy wge_upd_auth on public.workout_group_exercises
+  for update to authenticated
+  using (public.app_can_mutate_workout_group (workout_group_id))
+  with check (public.app_can_mutate_workout_group (workout_group_id));
+create policy wge_del_auth on public.workout_group_exercises
+  for delete to authenticated using (public.app_can_mutate_workout_group (workout_group_id));
+
+-- week_schedule_blocks / items
+create policy wsb_all_auth on public.week_schedule_blocks
+  for all to authenticated
+  using (public.app_can_access_student_training (student_id))
+  with check (public.app_can_access_student_training (student_id));
+
+create policy wsi_all_auth on public.week_schedule_items
+  for all to authenticated
+  using (
+    exists (
+      select 1 from public.week_schedule_blocks b
+      where b.id = week_schedule_items.block_id
+        and public.app_can_access_student_training (b.student_id)
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.week_schedule_blocks b
+      where b.id = week_schedule_items.block_id
+        and public.app_can_access_student_training (b.student_id)
+    )
+  );
+
+-- day_workouts / exercises
+create policy dw_all_auth on public.day_workouts
+  for all to authenticated
+  using (public.app_can_access_student_training (student_id))
+  with check (public.app_can_access_student_training (student_id));
+
+create policy dwe_all_auth on public.day_workout_exercises
+  for all to authenticated
+  using (
+    exists (
+      select 1 from public.day_workouts w
+      where w.id = day_workout_exercises.day_workout_id
+        and public.app_can_access_student_training (w.student_id)
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.day_workouts w
+      where w.id = day_workout_exercises.day_workout_id
+        and public.app_can_access_student_training (w.student_id)
+    )
+  );
+
+-- audit_logs
+create policy audit_insert_auth on public.audit_logs
+  for insert to authenticated with check (public.app_is_linked_user ());
+create policy audit_select_auth on public.audit_logs
+  for select to authenticated using (public.app_is_admin_personal ());
+create policy audit_update_auth on public.audit_logs
+  for update to authenticated using (public.app_is_admin_personal ());
+create policy audit_delete_auth on public.audit_logs
+  for delete to authenticated using (public.app_is_admin_personal ());
+
+-- anamnese
+create policy anam_sess_all_auth on public.anamnese_sessions
+  for all to authenticated
+  using (public.app_can_access_student_row (student_id))
+  with check (public.app_can_access_student_row (student_id));
+
+create policy anam_ans_all_auth on public.anamnese_answers
+  for all to authenticated
+  using (
+    exists (
+      select 1 from public.anamnese_sessions s
+      where s.id = anamnese_answers.session_id
+        and public.app_can_access_student_row (s.student_id)
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.anamnese_sessions s
+      where s.id = anamnese_answers.session_id
+        and public.app_can_access_student_row (s.student_id)
+    )
+  );
+
+create policy reports_all_auth on public.student_performance_reports
+  for all to authenticated
+  using (public.app_can_access_student_training (student_id))
+  with check (public.app_can_access_student_training (student_id));
+
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- D) Verificação pós-migração
+-- ---------------------------------------------------------------------------
+-- SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public' ORDER BY 1, 2;
+-- SELECT id, email FROM auth.users LIMIT 5;
+-- SELECT id, email, auth_user_id FROM public.personals WHERE auth_user_id IS NULL;

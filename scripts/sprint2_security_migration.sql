@@ -1,0 +1,262 @@
+-- =============================================================================
+-- Sprint 2 — Reset seguro, RBAC server-side e endurecimento de acesso
+-- =============================================================================
+-- Objetivo:
+--   • Unicidade de e-mail (por tabela + anti-colisão personal ↔ aluno)
+--   • Impedir elevação de privilégio via UPDATE (is_admin, tiers, caps)
+--   • Reforçar políticas RLS de UPDATE em colunas sensíveis
+--
+-- ORDEM DE EXECUÇÃO NO SUPABASE SQL EDITOR (após Sprint 1):
+--   1) scripts/supabase_rls_strict_auth_uid.sql (funções auxiliares, se ainda não aplicado)
+--   2) scripts/sprint1_security_migration.sql
+--   3) ESTE arquivo
+--
+-- PRÉ-REQUISITO: auth_user_id preenchido nos perfis que fazem login.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- A) Normalização de e-mail
+-- ---------------------------------------------------------------------------
+create or replace function public.app_norm_email (em text) returns text
+language sql
+immutable
+as $$
+  select case
+    when em is null or trim(em) = '' then null
+    else lower(trim(em))
+  end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- B) Índices únicos de e-mail (case-insensitive, trim)
+-- ---------------------------------------------------------------------------
+create unique index if not exists uq_personals_email_norm
+  on public.personals (public.app_norm_email (email))
+  where public.app_norm_email (email) is not null;
+
+create unique index if not exists uq_students_email_norm
+  on public.students (public.app_norm_email (email))
+  where public.app_norm_email (email) is not null
+    and coalesce(is_archived, false) = false;
+
+-- ---------------------------------------------------------------------------
+-- C) Anti-colisão: mesmo e-mail não pode existir em personals E students
+-- ---------------------------------------------------------------------------
+create or replace function public.app_assert_login_email_unique ()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  norm_em text;
+begin
+  norm_em := public.app_norm_email(
+    case TG_TABLE_NAME
+      when 'personals' then NEW.email
+      when 'students' then NEW.email
+      else null
+    end
+  );
+
+  if norm_em is null then
+    return NEW;
+  end if;
+
+  if TG_TABLE_NAME = 'personals' then
+    if exists (
+      select 1
+      from public.students s
+      where public.app_norm_email (s.email) = norm_em
+        and coalesce(s.is_archived, false) = false
+        and (TG_OP = 'INSERT' or s.id is distinct from NEW.id)
+    ) then
+      raise exception
+        'E-mail já utilizado por um aluno ativo (%).', norm_em
+        using errcode = '23505';
+    end if;
+  elsif TG_TABLE_NAME = 'students' then
+    if coalesce(NEW.is_archived, false) then
+      return NEW;
+    end if;
+    if exists (
+      select 1
+      from public.personals p
+      where public.app_norm_email (p.email) = norm_em
+    ) then
+      raise exception
+        'E-mail já utilizado por um personal (%).', norm_em
+        using errcode = '23505';
+    end if;
+  end if;
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_personals_login_email_unique on public.personals;
+create trigger trg_personals_login_email_unique
+  before insert or update of email on public.personals
+  for each row execute function public.app_assert_login_email_unique ();
+
+drop trigger if exists trg_students_login_email_unique on public.students;
+create trigger trg_students_login_email_unique
+  before insert or update of email, is_archived on public.students
+  for each row execute function public.app_assert_login_email_unique ();
+
+-- ---------------------------------------------------------------------------
+-- D) Proteção de colunas privilegiadas (non-admin não pode alterar)
+-- ---------------------------------------------------------------------------
+create or replace function public.app_guard_privileged_personal_columns ()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.app_is_admin_personal () then
+    return NEW;
+  end if;
+
+  if NEW.is_admin is distinct from OLD.is_admin then
+    raise exception 'Apenas administradores podem alterar is_admin.'
+      using errcode = '42501';
+  end if;
+
+  if NEW.access_tier is distinct from OLD.access_tier then
+    raise exception 'Apenas administradores podem alterar access_tier.'
+      using errcode = '42501';
+  end if;
+
+  if NEW.max_students_cap is distinct from OLD.max_students_cap then
+    raise exception 'Apenas administradores podem alterar max_students_cap.'
+      using errcode = '42501';
+  end if;
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_personals_guard_privileged on public.personals;
+create trigger trg_personals_guard_privileged
+  before update on public.personals
+  for each row execute function public.app_guard_privileged_personal_columns ();
+
+create or replace function public.app_guard_privileged_student_columns ()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.app_is_admin_personal () then
+    return NEW;
+  end if;
+
+  if NEW.access_tier is distinct from OLD.access_tier then
+    raise exception 'Apenas administradores podem alterar access_tier do aluno.'
+      using errcode = '42501';
+  end if;
+
+  if NEW.anamnese_completed is distinct from OLD.anamnese_completed then
+    raise exception 'Apenas administradores podem alterar anamnese_completed.'
+      using errcode = '42501';
+  end if;
+
+  if NEW.premium_plan_expires_at is distinct from OLD.premium_plan_expires_at then
+    raise exception 'Apenas administradores podem alterar premium_plan_expires_at.'
+      using errcode = '42501';
+  end if;
+
+  if NEW.created_by_personal_id is distinct from OLD.created_by_personal_id then
+    raise exception 'Apenas administradores podem reatribuir created_by_personal_id.'
+      using errcode = '42501';
+  end if;
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_students_guard_privileged on public.students;
+create trigger trg_students_guard_privileged
+  before update on public.students
+  for each row execute function public.app_guard_privileged_student_columns ();
+
+-- ---------------------------------------------------------------------------
+-- E) Políticas RLS reforçadas — UPDATE com colunas sensíveis só para admin
+-- ---------------------------------------------------------------------------
+drop policy if exists personals_update_auth on public.personals;
+create policy personals_update_auth on public.personals
+  for update to authenticated
+  using (
+    public.app_is_admin_personal ()
+    or public.app_my_personal_id () is not distinct from id
+  )
+  with check (
+    public.app_is_admin_personal ()
+    or (
+      public.app_my_personal_id () is not distinct from id
+      and is_admin is not distinct from (
+        select p.is_admin from public.personals p where p.id = id
+      )
+      and access_tier is not distinct from (
+        select p.access_tier from public.personals p where p.id = id
+      )
+      and max_students_cap is not distinct from (
+        select p.max_students_cap from public.personals p where p.id = id
+      )
+    )
+  );
+
+drop policy if exists students_update_auth on public.students;
+create policy students_update_auth on public.students
+  for update to authenticated
+  using (public.app_can_access_student_row (id))
+  with check (
+    public.app_is_admin_personal ()
+    or (
+      public.app_can_access_student_row (id)
+      and access_tier is not distinct from (
+        select s.access_tier from public.students s where s.id = id
+      )
+      and anamnese_completed is not distinct from (
+        select s.anamnese_completed from public.students s where s.id = id
+      )
+      and premium_plan_expires_at is not distinct from (
+        select s.premium_plan_expires_at from public.students s where s.id = id
+      )
+      and created_by_personal_id is not distinct from (
+        select s.created_by_personal_id from public.students s where s.id = id
+      )
+    )
+  );
+
+-- ---------------------------------------------------------------------------
+-- F) View segura de perfil (privilégios para o app — RBAC server-side)
+-- ---------------------------------------------------------------------------
+create or replace view public.app_my_server_profile as
+select
+  'personal'::text as profile_kind,
+  p.id as profile_id,
+  p.is_admin,
+  p.access_tier,
+  p.max_students_cap,
+  null::boolean as anamnese_completed,
+  p.auth_user_id
+from public.personals p
+where p.auth_user_id = auth.uid ()
+union all
+select
+  'student'::text,
+  s.id,
+  false,
+  s.access_tier,
+  null::integer,
+  s.anamnese_completed,
+  s.auth_user_id
+from public.students s
+where s.auth_user_id = auth.uid ()
+  and coalesce(s.is_archived, false) = false;
+
+grant select on public.app_my_server_profile to authenticated;
+revoke all on public.app_my_server_profile from anon;
