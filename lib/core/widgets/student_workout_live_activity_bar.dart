@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -48,11 +49,16 @@ class _StudentWorkoutLiveActivityLayerState
       context.read<RestLiveActivityController>().syncWithWallClock();
       setState(() {});
     }
-    if (Platform.isIOS &&
-        mounted &&
+    if (mounted &&
         (state == AppLifecycleState.inactive ||
             state == AppLifecycleState.paused)) {
-      _flushIosLiveActivityForLockScreen();
+      final rest = context.read<RestLiveActivityController>();
+      if (rest.hasRestSession && !rest.inPostPhase) {
+        unawaited(rest.armEndNotificationForBackground());
+      }
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        _flushIosLiveActivityForLockScreen();
+      }
     }
   }
 
@@ -129,12 +135,6 @@ class _StudentWorkoutLiveActivityLayerState
           builder: (context, snap) {
             final list = snap.data ?? [];
             final w = list.isEmpty ? null : list.first;
-            if (w == null && restCtrl.hasRestSession) {
-              Future.microtask(() {
-                if (!context.mounted) return;
-                context.read<RestLiveActivityController>().clear();
-              });
-            }
             final show = w != null;
             _ensureWorkoutTick(show || restCtrl.hasRestSession);
 

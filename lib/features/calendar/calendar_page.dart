@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -378,141 +381,217 @@ class _CalendarPageState extends State<CalendarPage> {
                 itemBuilder: (context, index) {
                   final monthDate = _dateFromPageIndex(index);
                   final days = _daysInMonth(monthDate);
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(8),
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                        ),
-                    itemCount: days.length,
-                    itemBuilder: (context, i) {
-                      final date = days[i];
-                      final inMonth = _isCurrentMonthForDate(date, monthDate);
-                      final today = _isToday(date);
-                      final selected = _isSameDay(date, _selectedDay);
-                      final key = '${date.year}-${date.month}-${date.day}';
-                      final dayList = byDay[key] ?? const [];
-                      final activeList = isAdmin
-                          ? dayList
-                          : dayList
-                                .where((w) => w.status != 'cancelled')
-                                .toList();
-                      final hasWork = inMonth && activeList.isNotEmpty;
-                      final accent = activeList.isEmpty
-                          ? null
-                          : _workoutAccentForDay(
-                              date,
-                              dayList,
-                              includeCancelled: isAdmin,
-                            );
 
-                      final borderColor = today
-                          ? Colors.white.withValues(alpha: 0.75)
-                          : selected
-                          ? AppColors.accentGreen.withValues(alpha: 0.85)
-                          : (hasWork && accent != null)
-                          ? AppColors.workoutDayBorderTint(accent)
-                          : Colors.transparent;
-                      final borderWidth =
-                          today || selected || (hasWork && accent != null)
-                          ? 2.0
-                          : 0.0;
+                  Widget buildMonthGrid({
+                    double gridPad = 8,
+                    double gridGap = 8,
+                    double dayScale = 1,
+                    double? dayExtent,
+                  }) {
+                    final dayRadius = (8.0 * dayScale).clamp(3.0, 8.0);
+                    return GridView.builder(
+                      padding: EdgeInsets.all(gridPad),
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 7,
+                        mainAxisSpacing: gridGap,
+                        crossAxisSpacing: gridGap,
+                        mainAxisExtent: dayExtent,
+                      ),
+                      itemCount: days.length,
+                      itemBuilder: (context, i) {
+                        final date = days[i];
+                        final inMonth = _isCurrentMonthForDate(date, monthDate);
+                        final today = _isToday(date);
+                        final selected = _isSameDay(date, _selectedDay);
+                        final key = '${date.year}-${date.month}-${date.day}';
+                        final dayList = byDay[key] ?? const [];
+                        final activeList = isAdmin
+                            ? dayList
+                            : dayList
+                                  .where((w) => w.status != 'cancelled')
+                                  .toList();
+                        final hasWork = inMonth && activeList.isNotEmpty;
+                        final accent = activeList.isEmpty
+                            ? null
+                            : _workoutAccentForDay(
+                                date,
+                                dayList,
+                                includeCancelled: isAdmin,
+                              );
 
-                      Widget dayBackground;
-                      if (today) {
-                        dayBackground = ColoredBox(
-                          color: Colors.white.withValues(alpha: 0.42),
-                        );
-                      } else if (hasWork && accent != null) {
-                        dayBackground = ColoredBox(color: _tint(accent));
-                      } else {
-                        dayBackground = const ColoredBox(
-                          color: Colors.transparent,
-                        );
-                      }
+                        final borderColor = today
+                            ? Colors.white.withValues(alpha: 0.75)
+                            : selected
+                            ? AppColors.accentGreen.withValues(alpha: 0.85)
+                            : (hasWork && accent != null)
+                            ? AppColors.workoutDayBorderTint(accent)
+                            : Colors.transparent;
+                        final borderWidth =
+                            today || selected || (hasWork && accent != null)
+                            ? (2.0 * dayScale).clamp(1.0, 2.0)
+                            : 0.0;
 
-                      return GestureDetector(
-                        onTap: () async {
-                          if (!inMonth) return;
-                          if (_dayTapInFlight) return;
-                          _dayTapInFlight = true;
-                          setState(() => _selectedDay = date);
-                          try {
-                            await CalendarDayFlow.open(context, date, dayList);
-                          } finally {
-                            _dayTapInFlight = false;
-                          }
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: borderColor,
-                              width: borderWidth,
+                        Widget dayBackground;
+                        if (today) {
+                          dayBackground = ColoredBox(
+                            color: Colors.white.withValues(alpha: 0.42),
+                          );
+                        } else if (hasWork && accent != null) {
+                          dayBackground = ColoredBox(color: _tint(accent));
+                        } else {
+                          dayBackground = const ColoredBox(
+                            color: Colors.transparent,
+                          );
+                        }
+
+                        return GestureDetector(
+                          onTap: () async {
+                            if (!inMonth) return;
+                            if (_dayTapInFlight) return;
+                            _dayTapInFlight = true;
+                            setState(() => _selectedDay = date);
+                            try {
+                              await CalendarDayFlow.open(
+                                context,
+                                date,
+                                dayList,
+                              );
+                            } finally {
+                              _dayTapInFlight = false;
+                            }
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: borderColor,
+                                width: borderWidth,
+                              ),
+                              borderRadius: BorderRadius.circular(dayRadius),
                             ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              dayBackground,
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '${date.day}',
-                                    style: TextStyle(
-                                      color: today
-                                          ? Colors.black87
-                                          : inMonth
-                                          ? Colors.white
-                                          : Colors.white.withValues(alpha: 0.3),
-                                      fontWeight: today || selected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      fontSize: 16,
-                                      shadows: [
-                                        if (today)
-                                          const Shadow(
-                                            blurRadius: 3,
-                                            color: Color(0x99000000),
-                                          )
-                                        else
-                                          const Shadow(
-                                            blurRadius: 3,
-                                            color: Color(0x88000000),
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                dayBackground,
+                                Padding(
+                                  padding: EdgeInsets.all(2.0 * dayScale),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${date.day}',
+                                          style: TextStyle(
+                                            color: today
+                                                ? Colors.black87
+                                                : inMonth
+                                                ? Colors.white
+                                                : Colors.white.withValues(
+                                                    alpha: 0.3,
+                                                  ),
+                                            fontWeight: today || selected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                            fontSize: 16,
+                                            shadows: [
+                                              if (today)
+                                                const Shadow(
+                                                  blurRadius: 3,
+                                                  color: Color(0x99000000),
+                                                )
+                                              else
+                                                const Shadow(
+                                                  blurRadius: 3,
+                                                  color: Color(0x88000000),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (hasWork && accent != null)
+                                          Icon(
+                                            Icons.fitness_center,
+                                            size: 12,
+                                            color: today
+                                                ? accent.withValues(alpha: 0.92)
+                                                : accent.withValues(
+                                                    alpha: 0.82,
+                                                  ),
+                                            shadows: [
+                                              if (today)
+                                                Shadow(
+                                                  blurRadius: 2,
+                                                  color: accent.withValues(
+                                                    alpha: 0.35,
+                                                  ),
+                                                )
+                                              else
+                                                const Shadow(
+                                                  blurRadius: 2,
+                                                  color: Color(0x88000000),
+                                                ),
+                                            ],
                                           ),
                                       ],
                                     ),
                                   ),
-                                  if (hasWork && accent != null)
-                                    Icon(
-                                      Icons.fitness_center,
-                                      size: 12,
-                                      color: today
-                                          ? accent.withValues(alpha: 0.92)
-                                          : accent.withValues(alpha: 0.82),
-                                      shadows: [
-                                        if (today)
-                                          Shadow(
-                                            blurRadius: 2,
-                                            color: accent.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                          )
-                                        else
-                                          const Shadow(
-                                            blurRadius: 2,
-                                            color: Color(0x88000000),
-                                          ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  }
+
+                  if (!kIsWeb) {
+                    return buildMonthGrid();
+                  }
+
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      const columns = 7;
+                      const rows = 6;
+                      const gridPad = 8.0;
+                      const gridGap = 6.0;
+
+                      final maxCellWidth =
+                          (constraints.maxWidth -
+                              (gridPad * 2) -
+                              (gridGap * (columns - 1))) /
+                          columns;
+                      final maxCellHeight =
+                          (constraints.maxHeight -
+                              (gridPad * 2) -
+                              (gridGap * (rows - 1))) /
+                          rows;
+                      final dayExtent = math.max(
+                        1.0,
+                        math.min(72.0, math.min(maxCellWidth, maxCellHeight)),
+                      );
+                      final targetWidth =
+                          (dayExtent * columns) +
+                          (gridGap * (columns - 1)) +
+                          (gridPad * 2);
+                      final targetHeight =
+                          (dayExtent * rows) +
+                          (gridGap * (rows - 1)) +
+                          (gridPad * 2);
+                      final dayScale = (dayExtent / 72.0).clamp(0.5, 1.0);
+
+                      return Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: targetWidth,
+                          height: targetHeight,
+                          child: buildMonthGrid(
+                            gridPad: gridPad,
+                            gridGap: gridGap,
+                            dayScale: dayScale,
+                            dayExtent: dayExtent,
                           ),
                         ),
                       );

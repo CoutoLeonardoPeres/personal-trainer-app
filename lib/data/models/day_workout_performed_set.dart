@@ -5,6 +5,7 @@ import '../../domain/scoring.dart' as scoring;
 /// Uma série registrada na linha do treino do dia (carga + repetições feitas).
 class DayWorkoutPerformedSet {
   const DayWorkoutPerformedSet({
+    this.setId,
     this.loadKg,
     required this.reps,
     this.loggedAtMs,
@@ -13,6 +14,8 @@ class DayWorkoutPerformedSet {
     this.postRestModalMs,
   });
 
+  /// Identificador estável (UUID) — chave de merge append-only entre dispositivos.
+  final String? setId;
   final double? loadKg;
   final int reps;
 
@@ -28,7 +31,28 @@ class DayWorkoutPerformedSet {
   /// Tempo na modal após o bipe até o aluno fechar (ms) — uso em relatórios.
   final int? postRestModalMs;
 
+  DayWorkoutPerformedSet copyWith({
+    String? setId,
+    double? loadKg,
+    int? reps,
+    int? loggedAtMs,
+    int? restPrescribedSec,
+    int? restCountdownElapsedMs,
+    int? postRestModalMs,
+  }) =>
+      DayWorkoutPerformedSet(
+        setId: setId ?? this.setId,
+        loadKg: loadKg ?? this.loadKg,
+        reps: reps ?? this.reps,
+        loggedAtMs: loggedAtMs ?? this.loggedAtMs,
+        restPrescribedSec: restPrescribedSec ?? this.restPrescribedSec,
+        restCountdownElapsedMs:
+            restCountdownElapsedMs ?? this.restCountdownElapsedMs,
+        postRestModalMs: postRestModalMs ?? this.postRestModalMs,
+      );
+
   Map<String, dynamic> toJson() => {
+        if (setId != null && setId!.isNotEmpty) 'setId': setId,
         'loadKg': loadKg,
         'reps': reps,
         if (loggedAtMs != null) 'loggedAtMs': loggedAtMs,
@@ -45,6 +69,8 @@ class DayWorkoutPerformedSet {
     if (repsRaw == null) return null;
     final reps = (repsRaw is num) ? repsRaw.toInt() : int.tryParse('$repsRaw');
     if (reps == null || reps < 1) return null;
+    final setIdRaw = m['setId'];
+    final setId = setIdRaw == null ? null : setIdRaw.toString().trim();
     final loadRaw = m['loadKg'];
     double? loadKg;
     if (loadRaw != null) {
@@ -69,6 +95,7 @@ class DayWorkoutPerformedSet {
     }
 
     return DayWorkoutPerformedSet(
+      setId: setId != null && setId.isNotEmpty ? setId : null,
       loadKg: loadKg,
       reps: reps,
       loggedAtMs: loggedAtMs,

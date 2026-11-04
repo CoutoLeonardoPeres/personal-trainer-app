@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 class FreeAiTrainingReportService {
   const FreeAiTrainingReportService._();
@@ -24,12 +25,12 @@ class FreeAiTrainingReportService {
     final uri = Uri.tryParse(_endpoint);
     if (uri == null) return null;
 
-    final client = HttpClient()..connectionTimeout = timeout;
     try {
-      final req = await client.postUrl(uri).timeout(timeout);
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+      };
       if (_apiKey.trim().isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_apiKey');
+        headers['Authorization'] = 'Bearer $_apiKey';
       }
       final body = jsonEncode({
         'model': _model,
@@ -38,16 +39,17 @@ class FreeAiTrainingReportService {
             'role': 'system',
             'content':
                 'Você é um analista de performance em treinamento físico e escreve em português do Brasil. '
-                'Quando o relatório incluir anamnese (secções 7a, 7b, 7c), integre essas respostas de forma explícita na análise de adesão e no plano de ação.'
+                'Quando o relatório incluir anamnese (secções 7a, 7b, 7c), integre essas respostas de forma explícita na análise de adesão e no plano de ação.',
           },
           {'role': 'user', 'content': prompt},
         ],
         'temperature': 0.35,
       });
-      req.write(body);
-      final res = await req.close().timeout(timeout);
+      final res = await http
+          .post(uri, headers: headers, body: body)
+          .timeout(timeout);
       if (res.statusCode < 200 || res.statusCode >= 300) return null;
-      final responseText = await utf8.decodeStream(res).timeout(timeout);
+      final responseText = res.body;
       if (responseText.trim().isEmpty) return null;
       final decoded = jsonDecode(responseText);
       final choices = decoded is Map ? decoded['choices'] : null;
@@ -68,8 +70,6 @@ class FreeAiTrainingReportService {
       return null;
     } catch (_) {
       return null;
-    } finally {
-      client.close(force: true);
     }
   }
 }

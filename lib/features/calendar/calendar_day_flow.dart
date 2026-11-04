@@ -45,9 +45,14 @@ class CalendarDayFlow {
       if (!context.mounted) return;
       final overlay = Overlay.of(context, rootOverlay: true);
       entry = OverlayEntry(
-        builder: (_) => ColoredBox(
-          color: Colors.black.withValues(alpha: 0.42),
-          child: const Center(child: FuturisticLoadingView(size: 68)),
+        builder: (_) => Stack(
+          children: [
+            ModalBarrier(
+              dismissible: false,
+              color: Colors.black.withValues(alpha: 0.42),
+            ),
+            const Center(child: FuturisticLoadingView(size: 68)),
+          ],
         ),
       );
       overlay.insert(entry!);
@@ -199,6 +204,7 @@ class CalendarDayFlow {
     });
     if (!context.mounted) return;
 
+    var studentTapLocked = false;
     await showAppModalSheet<void>(
       context: context,
       title: label,
@@ -247,19 +253,50 @@ class CalendarDayFlow {
                             name: s.name,
                             subtitle: 'Toque para escolher o que programar',
                             onTap: () async {
+                              if (studentTapLocked) return;
+                              studentTapLocked = true;
                               Navigator.pop(ctx);
-                              final bundles = await repo.getProgrammableBundles(
-                                s.id,
-                                day,
-                              );
-                              if (!context.mounted) return;
-                              await _pickBundleAndProgram(
-                                context,
-                                repo,
-                                s.id,
-                                day,
-                                bundles,
-                              );
+                              try {
+                                late List<ProgrammableBundle> bundles;
+                                await _runWithWorkoutOpeningLoading(
+                                  context,
+                                  () async {
+                                    bundles = await repo
+                                        .getProgrammableBundles(s.id, day)
+                                        .timeout(const Duration(seconds: 5));
+                                  },
+                                );
+                                if (!context.mounted) return;
+                                await _pickBundleAndProgram(
+                                  context,
+                                  repo,
+                                  s.id,
+                                  day,
+                                  bundles,
+                                );
+                              } on TimeoutException {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'A lista demorou além do esperado. '
+                                      'Feche e abra a data novamente.',
+                                    ),
+                                  ),
+                                );
+                              } catch (_) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Não foi possível carregar os grupos '
+                                      'de treino agora.',
+                                    ),
+                                  ),
+                                );
+                              } finally {
+                                studentTapLocked = false;
+                              }
                             },
                           ),
                         );
@@ -296,6 +333,7 @@ class CalendarDayFlow {
       return;
     }
 
+    var bundleTapLocked = false;
     await showAppModalSheet<void>(
       context: context,
       title: 'O que programar?',
@@ -314,8 +352,20 @@ class CalendarDayFlow {
                 title: b.title,
                 exerciseCount: b.rows.length,
                 onTap: () async {
+                  if (bundleTapLocked) return;
+                  bundleTapLocked = true;
                   Navigator.pop(ctx);
-                  await _reviewSnapshotModal(context, repo, studentId, day, b);
+                  try {
+                    await _reviewSnapshotModal(
+                      context,
+                      repo,
+                      studentId,
+                      day,
+                      b,
+                    );
+                  } finally {
+                    bundleTapLocked = false;
+                  }
                 },
               ),
             );
@@ -1621,14 +1671,20 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
     if (listIndex == 0) return const SizedBox.shrink();
     return ReorderableDragStartListener(
       index: listIndex,
-      child: SizedBox(
-        width: 40,
-        height: 40,
-        child: Center(
-          child: Icon(
-            Icons.drag_indicator_rounded,
-            color: Colors.white.withValues(alpha: 0.58),
-            size: iconSize,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grab,
+        child: Tooltip(
+          message: 'Arraste para reorganizar',
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Center(
+              child: Icon(
+                Icons.drag_indicator_rounded,
+                color: Colors.white.withValues(alpha: 0.72),
+                size: iconSize,
+              ),
+            ),
           ),
         ),
       ),
@@ -1793,131 +1849,151 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
                         return Padding(
                           key: ValueKey('snap_${r.item.id}'),
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: Slidable(
-                            key: ValueKey('snap_slidable_${r.item.id}'),
-                            endActionPane: ActionPane(
-                              motion: const DrawerMotion(),
-                              extentRatio: 0.56,
-                              children: [
-                                SlidableAction(
-                                  onPressed: (_) => _combineFromBlock(block),
-                                  backgroundColor: const Color(0xFF7E57C2),
-                                  foregroundColor: Colors.white,
-                                  icon: Icons.merge_type_rounded,
-                                  label: 'Combinar',
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(12),
-                                    bottomLeft: Radius.circular(12),
-                                  ),
-                                ),
-                                SlidableAction(
-                                  onPressed: (_) => _removeBlock(block),
-                                  backgroundColor: AppColors.danger.withValues(
-                                    alpha: 0.92,
-                                  ),
-                                  foregroundColor: Colors.white,
-                                  icon: Icons.delete_outline_rounded,
-                                  label: 'Excluir',
-                                  borderRadius: const BorderRadius.only(
-                                    topRight: Radius.circular(12),
-                                    bottomRight: Radius.circular(12),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              clipBehavior: Clip.antiAlias,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      AppColors.calendarFutureProgrammed
-                                          .withValues(alpha: 0.2),
-                                      AppColors.cadastroCardBorder.withValues(
-                                        alpha: 0.11,
-                                      ),
-                                      Colors.black.withValues(alpha: 0.26),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: AppColors.cadastroCardBorder
-                                        .withValues(alpha: 0.82),
-                                    width: 1.05,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.calendarFutureProgrammed
-                                          .withValues(alpha: 0.1),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      child: InkWell(
-                                        onTap: () => _editRowWithId(r.item.id),
-                                        child: Padding(
-                                          padding: const EdgeInsets.fromLTRB(
-                                            12,
-                                            8,
-                                            4,
-                                            8,
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                r.exerciseName,
-                                                style: const TextStyle(
-                                                  color: AppColors.textPrimary,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 14,
-                                                  height: 1.15,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                detail,
-                                                style: TextStyle(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.52),
-                                                  fontSize: 12,
-                                                  height: 1.25,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Slidable(
+                                  key: ValueKey('snap_slidable_${r.item.id}'),
+                                  endActionPane: ActionPane(
+                                    motion: const DrawerMotion(),
+                                    extentRatio: 0.56,
+                                    children: [
+                                      SlidableAction(
+                                        onPressed: (_) =>
+                                            _combineFromBlock(block),
+                                        backgroundColor: const Color(
+                                          0xFF7E57C2,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                        icon: Icons.merge_type_rounded,
+                                        label: 'Combinar',
+                                        borderRadius: const BorderRadius.only(
+                                          topLeft: Radius.circular(12),
+                                          bottomLeft: Radius.circular(12),
                                         ),
                                       ),
-                                    ),
-                                    if (exerciseEntityHasAnyVideoUrl(
-                                      idToExercise[r.item.exerciseId],
-                                    ))
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children:
-                                            exerciseRegistryVideoTrailingButtons(
-                                              context,
-                                              idToExercise[r.item.exerciseId],
-                                              r.exerciseName,
-                                              iconSize: 20,
-                                            ),
+                                      SlidableAction(
+                                        onPressed: (_) => _removeBlock(block),
+                                        backgroundColor: AppColors.danger
+                                            .withValues(alpha: 0.92),
+                                        foregroundColor: Colors.white,
+                                        icon: Icons.delete_outline_rounded,
+                                        label: 'Excluir',
+                                        borderRadius: const BorderRadius.only(
+                                          topRight: Radius.circular(12),
+                                          bottomRight: Radius.circular(12),
+                                        ),
                                       ),
-                                    _snapshotDragHandle(i),
-                                  ],
+                                    ],
+                                  ),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    clipBehavior: Clip.antiAlias,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            AppColors.calendarFutureProgrammed
+                                                .withValues(alpha: 0.2),
+                                            AppColors.cadastroCardBorder
+                                                .withValues(alpha: 0.11),
+                                            Colors.black.withValues(
+                                              alpha: 0.26,
+                                            ),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: AppColors.cadastroCardBorder
+                                              .withValues(alpha: 0.82),
+                                          width: 1.05,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: AppColors
+                                                .calendarFutureProgrammed
+                                                .withValues(alpha: 0.1),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 3),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          Expanded(
+                                            child: InkWell(
+                                              onTap: () =>
+                                                  _editRowWithId(r.item.id),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      12,
+                                                      8,
+                                                      4,
+                                                      8,
+                                                    ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      r.exerciseName,
+                                                      style: const TextStyle(
+                                                        color: AppColors
+                                                            .textPrimary,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        fontSize: 14,
+                                                        height: 1.15,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 3),
+                                                    Text(
+                                                      detail,
+                                                      style: TextStyle(
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: 0.52,
+                                                            ),
+                                                        fontSize: 12,
+                                                        height: 1.25,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          if (exerciseEntityHasAnyVideoUrl(
+                                            idToExercise[r.item.exerciseId],
+                                          ))
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children:
+                                                  exerciseRegistryVideoTrailingButtons(
+                                                    context,
+                                                    idToExercise[r
+                                                        .item
+                                                        .exerciseId],
+                                                    r.exerciseName,
+                                                    iconSize: 20,
+                                                  ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              _snapshotDragHandle(i),
+                            ],
                           ),
                         );
                       }
@@ -1941,210 +2017,226 @@ class _ProgramSnapshotEditorState extends State<_ProgramSnapshotEditor> {
                           'snap_combo_${block.first.item.comboId}_$blockIndex',
                         ),
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: Slidable(
-                          key: ValueKey(
-                            'snap_slidable_combo_${block.first.item.comboId}',
-                          ),
-                          endActionPane: ActionPane(
-                            motion: const DrawerMotion(),
-                            extentRatio: 0.56,
-                            children: [
-                              SlidableAction(
-                                onPressed: (_) => _combineFromBlock(block),
-                                backgroundColor: const Color(0xFF7E57C2),
-                                foregroundColor: Colors.white,
-                                icon: Icons.merge_type_rounded,
-                                label: 'Combinar',
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(12),
-                                  bottomLeft: Radius.circular(12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Slidable(
+                                key: ValueKey(
+                                  'snap_slidable_combo_${block.first.item.comboId}',
                                 ),
-                              ),
-                              SlidableAction(
-                                onPressed: (_) => _removeBlock(block),
-                                backgroundColor: AppColors.danger.withValues(
-                                  alpha: 0.92,
-                                ),
-                                foregroundColor: Colors.white,
-                                icon: Icons.delete_outline_rounded,
-                                label: 'Excluir',
-                                borderRadius: const BorderRadius.only(
-                                  topRight: Radius.circular(12),
-                                  bottomRight: Radius.circular(12),
-                                ),
-                              ),
-                            ],
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            clipBehavior: Clip.antiAlias,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    AppColors.calendarFutureProgrammed
-                                        .withValues(alpha: 0.2),
-                                    AppColors.cadastroCardBorder.withValues(
-                                      alpha: 0.11,
+                                endActionPane: ActionPane(
+                                  motion: const DrawerMotion(),
+                                  extentRatio: 0.56,
+                                  children: [
+                                    SlidableAction(
+                                      onPressed: (_) =>
+                                          _combineFromBlock(block),
+                                      backgroundColor: const Color(0xFF7E57C2),
+                                      foregroundColor: Colors.white,
+                                      icon: Icons.merge_type_rounded,
+                                      label: 'Combinar',
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(12),
+                                        bottomLeft: Radius.circular(12),
+                                      ),
                                     ),
-                                    Colors.black.withValues(alpha: 0.26),
+                                    SlidableAction(
+                                      onPressed: (_) => _removeBlock(block),
+                                      backgroundColor: AppColors.danger
+                                          .withValues(alpha: 0.92),
+                                      foregroundColor: Colors.white,
+                                      icon: Icons.delete_outline_rounded,
+                                      label: 'Excluir',
+                                      borderRadius: const BorderRadius.only(
+                                        topRight: Radius.circular(12),
+                                        bottomRight: Radius.circular(12),
+                                      ),
+                                    ),
                                   ],
                                 ),
-                                border: Border.all(
-                                  color: AppColors.cadastroCardBorder
-                                      .withValues(alpha: 0.82),
-                                  width: 1.05,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.calendarFutureProgrammed
-                                        .withValues(alpha: 0.1),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: InkWell(
-                                      onTap: () async {
-                                        final choice =
-                                            await showModalBottomSheet<
-                                              WeekScheduleRow
-                                            >(
-                                              context: context,
-                                              backgroundColor:
-                                                  AppColors.barBackground,
-                                              builder: (ctx) => SafeArea(
-                                                child: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment
-                                                          .stretch,
-                                                  children: [
-                                                    const Padding(
-                                                      padding: EdgeInsets.all(
-                                                        16,
-                                                      ),
-                                                      child: Text(
-                                                        'Editar exercício do bloco',
-                                                        style: TextStyle(
-                                                          color: AppColors
-                                                              .textPrimary,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                          fontSize: 16,
-                                                        ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  clipBehavior: Clip.antiAlias,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          AppColors.calendarFutureProgrammed
+                                              .withValues(alpha: 0.2),
+                                          AppColors.cadastroCardBorder
+                                              .withValues(alpha: 0.11),
+                                          Colors.black.withValues(alpha: 0.26),
+                                        ],
+                                      ),
+                                      border: Border.all(
+                                        color: AppColors.cadastroCardBorder
+                                            .withValues(alpha: 0.82),
+                                        width: 1.05,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppColors
+                                              .calendarFutureProgrammed
+                                              .withValues(alpha: 0.1),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: () async {
+                                              final choice =
+                                                  await showModalBottomSheet<
+                                                    WeekScheduleRow
+                                                  >(
+                                                    context: context,
+                                                    backgroundColor:
+                                                        AppColors.barBackground,
+                                                    builder: (ctx) => SafeArea(
+                                                      child: Column(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .stretch,
+                                                        children: [
+                                                          const Padding(
+                                                            padding:
+                                                                EdgeInsets.all(
+                                                                  16,
+                                                                ),
+                                                            child: Text(
+                                                              'Editar exercício do bloco',
+                                                              style: TextStyle(
+                                                                color: AppColors
+                                                                    .textPrimary,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                fontSize: 16,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          for (final r in block)
+                                                            ListTile(
+                                                              title: Text(
+                                                                r.exerciseName,
+                                                                style: const TextStyle(
+                                                                  color: AppColors
+                                                                      .textPrimary,
+                                                                ),
+                                                              ),
+                                                              onTap: () =>
+                                                                  Navigator.pop(
+                                                                    ctx,
+                                                                    r,
+                                                                  ),
+                                                            ),
+                                                        ],
                                                       ),
                                                     ),
-                                                    for (final r in block)
-                                                      ListTile(
-                                                        title: Text(
-                                                          r.exerciseName,
-                                                          style: const TextStyle(
-                                                            color: AppColors
-                                                                .textPrimary,
+                                                  );
+                                              if (!context.mounted ||
+                                                  choice == null) {
+                                                return;
+                                              }
+                                              await _editRowWithId(
+                                                choice.item.id,
+                                              );
+                                            },
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                    12,
+                                                    8,
+                                                    4,
+                                                    8,
+                                                  ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    'Combinação: $names',
+                                                    style: const TextStyle(
+                                                      color:
+                                                          AppColors.textPrimary,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 14,
+                                                      height: 1.15,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    detailCombo.toString(),
+                                                    style: TextStyle(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.52,
                                                           ),
-                                                        ),
-                                                        onTap: () =>
-                                                            Navigator.pop(
-                                                              ctx,
-                                                              r,
-                                                            ),
+                                                      fontSize: 12,
+                                                      height: 1.25,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        if (block.any(
+                                          (r) => exerciseEntityHasAnyVideoUrl(
+                                            idToExercise[r.item.exerciseId],
+                                          ),
+                                        ))
+                                          IconButton(
+                                            tooltip: 'Vídeos do bloco',
+                                            padding: EdgeInsets.zero,
+                                            constraints:
+                                                const BoxConstraints.tightFor(
+                                                  width: 40,
+                                                  height: 40,
+                                                ),
+                                            icon: Icon(
+                                              Icons.ondemand_video_rounded,
+                                              color:
+                                                  kExerciseRegistryRowIconTint,
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                showExerciseBlockVideoLinksBottomSheet(
+                                                  context,
+                                                  title: 'Vídeos do bloco',
+                                                  lines: [
+                                                    for (final r in block)
+                                                      (
+                                                        name: r.exerciseName,
+                                                        exercise:
+                                                            idToExercise[r
+                                                                .item
+                                                                .exerciseId],
                                                       ),
                                                   ],
                                                 ),
-                                              ),
-                                            );
-                                        if (!context.mounted ||
-                                            choice == null) {
-                                          return;
-                                        }
-                                        await _editRowWithId(choice.item.id);
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          12,
-                                          8,
-                                          4,
-                                          8,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Combinação: $names',
-                                              style: const TextStyle(
-                                                color: AppColors.textPrimary,
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 14,
-                                                height: 1.15,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              detailCombo.toString(),
-                                              style: TextStyle(
-                                                color: Colors.white.withValues(
-                                                  alpha: 0.52,
-                                                ),
-                                                fontSize: 12,
-                                                height: 1.25,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                          ),
+                                      ],
                                     ),
                                   ),
-                                  if (block.any(
-                                    (r) => exerciseEntityHasAnyVideoUrl(
-                                      idToExercise[r.item.exerciseId],
-                                    ),
-                                  ))
-                                    IconButton(
-                                      tooltip: 'Vídeos do bloco',
-                                      padding: EdgeInsets.zero,
-                                      constraints:
-                                          const BoxConstraints.tightFor(
-                                            width: 40,
-                                            height: 40,
-                                          ),
-                                      icon: Icon(
-                                        Icons.ondemand_video_rounded,
-                                        color: kExerciseRegistryRowIconTint,
-                                        size: 20,
-                                      ),
-                                      onPressed: () =>
-                                          showExerciseBlockVideoLinksBottomSheet(
-                                            context,
-                                            title: 'Vídeos do bloco',
-                                            lines: [
-                                              for (final r in block)
-                                                (
-                                                  name: r.exerciseName,
-                                                  exercise:
-                                                      idToExercise[r
-                                                          .item
-                                                          .exerciseId],
-                                                ),
-                                            ],
-                                          ),
-                                    ),
-                                  _snapshotDragHandle(i),
-                                ],
+                                ),
                               ),
                             ),
-                          ),
+                            _snapshotDragHandle(i),
+                          ],
                         ),
                       );
                     },

@@ -33,6 +33,10 @@ abstract final class RestTimerSound {
       AudioContext(
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.playback,
+          options: {
+            AVAudioSessionOptions.mixWithOthers,
+            AVAudioSessionOptions.duckOthers,
+          },
         ),
         android: AudioContextAndroid(
           isSpeakerphoneOn: true,

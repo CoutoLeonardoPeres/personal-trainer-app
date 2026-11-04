@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/local/app_database.dart';
+import 'server_profile_service.dart';
 
 /// Quem está usando o app localmente (até haver login real).
 enum SessionRole {
@@ -31,13 +32,45 @@ class AppSession extends ChangeNotifier {
   var _bootstrapped = false;
   var _requiresLocalRelogin = false;
 
-  /// Personal com papel «Personal» na UI mas com [PersonalEntity.isAdmin] no SQLite —
-  /// deve ver todos os alunos, catálogo e sync como administrador.
+  /// Personal com flag admin validada pelo servidor (não só SQLite local).
   bool _personalDbIsAdmin = false;
+
+  /// Privilégios obtidos do Postgres com JWT (fonte autoritativa quando presente).
+  ServerProfileSnapshot? _serverProfile;
 
   SessionRole get role => _role;
   String? get personalId => _personalId;
   String? get studentId => _studentId;
+
+  ServerProfileSnapshot? get serverProfile => _serverProfile;
+
+  /// Tier comercial do aluno: servidor > local.
+  String? get authoritativeStudentAccessTier {
+    if (!isStudent) return null;
+    if (_serverProfile?.isStudent == true) return _serverProfile!.accessTier;
+    return null;
+  }
+
+  /// Tier comercial do personal: servidor > local.
+  String? get authoritativePersonalAccessTier {
+    if (!isPersonalTrainer && !isAdminPersonal) return null;
+    if (_serverProfile?.isPersonal == true) return _serverProfile!.accessTier;
+    return null;
+  }
+
+  int? get authoritativePersonalMaxStudentsCap {
+    if (_serverProfile?.isPersonal == true) {
+      return _serverProfile!.maxStudentsCap;
+    }
+    return null;
+  }
+
+  bool get authoritativeAnamneseCompleted {
+    if (_serverProfile?.isStudent == true) {
+      return _serverProfile!.anamneseCompleted;
+    }
+    return true;
+  }
 
   /// Quando true, o arranque deve mostrar a tela de login local em vez do shell.
   bool get requiresLocalRelogin => _requiresLocalRelogin;
@@ -46,32 +79,61 @@ class AppSession extends ChangeNotifier {
   bool get isPersonalTrainer => _role == SessionRole.personalTrainer;
   bool get isStudent => _role == SessionRole.student;
 
-  /// Administrador por papel **ou** personal com flag `is_admin` no cadastro (mesmo com papel «Personal»).
+  /// Administrador: papel explícito **ou** flag admin validada pelo servidor.
   bool get hasFullOrgAccess =>
-      isAdminPersonal || (isPersonalTrainer && _personalDbIsAdmin);
+      isAdminPersonal ||
+      (isPersonalTrainer &&
+          (_serverProfile?.isAdmin == true || _personalDbIsAdmin));
 
-  /// Atualiza [_personalDbIsAdmin] a partir do SQLite (chamar após boot, troca de sessão ou pull de personals).
+  void applyServerProfile(ServerProfileSnapshot? snapshot) {
+    _serverProfile = snapshot;
+    if (snapshot != null && snapshot.isPersonal) {
+      _personalDbIsAdmin = snapshot.isAdmin;
+    } else if (_role != SessionRole.personalTrainer) {
+      _personalDbIsAdmin = false;
+    }
+    notifyListeners();
+  }
+
+  void clearServerProfile() {
+    _serverProfile = null;
+    if (_role != SessionRole.personalTrainer) {
+      _personalDbIsAdmin = false;
+    }
+    notifyListeners();
+  }
+
+  /// Atualiza privilégios a partir do Postgres (JWT); SQLite só como fallback offline.
   Future<void> hydratePersonalAdminFlag(AppDatabase db) async {
     if (_role != SessionRole.personalTrainer) {
-      if (_personalDbIsAdmin) {
+      if (_personalDbIsAdmin || _serverProfile != null) {
         _personalDbIsAdmin = false;
+        _serverProfile = null;
         notifyListeners();
       }
       return;
     }
     final pid = _personalId;
     if (pid == null) {
-      if (_personalDbIsAdmin) {
-        _personalDbIsAdmin = false;
-        notifyListeners();
-      }
+      clearServerProfile();
       return;
     }
-    final p = await (db.select(
+
+    final row = await (db.select(
       db.personals,
     )..where((x) => x.id.equals(pid))).getSingleOrNull();
-    final next = p?.isAdmin ?? false;
-    if (_personalDbIsAdmin != next) {
+    final authId = row?.authUserId?.trim();
+    if (authId != null && authId.isNotEmpty) {
+      final snap = await ServerProfileService.fetchForAuthUser(authId);
+      if (snap != null && snap.profileId == pid) {
+        applyServerProfile(snap);
+        return;
+      }
+    }
+
+    final next = row?.isAdmin ?? false;
+    if (_personalDbIsAdmin != next || _serverProfile != null) {
+      _serverProfile = null;
       _personalDbIsAdmin = next;
       notifyListeners();
     }
@@ -112,6 +174,7 @@ class AppSession extends ChangeNotifier {
       _personalId = null;
       _studentId = null;
       _personalDbIsAdmin = false;
+      _serverProfile = null;
       notifyListeners();
       return;
     }
@@ -136,11 +199,12 @@ class AppSession extends ChangeNotifier {
     _personalId = null;
     _studentId = null;
     _personalDbIsAdmin = false;
+    _serverProfile = null;
     notifyListeners();
   }
 
-  /// Após login local bem-sucedido na tela dedicada.
-  Future<void> completeLocalLoginAfterPasswordCheck({
+  /// Após login com Supabase Auth e ligação ao perfil local.
+  Future<void> completeAuthLogin({
     required SessionRole role,
     String? personalId,
     String? studentId,
@@ -150,6 +214,19 @@ class AppSession extends ChangeNotifier {
     _requiresLocalRelogin = false;
     await setSession(role: role, personalId: personalId, studentId: studentId);
   }
+
+  /// Legado: redireciona para [completeAuthLogin].
+  @Deprecated('Use completeAuthLogin após Supabase Auth.')
+  Future<void> completeLocalLoginAfterPasswordCheck({
+    required SessionRole role,
+    String? personalId,
+    String? studentId,
+  }) =>
+      completeAuthLogin(
+        role: role,
+        personalId: personalId,
+        studentId: studentId,
+      );
 
   Future<void> setSession({
     required SessionRole role,
@@ -177,7 +254,7 @@ class AppSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Primeira execução: escolhe um admin ou o primeiro personal.
+  /// Primeira execução: exige login via Supabase Auth (sem auto-entrar como admin).
   Future<void> bootstrapIfNeeded(AppDatabase db) async {
     if (_bootstrapped) return;
     _bootstrapped = true;
@@ -188,6 +265,7 @@ class AppSession extends ChangeNotifier {
       _personalId = null;
       _studentId = null;
       _personalDbIsAdmin = false;
+      _serverProfile = null;
       notifyListeners();
       return;
     }
@@ -195,26 +273,7 @@ class AppSession extends ChangeNotifier {
       await loadFromPrefs();
       return;
     }
-    final personals = await (db.select(
-      db.personals,
-    )..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
-    if (personals.isEmpty) {
-      await setSession(role: SessionRole.adminPersonal, personalId: null);
-      return;
-    }
-    PersonalEntity? admin;
-    for (final e in personals) {
-      if (e.isAdmin) {
-        admin = e;
-        break;
-      }
-    }
-    admin ??= personals.first;
-    if (admin.isAdmin) {
-      await setSession(role: SessionRole.adminPersonal, personalId: admin.id);
-    } else {
-      await setSession(role: SessionRole.personalTrainer, personalId: admin.id);
-    }
+    await markLoggedOutRequiresRelogin();
   }
 
   /// Corrige prefs incoerentes que deixam a UI “vazia” sem apagar o SQLite:

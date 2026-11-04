@@ -78,7 +78,12 @@ class WorkoutActivityLocalNotifier {
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       final iosImpl = _plugin.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
-      await iosImpl?.requestPermissions(alert: true, badge: false, sound: true);
+      await iosImpl?.requestPermissions(
+        alert: true,
+        badge: false,
+        sound: true,
+        critical: false,
+      );
     }
 
     _initialized = true;

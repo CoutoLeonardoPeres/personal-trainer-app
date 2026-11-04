@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth/app_session.dart';
+import '../../core/auth/supabase_auth_bridge.dart';
 import '../../core/diagnostic/launch_diagnostic.dart';
+import '../../core/supabase/supabase_auth_service.dart';
+import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../data/local/app_database.dart';
@@ -55,6 +58,16 @@ class _SplashPageState extends State<SplashPage> {
       bootTrace('Splash._boot', 'bootstrapIfNeeded…');
       await session.bootstrapIfNeeded(db);
       await session.repairSessionIfInconsistent(db);
+      if (!session.requiresLocalRelogin && supabaseAppEnabled) {
+        if (SupabaseAuthService.currentSession == null) {
+          await session.markLoggedOutRequiresRelogin();
+        } else {
+          await SupabaseAuthBridge.tryHydrateAppSessionFromSupabaseAuth(
+            db: db,
+            session: session,
+          );
+        }
+      }
       if (!session.requiresLocalRelogin) {
         await repo.refreshSessionPersonalAdminFlag();
       }

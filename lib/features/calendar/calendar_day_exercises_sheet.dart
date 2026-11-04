@@ -115,16 +115,24 @@ class _CalendarSheetHeaderWorkoutScore extends StatelessWidget {
         builder: (context, scoreSnap) {
           final cur = scoreSnap.data;
           if (cur == null) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
-                const SizedBox(width: 4),
-                Text(
-                  '—',
-                  style: valueStyle.copyWith(color: AppColors.textMuted),
-                ),
-              ],
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.insights_rounded,
+                    size: iconSize,
+                    color: iconColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '—',
+                    style: valueStyle.copyWith(color: AppColors.textMuted),
+                  ),
+                ],
+              ),
             );
           }
           return FutureBuilder<double?>(
@@ -134,34 +142,38 @@ class _CalendarSheetHeaderWorkoutScore extends StatelessWidget {
             builder: (context, snap) {
               final prev = snap.data;
               final color = _workoutHeaderDeltaColor(cur, prev);
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.insights_rounded,
-                    size: iconSize,
-                    color: iconColor,
-                  ),
-                  const SizedBox(width: 4),
-                  CountUpScoreText(
-                    key: ValueKey('dw_header_score_${workout.id}'),
-                    target: cur,
-                    duration: const Duration(milliseconds: 900),
-                    format: (v) => v.toStringAsFixed(2),
-                    style: valueStyle.copyWith(color: color),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    _workoutHeaderDeltaPercentLabel(cur, prev),
-                    style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w700,
-                      fontSize: pctFs,
-                      height: 1.05,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.insights_rounded,
+                      size: iconSize,
+                      color: iconColor,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    CountUpScoreText(
+                      key: ValueKey('dw_header_score_${workout.id}'),
+                      target: cur,
+                      duration: const Duration(milliseconds: 900),
+                      format: (v) => v.toStringAsFixed(2),
+                      style: valueStyle.copyWith(color: color),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _workoutHeaderDeltaPercentLabel(cur, prev),
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                        fontSize: pctFs,
+                        height: 1.05,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
           );
@@ -169,22 +181,30 @@ class _CalendarSheetHeaderWorkoutScore extends StatelessWidget {
       );
     }
     if (workout.status == 'started') {
-      return Row(
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
+            const SizedBox(width: 4),
+            Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
+          ],
+        ),
+      );
+    }
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
           const SizedBox(width: 4),
           Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
         ],
-      );
-    }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.insights_rounded, size: iconSize, color: iconColor),
-        const SizedBox(width: 4),
-        Text('—', style: valueStyle.copyWith(color: AppColors.textMuted)),
-      ],
+      ),
     );
   }
 }
@@ -2309,9 +2329,6 @@ class _DayExercisesSheetScaffoldState
                       widget.workout.id,
                     ),
                     builder: (context, exSnap) {
-                      final loadingExercisesBase =
-                          exSnap.connectionState == ConnectionState.waiting &&
-                          !exSnap.hasData;
                       final byId = {for (final e in exSnap.data ?? []) e.id: e};
                       for (final e in byId.values) {
                         final n = e.name.trim();
@@ -2369,6 +2386,7 @@ class _DayExercisesSheetScaffoldState
                                   !lineSnap.hasData) ||
                               shouldKeepLoadingWhileHydrating;
                           final holdCompletedSnapshotUntilCloudHydrated =
+                              plannedLinesRaw.isEmpty &&
                               w.status == 'completed' &&
                               !_cloudHydrationDone &&
                               DateTime.now().difference(_sheetOpenedAt) <
@@ -2408,39 +2426,11 @@ class _DayExercisesSheetScaffoldState
                           } else {
                             _lastMissingExerciseIds = const <String>{};
                           }
-                          final unresolvedNameIds = <String>{
-                            for (final id in missingExerciseIds)
-                              if ((_exerciseNameCacheById[id] ?? '')
-                                  .trim()
-                                  .isEmpty)
-                                id,
-                          };
-                          final shouldBlockOnMissingExerciseNames =
-                              unresolvedNameIds.isNotEmpty &&
-                              plannedLinesRaw.isEmpty;
-                          // Com linhas do treino já conhecidas, não bloquear a lista no
-                          // catálogo global (watch pode demorar com DB/rede ocupados).
-                          final blockOnExercisesCatalog =
-                              loadingExercisesBase && plannedLinesRaw.isEmpty;
                           final shouldShowInitialLoadingState =
                               holdCompletedSnapshotUntilCloudHydrated ||
-                              (loadingWorkoutLines &&
-                                  (blockOnExercisesCatalog ||
-                                      plannedLinesRaw.isEmpty));
+                              (loadingWorkoutLines && plannedLinesRaw.isEmpty);
                           if (shouldShowInitialLoadingState) {
                             if (stalledNoLineData) {
-                              if (w.status == 'started') {
-                                if (!_cloudRefreshRequestInFlight) {
-                                  unawaited(
-                                    _hydrateWorkoutLinesFromCloud(
-                                      silentUi: true,
-                                    ),
-                                  );
-                                }
-                                return const Center(
-                                  child: FuturisticLoadingView(size: 58),
-                                );
-                              }
                               return Center(
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
@@ -2483,11 +2473,6 @@ class _DayExercisesSheetScaffoldState
                                 ),
                               );
                             }
-                            return const Center(
-                              child: FuturisticLoadingView(size: 58),
-                            );
-                          }
-                          if (shouldBlockOnMissingExerciseNames) {
                             return const Center(
                               child: FuturisticLoadingView(size: 58),
                             );

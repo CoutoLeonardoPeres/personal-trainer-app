@@ -77,4 +77,27 @@ class SupabaseAuthService {
     }
     return c.auth.updateUser(UserAttributes(password: newPassword));
   }
+
+  static Future<void> resetPasswordForEmail(String email) async {
+    final c = _client;
+    if (c == null) {
+      throw StateError('Supabase não está inicializado.');
+    }
+    await c.auth.resetPasswordForEmail(email.trim());
+  }
+
+  /// Magic link seguro — convite ou reentrada sem gerar senha no app.
+  static Future<void> signInWithOtp({
+    required String email,
+    String redirectTo = 'apppersonal://login-callback',
+  }) async {
+    final c = _client;
+    if (c == null) {
+      throw StateError('Supabase não está inicializado.');
+    }
+    await c.auth.signInWithOtp(
+      email: email.trim(),
+      emailRedirectTo: redirectTo,
+    );
+  }
 }

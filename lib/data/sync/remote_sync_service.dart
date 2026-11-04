@@ -12,10 +12,10 @@ abstract class RemoteSyncService {
 
   Future<void> recoverPendingWork() async {}
 
-  /// Espelha só a linha `students` no Postgres (incl. `password_hash`); não altera `student_gyms`.
+  /// Espelha só a linha `students` no Postgres (incl. `auth_user_id`); não altera `student_gyms`.
   Future<void> mirrorStudentRowNow(String studentId) async {}
 
-  /// Espelha só a linha `personals` no Postgres (incl. `password_hash`).
+  /// Espelha só a linha `personals` no Postgres (incl. `auth_user_id`).
   Future<void> mirrorPersonalRowNow(String personalId) async {}
 
   /// Força atualização imediata do treino e suas linhas a partir da nuvem.
@@ -30,6 +30,13 @@ abstract class RemoteSyncService {
 
   /// Força atualização do planejamento semanal de um aluno para a semana indicada.
   Future<void> refreshStudentWeekScheduleFromCloud(
+    String studentId, {
+    required DateTime weekMonday,
+  }) async {}
+
+  /// Convergência aditiva: publica apenas blocos/itens locais ainda ausentes
+  /// na nuvem. Não sobrescreve nem remove linhas remotas.
+  Future<void> repairMissingStudentWeekScheduleItemsOnCloud(
     String studentId, {
     required DateTime weekMonday,
   }) async {}
@@ -78,6 +85,12 @@ class NoOpRemoteSyncService implements RemoteSyncService {
 
   @override
   Future<void> refreshStudentWeekScheduleFromCloud(
+    String studentId, {
+    required DateTime weekMonday,
+  }) async {}
+
+  @override
+  Future<void> repairMissingStudentWeekScheduleItemsOnCloud(
     String studentId, {
     required DateTime weekMonday,
   }) async {}

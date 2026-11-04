@@ -8,27 +8,20 @@ import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import 'supabase_pull_sync_service.dart';
+import 'sync_coordinator.dart';
 
-/// Baixa alterações do Supabase para o SQLite após o app voltar ao primeiro plano,
-/// para que **outros dispositivos** (ou o mesmo utilizador noutro telemóvel) vejam dados
-/// recentes sem abrir manualmente “Importar da nuvem”.
-///
-/// O **envio** das alterações locais para a nuvem é feito logo após cada gravação via
-/// [SupabaseRemoteSyncService] (fila de auditoria). Este job só complementa com **pull**.
+/// Baixa alterações do Supabase para o SQLite após o app voltar ao primeiro plano.
 abstract final class SupabaseAutoPullScheduler {
   static const _kLastPullMs = 'supabase_auto_pull_last_ms';
   static const _minGapBetweenPulls = Duration(seconds: 3);
   static Timer? _scheduledPull;
   static Timer? _foregroundPullTicker;
 
-  /// Agenda importação após [delay] (por defeito após o arranque da fila de envio).
   static void scheduleAfterResume({
     required AppDatabase db,
     required SupabaseSyncController sync,
     required AppSession session,
     Duration delay = const Duration(seconds: 4),
-
-    /// Quando true, ignora o intervalo mínimo entre importações (ex.: arranque ou voltar ao primeiro plano).
     bool bypassMinInterval = false,
   }) {
     _scheduledPull?.cancel();
@@ -46,18 +39,19 @@ abstract final class SupabaseAutoPullScheduler {
     _scheduledPull = null;
   }
 
-  /// Fallback de tempo real em foreground: pull curto periódico para cobrir
-  /// janelas onde o canal realtime pode perder evento.
+  /// Fallback esparso (Sprint 3): incremental por watermark a cada 5 min.
   static void startForegroundPolling({
     required AppDatabase db,
     required SupabaseSyncController sync,
     required AppSession session,
-    Duration interval = const Duration(seconds: 4),
+    Duration interval = const Duration(minutes: 5),
   }) {
     _foregroundPullTicker?.cancel();
     if (!supabaseAppEnabled) return;
     _foregroundPullTicker = Timer.periodic(interval, (_) {
-      unawaited(_runIfDue(db, sync, session, bypassMinInterval: true));
+      unawaited(
+        SyncCoordinator.pullIncremental(db: db, sync: sync, session: session),
+      );
     });
   }
 
@@ -77,60 +71,41 @@ abstract final class SupabaseAutoPullScheduler {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now().millisecondsSinceEpoch;
     final last = prefs.getInt(_kLastPullMs) ?? 0;
-    if (!bypassMinInterval && now - last < _minGapBetweenPulls.inMilliseconds) {
-      if (kDebugMode) {
-        debugPrint(
-          'SupabaseAutoPullScheduler: pulado (última importação há menos de '
-          '${_minGapBetweenPulls.inSeconds}s).',
-        );
-      }
+    if (!bypassMinInterval &&
+        now - last < _minGapBetweenPulls.inMilliseconds) {
       return;
     }
     await prefs.setInt(_kLastPullMs, now);
 
     if (kDebugMode) {
-      debugPrint('SupabaseAutoPullScheduler: importando Supabase → SQLite…');
+      debugPrint('SupabaseAutoPullScheduler: pull incremental…');
     }
 
     try {
-      final svc = SupabasePullSyncService(db, sync, session: session);
-      final report = await svc.pullAllFromRemote();
-      await _pullHotStartedWorkoutsById(db: db, sync: sync, session: session);
+      await SyncCoordinator.onAppForeground(
+        db: db,
+        sync: sync,
+        session: session,
+      );
       await session.hydratePersonalAdminFlag(db);
-      if (report.connectionOk && report.tables.every((t) => t.ok)) {
-        if (kDebugMode) {
-          debugPrint(
-            'SupabaseAutoPullScheduler: importação concluída — '
-            '${report.tables.length} tabela(s).',
-          );
-        }
-      } else if (kDebugMode) {
-        debugPrint(
-          'SupabaseAutoPullScheduler: importação incompleta — '
-          '${report.connectionMessage}',
-        );
-      }
     } catch (e, st) {
       debugPrint('SupabaseAutoPullScheduler: $e\n$st');
     }
   }
 
-  /// Fallback de confiabilidade: puxa por id os treinos "started" já conhecidos
-  /// localmente. Evita estado parcial (só primeiros exercícios/séries) caso algum
-  /// evento realtime/pull incremental seja perdido entre dispositivos.
-  static Future<void> _pullHotStartedWorkoutsById({
+  /// Pull pontual de treinos em execução (fallback de confiabilidade).
+  static Future<void> pullHotStartedWorkoutsById({
     required AppDatabase db,
     required SupabaseSyncController sync,
     required AppSession session,
   }) async {
     if (!supabaseAppEnabled) return;
     try {
-      final started = await (db.select(
-        db.dayWorkouts,
-      )..where((w) => w.status.equals('started'))).get();
+      final started = await (db.select(db.dayWorkouts)
+            ..where((w) => w.status.equals('started')))
+          .get();
       if (started.isEmpty) return;
       final pull = SupabasePullSyncService(db, sync, session: session);
-      // Limite defensivo para não prolongar polling em bases muito grandes.
       final maxHot = started.length > 12 ? 12 : started.length;
       for (var i = 0; i < maxHot; i++) {
         await pull.pullDayWorkoutById(started[i].id);

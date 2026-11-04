@@ -14,11 +14,17 @@ class PermissionService {
   final StudentEntity? student;
   final PersonalEntity? personal;
 
-  bool get _studentLegacy =>
-      student == null || student!.accessTier == AccessTiers.legacy;
+  bool get _studentLegacy {
+    final tier =
+        session.authoritativeStudentAccessTier ?? student?.accessTier;
+    return student == null || tier == AccessTiers.legacy;
+  }
 
-  bool get _personalLegacy =>
-      personal == null || personal!.accessTier == AccessTiers.legacy;
+  bool get _personalLegacy {
+    final tier =
+        session.authoritativePersonalAccessTier ?? personal?.accessTier;
+    return personal == null || tier == AccessTiers.legacy;
+  }
 
   /// Só administrador (personal com flag) pode gerir perfis comerciais / permissões finas.
   bool get canManageAccessProfiles =>
@@ -29,7 +35,14 @@ class PermissionService {
       session.isStudent &&
       student != null &&
       !_studentLegacy &&
-      !student!.anamneseCompleted;
+      !_anamneseCompletedForSession;
+
+  bool get _anamneseCompletedForSession {
+    if (session.serverProfile?.isStudent == true) {
+      return session.authoritativeAnamneseCompleted;
+    }
+    return student?.anamneseCompleted ?? true;
+  }
 
   /// Esconder selector de aluno na sessão (auto: próprio id).
   bool get hideStudentSessionPicker =>
@@ -38,7 +51,7 @@ class PermissionService {
   bool get canOpenPerformanceTab {
     if (!session.isStudent) return true;
     if (_studentLegacy) return true;
-    final t = student!.accessTier;
+    final t = session.authoritativeStudentAccessTier ?? student!.accessTier;
     if (t == AccessTiers.studentFree) return false;
     return t == AccessTiers.studentBasic ||
         t == AccessTiers.studentPremium ||
@@ -48,7 +61,7 @@ class PermissionService {
   bool get canOpenPlanningTab {
     if (!session.isStudent) return true;
     if (_studentLegacy) return true;
-    final t = student!.accessTier;
+    final t = session.authoritativeStudentAccessTier ?? student!.accessTier;
     if (t == AccessTiers.studentFree) return false;
     return t == AccessTiers.studentBasic ||
         t == AccessTiers.studentPremium ||
@@ -58,7 +71,7 @@ class PermissionService {
   bool get canOpenCadastroTab {
     if (!session.isStudent) return true;
     if (_studentLegacy) return false;
-    final t = student!.accessTier;
+    final t = session.authoritativeStudentAccessTier ?? student!.accessTier;
     return t == AccessTiers.studentBasic ||
         t == AccessTiers.studentPremium ||
         t == AccessTiers.studentStandard;
@@ -72,7 +85,7 @@ class PermissionService {
   bool get canSeeCadastroMetodosTreino {
     if (session.isStudent) return false;
     if (!_personalLegacy && personal != null) {
-      final t = personal!.accessTier;
+      final t = session.authoritativePersonalAccessTier ?? personal!.accessTier;
       if (t == AccessTiers.personalStarter ||
           t == AccessTiers.personalPro ||
           t == AccessTiers.personalProPlus) {
@@ -85,11 +98,13 @@ class PermissionService {
   bool get canSyncSupabaseExerciseCatalog {
     if (session.isStudent) {
       if (_studentLegacy) return true;
-      return student!.accessTier == AccessTiers.studentPremium;
+      final t = session.authoritativeStudentAccessTier ?? student!.accessTier;
+      return t == AccessTiers.studentPremium;
     }
     if (session.isPersonalTrainer || session.isAdminPersonal) {
       if (_personalLegacy || session.hasFullOrgAccess) return true;
-      return personal?.accessTier == AccessTiers.personalProPlus;
+      final t = session.authoritativePersonalAccessTier ?? personal?.accessTier;
+      return t == AccessTiers.personalProPlus;
     }
     return true;
   }
@@ -97,10 +112,12 @@ class PermissionService {
   bool get canUseAiTrainingReports {
     if (session.isStudent) {
       if (_studentLegacy) return true;
-      return student!.accessTier == AccessTiers.studentPremium;
+      final t = session.authoritativeStudentAccessTier ?? student!.accessTier;
+      return t == AccessTiers.studentPremium;
     }
     if (personal != null && !_personalLegacy) {
-      return personal!.accessTier == AccessTiers.personalProPlus;
+      final t = session.authoritativePersonalAccessTier ?? personal!.accessTier;
+      return t == AccessTiers.personalProPlus;
     }
     return session.hasFullOrgAccess;
   }
@@ -109,7 +126,7 @@ class PermissionService {
   bool get studentCadastroMuscleExerciseGymGroup {
     if (!session.isStudent || student == null) return false;
     if (_studentLegacy) return false;
-    final t = student!.accessTier;
+    final t = session.authoritativeStudentAccessTier ?? student!.accessTier;
     return t == AccessTiers.studentBasic ||
         t == AccessTiers.studentPremium ||
         t == AccessTiers.studentStandard;
@@ -117,9 +134,11 @@ class PermissionService {
 
   int? get personalMaxStudents {
     if (personal == null || _personalLegacy) return null;
-    final cap = personal!.maxStudentsCap;
+    final cap =
+        session.authoritativePersonalMaxStudentsCap ?? personal!.maxStudentsCap;
     if (cap != null) return cap;
-    return switch (personal!.accessTier) {
+    final t = session.authoritativePersonalAccessTier ?? personal!.accessTier;
+    return switch (t) {
       AccessTiers.personalStarter => 3,
       AccessTiers.personalPro => 10,
       AccessTiers.personalProPlus => null,

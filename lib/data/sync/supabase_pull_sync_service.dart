@@ -16,7 +16,11 @@ import '../../core/utils/student_archive_display_utils.dart';
 import '../exercise_name_similarity.dart';
 import '../local/app_database.dart';
 import '../models/day_workout_performed_set.dart';
+import 'conflict_resolver.dart';
+import 'performed_sets_merge.dart';
+import 'performed_set_sync_service.dart';
 import 'supabase_table_mappers.dart';
+import 'sync_watermark_store.dart';
 
 class SupabasePullTableResult {
   SupabasePullTableResult(
@@ -242,15 +246,12 @@ bool _localWinsConflictByVersion({
   required String? remoteDeviceId,
 }) {
   if (localRevision != remoteRevision) {
-    return localRevision > remoteRevision;
+    return ConflictResolver.localMayPush(
+      localRevision: localRevision,
+      serverRevision: remoteRevision,
+    );
   }
-  if (localUpdatedAt != remoteUpdatedAt) {
-    return localUpdatedAt.isAfter(remoteUpdatedAt);
-  }
-  final ld = (localDeviceId ?? '').trim();
-  final rd = (remoteDeviceId ?? '').trim();
-  if (ld.isEmpty || rd.isEmpty) return false;
-  return ld.compareTo(rd) >= 0;
+  return false;
 }
 
 Future<void> _enqueueLocalRepush(
@@ -371,43 +372,27 @@ bool _remoteLineProgressAheadOfLocal({
   return false;
 }
 
-/// Nunca regredir séries executadas ao aplicar snapshot remoto na linha.
+/// Merge append-only por setId — nunca regredir séries de outro dispositivo.
 String? _performedSetsJsonForPullUpsert({
   required DayWorkoutExerciseEntity? local,
   required Map<String, dynamic> remoteRow,
 }) {
   final remoteRaw = _strOpt(remoteRow, 'performed_sets_json');
   if (local == null) return remoteRaw;
-  final localSets = DayWorkoutPerformedSetCodec.decode(local.performedSetsJson);
-  final remoteSets = DayWorkoutPerformedSetCodec.decode(
-    (remoteRaw ?? '').trim().isEmpty ? null : remoteRaw,
+  final lineId = local.id;
+  final localSets = PerformedSetsMerge.normalizeLegacySets(
+    DayWorkoutPerformedSetCodec.decode(local.performedSetsJson),
+    lineId: lineId,
   );
-  if (localSets.length > remoteSets.length) {
-    return local.performedSetsJson;
-  }
-  final remoteUpd =
-      _tsOpt(remoteRow['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
-  if (localSets.isNotEmpty &&
-      local.updatedAt.isAfter(remoteUpd.add(const Duration(seconds: 1))) &&
-      localSets.length >= remoteSets.length) {
-    return local.performedSetsJson;
-  }
-  if (localSets.length == remoteSets.length && localSets.isNotEmpty) {
-    final lm = _maxLoggedAtMs(localSets);
-    final rm = _maxLoggedAtMs(remoteSets);
-    if (lm != null && (rm == null || lm > rm)) {
-      return local.performedSetsJson;
-    }
-    if (lm != null &&
-        rm != null &&
-        lm == rm &&
-        DayWorkoutPerformedSetCodec.encode(localSets) !=
-            DayWorkoutPerformedSetCodec.encode(remoteSets) &&
-        local.updatedAt.isAfter(remoteUpd)) {
-      return local.performedSetsJson;
-    }
-  }
-  return remoteRaw;
+  final remoteSets = PerformedSetsMerge.normalizeLegacySets(
+    DayWorkoutPerformedSetCodec.decode(
+      (remoteRaw ?? '').trim().isEmpty ? null : remoteRaw,
+    ),
+    lineId: lineId,
+  );
+  return PerformedSetsMerge.toCacheJson(
+    PerformedSetsMerge.unionBySetId(localSets, remoteSets),
+  );
 }
 
 double? _exerciseScoreForPullUpsert({
@@ -674,16 +659,17 @@ Future<List<Map<String, dynamic>>> _pullTableRowsPaged(
   String table, {
   int pageSize = 1000,
   Duration perRequestTimeout = const Duration(seconds: 90),
+  DateTime? updatedSince,
 }) async {
   final out = <Map<String, dynamic>>[];
   var offset = 0;
   while (true) {
     final end = offset + pageSize - 1;
-    final resp = await c
-        .from(table)
-        .select()
-        .range(offset, end)
-        .timeout(perRequestTimeout);
+    var q = c.from(table).select();
+    if (updatedSince != null) {
+      q = q.gte('updated_at', updatedSince.toUtc().toIso8601String());
+    }
+    final resp = await q.range(offset, end).timeout(perRequestTimeout);
     final part = _rows(resp);
     if (part.isEmpty) break;
     out.addAll(part);
@@ -848,6 +834,31 @@ class SupabasePullSyncService {
       return out;
     } catch (_) {
       return <String, DateTime>{};
+    }
+  }
+
+  /// Remove linhas locais do grupo que já não existem na nuvem (exercício apagado noutro iPhone).
+  Future<void> _pruneStaleLocalWorkoutGroupExerciseLines({
+    required String groupId,
+    required Set<String> remoteLineIds,
+  }) async {
+    final localDeletes = await _localDeletesById('workout_group_exercise');
+    final locals = await (_db.select(
+      _db.workoutGroupExercises,
+    )..where((t) => t.workoutGroupId.equals(groupId))).get();
+    for (final local in locals) {
+      if (remoteLineIds.contains(local.id)) continue;
+      if (localDeletes.containsKey(local.id)) continue;
+      if (await _hasPendingSyncQueueForEntity(
+        db: _db,
+        entityType: 'workout_group_exercise',
+        entityId: local.id,
+      )) {
+        continue;
+      }
+      await (_db.delete(
+        _db.workoutGroupExercises,
+      )..where((t) => t.id.equals(local.id))).go();
     }
   }
 
@@ -1137,6 +1148,162 @@ class SupabasePullSyncService {
     );
   }
 
+  /// Pull incremental por watermark (`updated_at` / `created_at`) — evita full-scan.
+  Future<void> pullIncrementalSince(DateTime since) async {
+    if (!supabaseAppEnabled) return;
+    final client = Supabase.instance.client;
+    final sinceUtc = since.toUtc();
+    // Avança o watermark só até o início deste ciclo. Alterações que ocorram
+    // durante o pull serão revisitadas no próximo ciclo, evitando janela cega.
+    final pullStartedAt = DateTime.now().toUtc();
+    _sync.beginDownload();
+    try {
+      _pullScopeStudentIds = [];
+      _pullScopeBlockIds = [];
+      _pullScopeDayWorkoutIds = [];
+      final session = _session;
+      if (!_pullFullCloud && session != null) {
+        if (session.isStudent && session.studentId != null) {
+          _pullScopeStudentIds = [session.studentId!];
+        } else if (session.isPersonalTrainer && session.personalId != null) {
+          final students =
+              await (_db.select(_db.students)..where(
+                    (s) => s.createdByPersonalId.equals(session.personalId!),
+                  ))
+                  .get();
+          _pullScopeStudentIds = students.map((s) => s.id).toList();
+        }
+      }
+
+      final weekBlockRows = await _pullTableRowsPaged(
+        client,
+        'week_schedule_blocks',
+        updatedSince: sinceUtc,
+        pageSize: 200,
+      );
+      for (final row in weekBlockRows) {
+        final id = _strOpt(row, 'id');
+        if (id == null || id.isEmpty) continue;
+        if (!_pullFullCloud) {
+          final sid = _strOpt(row, 'student_id');
+          if (sid != null &&
+              _pullScopeStudentIds.isNotEmpty &&
+              !_pullScopeStudentIds.contains(sid)) {
+            continue;
+          }
+        }
+        await pullWeekScheduleBlockById(id);
+      }
+
+      final weekItemRows = await _pullTableRowsPaged(
+        client,
+        'week_schedule_items',
+        updatedSince: sinceUtc,
+        pageSize: 300,
+      );
+      for (final row in weekItemRows) {
+        final id = _strOpt(row, 'id');
+        if (id == null || id.isEmpty) continue;
+        // O RLS do Supabase limita os itens aos blocos/alunos da sessão.
+        // O pull pontual garante também as dependências locais.
+        await pullWeekScheduleItemById(id);
+      }
+
+      final workoutRows = await _pullTableRowsPaged(
+        client,
+        'day_workouts',
+        updatedSince: sinceUtc,
+        pageSize: 200,
+      );
+      for (final row in workoutRows) {
+        final id = _strOpt(row, 'id');
+        if (id == null || id.isEmpty) continue;
+        if (!_pullFullCloud) {
+          final sid = _strOpt(row, 'student_id');
+          if (sid != null &&
+              _pullScopeStudentIds.isNotEmpty &&
+              !_pullScopeStudentIds.contains(sid)) {
+            continue;
+          }
+        }
+        await pullDayWorkoutById(id);
+      }
+
+      final lineRows = await _pullTableRowsPaged(
+        client,
+        'day_workout_exercises',
+        updatedSince: sinceUtc,
+        pageSize: 300,
+      );
+      for (final row in lineRows) {
+        final id = _strOpt(row, 'id');
+        if (id == null || id.isEmpty) continue;
+        await pullDayWorkoutExerciseById(id);
+        await _pullPerformedSetEventsForLine(client, id, since: sinceUtc);
+      }
+
+      await SyncWatermarkStore.advanceWatermark(
+        table: '_global',
+        candidate: pullStartedAt,
+        scope: SyncWatermarkStore.scopeForSession(
+          fullCloud: _pullFullCloud,
+          personalId: _session?.personalId,
+          studentId: _session?.studentId,
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('SupabasePullSyncService.pullIncrementalSince: $e\n$st');
+      _sync.noteDisconnected();
+    } finally {
+      _sync.endDownload();
+    }
+  }
+
+  Future<void> _pullPerformedSetEventsForLine(
+    SupabaseClient client,
+    String lineId, {
+    DateTime? since,
+  }) async {
+    try {
+      final remoteSets = await PerformedSetSyncService.pullEventsForLine(
+        client,
+        lineId,
+        since: since,
+      );
+      if (remoteSets.isEmpty) return;
+      final local = await (_db.select(
+        _db.dayWorkoutExercises,
+      )..where((e) => e.id.equals(lineId))).getSingleOrNull();
+      if (local == null) return;
+      final localSets = PerformedSetsMerge.normalizeLegacySets(
+        DayWorkoutPerformedSetCodec.decode(local.performedSetsJson),
+        lineId: lineId,
+      );
+      final merged = PerformedSetsMerge.unionBySetId(localSets, remoteSets);
+      await PerformedSetSyncService.applyMergedSetsToLine(_db, lineId, merged);
+      for (final s in merged) {
+        final sid = s.setId;
+        if (sid == null || sid.isEmpty) continue;
+        await _db
+            .into(_db.performedSetEvents)
+            .insertOnConflictUpdate(
+              PerformedSetEventsCompanion.insert(
+                id: sid,
+                lineId: lineId,
+                loadKg: Value(s.loadKg),
+                reps: s.reps,
+                loggedAtMs: Value(s.loggedAtMs),
+                restPrescribedSec: Value(s.restPrescribedSec),
+                restCountdownElapsedMs: Value(s.restCountdownElapsedMs),
+                postRestModalMs: Value(s.postRestModalMs),
+                synced: const Value(true),
+              ),
+            );
+      }
+      await _db.recomputeExerciseScoreForLine(lineId);
+    } catch (_) {}
+  }
+
   /// Pull pontual: atualiza um `personal` específico a partir da nuvem (LWW: nuvem vence quando chamada por conflito).
   Future<void> pullPersonalById(String personalId) async {
     if (!supabaseAppEnabled) return;
@@ -1184,7 +1351,7 @@ class SupabasePullSyncService {
               mustChangePassword: Value(
                 _bool(r, 'must_change_password', d: true),
               ),
-              passwordHash: Value(_strOpt(r, 'password_hash')),
+              authUserId: Value(_strOpt(r, 'auth_user_id')),
               isAdmin: Value(_bool(r, 'is_admin', d: false)),
               accessTier: Value(_strOpt(r, 'access_tier') ?? 'legacy'),
               maxStudentsCap: Value(
@@ -1263,7 +1430,7 @@ class SupabasePullSyncService {
               mustChangePassword: Value(
                 _bool(r, 'must_change_password', d: true),
               ),
-              passwordHash: Value(_strOpt(r, 'password_hash')),
+              authUserId: Value(_strOpt(r, 'auth_user_id')),
               createdByPersonalId: Value(_strOpt(r, 'created_by_personal_id')),
               anamneseCompleted: Value(
                 _bool(r, 'anamnese_completed', d: false),
@@ -1545,9 +1712,11 @@ class SupabasePullSyncService {
           .select()
           .eq('workout_group_id', id);
       final lines = linesRes as List<dynamic>;
+      final remoteLineIds = <String>{};
       for (final e in lines) {
         final m = Map<String, dynamic>.from(e as Map);
         final lineId = _str(m, 'id');
+        remoteLineIds.add(lineId);
         final lineRemoteUpd =
             _tsOpt(m['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
         final localLine = await (_db.select(
@@ -1589,6 +1758,10 @@ class SupabasePullSyncService {
               ),
             );
       }
+      await _pruneStaleLocalWorkoutGroupExerciseLines(
+        groupId: id,
+        remoteLineIds: remoteLineIds,
+      );
       _sync.noteConnected();
     } catch (e, st) {
       debugPrint('SupabasePullSyncService pullWorkoutGroupById: $e\n$st');
@@ -2929,7 +3102,7 @@ class SupabasePullSyncService {
                 mustChangePassword: Value(
                   _bool(r, 'must_change_password', d: true),
                 ),
-                passwordHash: Value(_strOpt(r, 'password_hash')),
+                authUserId: Value(_strOpt(r, 'auth_user_id')),
                 isAdmin: Value(_bool(r, 'is_admin')),
                 accessTier: Value(_strOpt(r, 'access_tier') ?? 'legacy'),
                 maxStudentsCap: Value(
@@ -3038,7 +3211,7 @@ class SupabasePullSyncService {
                 mustChangePassword: Value(
                   _bool(r, 'must_change_password', d: true),
                 ),
-                passwordHash: Value(_strOpt(r, 'password_hash')),
+                authUserId: Value(_strOpt(r, 'auth_user_id')),
                 createdByPersonalId: Value(
                   _strOpt(r, 'created_by_personal_id'),
                 ),
@@ -3269,8 +3442,11 @@ class SupabasePullSyncService {
       var written = 0;
       var skippedNewer = 0;
       var rowWriteErrors = 0;
+      final remoteLineIdsByGroup = <String, Set<String>>{};
       for (final r in rows) {
         final id = _str(r, 'id');
+        final groupId = _str(r, 'workout_group_id');
+        remoteLineIdsByGroup.putIfAbsent(groupId, () => {}).add(id);
         final remoteUpd =
             _tsOpt(r['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0);
         final delAt = localDeletes[id];
@@ -3291,7 +3467,7 @@ class SupabasePullSyncService {
               .insertOnConflictUpdate(
                 WorkoutGroupExercisesCompanion.insert(
                   id: id,
-                  workoutGroupId: _str(r, 'workout_group_id'),
+                  workoutGroupId: groupId,
                   exerciseId: _resolvedExerciseId(_str(r, 'exercise_id')),
                   sortOrder: Value(_intOpt(r, 'sort_order', 0)),
                   lastLoadKg: Value(_dblOpt(r, 'last_load_kg')),
@@ -3315,6 +3491,23 @@ class SupabasePullSyncService {
           rowWriteErrors++;
           debugPrint(
             'SupabasePullSyncService workout_group_exercises id=$id: $e\n$st',
+          );
+        }
+      }
+      if (full) {
+        final groups = await _db.select(_db.workoutGroups).get();
+        for (final g in groups) {
+          if (g.deletedAt != null) continue;
+          await _pruneStaleLocalWorkoutGroupExerciseLines(
+            groupId: g.id,
+            remoteLineIds: remoteLineIdsByGroup[g.id] ?? {},
+          );
+        }
+      } else {
+        for (final gid in _pullReferencedWorkoutGroupIds) {
+          await _pruneStaleLocalWorkoutGroupExerciseLines(
+            groupId: gid,
+            remoteLineIds: remoteLineIdsByGroup[gid] ?? {},
           );
         }
       }

@@ -9,7 +9,8 @@ import 'package:uuid/uuid.dart';
 import '../../core/access/access_tiers.dart';
 import '../../core/access/permission_service.dart';
 import '../../core/auth/app_session.dart';
-import '../../core/auth/password_reset_webhook.dart';
+import '../../core/auth/email_uniqueness_guard.dart';
+import '../../core/auth/supabase_auth_bridge.dart';
 import '../../core/sync/sync_device_identity.dart';
 import '../../core/utils/calendar_day_utils.dart';
 import '../../core/utils/student_archive_display_utils.dart';
@@ -23,18 +24,13 @@ import '../models/exercise_session_comparison.dart';
 import '../models/programmable_bundle.dart';
 import '../models/week_schedule_row.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
+import '../sync/performed_sets_merge.dart';
 import '../sync/remote_sync_service.dart';
 
 const _uuid = Uuid();
 
 void _syncTrace(String message) {
   developer.log(message, name: 'sync.trace');
-}
-
-String _generateProvisionalLocalPassword() {
-  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-  final rnd = Random.secure();
-  return List.generate(10, (_) => chars[rnd.nextInt(chars.length)]).join();
 }
 
 /// Score de uma linha: séries feitas (soma carga×reps÷10) ou prescrito ou coluna gravada.
@@ -361,19 +357,33 @@ class AppDataRepository {
     weekMonday: weekMonday,
   );
 
+  /// Invalida snapshots em voo e pausa pull da nuvem (sem publicar na UI).
+  void _invalidateWeekScheduleRowsCache({
+    required String studentId,
+    required DateTime weekMonday,
+    Duration muteCloudPullFor = const Duration(seconds: 30),
+  }) {
+    final muteKey = _studentWeekKey(studentId, weekMonday);
+    final until = DateTime.now().add(muteCloudPullFor);
+    final cur = _weekScheduleCloudPullMutedUntilByKey[muteKey];
+    if (cur == null || until.isAfter(cur)) {
+      _weekScheduleCloudPullMutedUntilByKey[muteKey] = until;
+    }
+    final streamKey = _weekScheduleRowsStreamKey(studentId, weekMonday);
+    _weekScheduleSnapshotGenerationByKey[streamKey] =
+        (_weekScheduleSnapshotGenerationByKey[streamKey] ?? 0) + 1;
+    _weekScheduleLastByKey.remove(streamKey);
+  }
+
   void _markLocalWeekScheduleMutation({
     required String studentId,
     required DateTime weekMonday,
     Duration muteCloudPullFor = const Duration(seconds: 30),
   }) {
-    final key = _studentWeekKey(studentId, weekMonday);
-    final until = DateTime.now().add(muteCloudPullFor);
-    final cur = _weekScheduleCloudPullMutedUntilByKey[key];
-    if (cur == null || until.isAfter(cur)) {
-      _weekScheduleCloudPullMutedUntilByKey[key] = until;
-    }
-    _weekScheduleLastByKey.remove(
-      _weekScheduleRowsStreamKey(studentId, weekMonday),
+    _invalidateWeekScheduleRowsCache(
+      studentId: studentId,
+      weekMonday: weekMonday,
+      muteCloudPullFor: muteCloudPullFor,
     );
     unawaited(
       _publishWeekScheduleRowsSnapshot(
@@ -381,6 +391,63 @@ class AppDataRepository {
         weekMonday: weekMonday,
       ),
     );
+  }
+
+  /// Após alinhar o modelo do grupo ao planejamento/calendário, força refresh
+  /// das streams da semana (planejamento reage na hora; calendário via Drift).
+  Future<void> _notifyUiAfterWorkoutGroupTemplatePropagation(
+    String workoutGroupId,
+  ) async {
+    final touchedWeeks = <String>{};
+
+    void markWeek(String studentId, DateTime weekMonday) {
+      final key = _studentWeekKey(studentId, weekMonday);
+      if (!touchedWeeks.add(key)) return;
+      _markLocalWeekScheduleMutation(
+        studentId: studentId,
+        weekMonday: weekMonday,
+      );
+    }
+
+    final weekJoinRows =
+        await (_db.select(_db.weekScheduleItems).join([
+              innerJoin(
+                _db.weekScheduleBlocks,
+                _db.weekScheduleBlocks.id.equalsExp(
+                  _db.weekScheduleItems.blockId,
+                ),
+              ),
+            ])..where(
+              _db.weekScheduleItems.sourceWorkoutGroupId.equals(workoutGroupId),
+            ))
+            .get();
+
+    for (final row in weekJoinRows) {
+      final block = row.readTable(_db.weekScheduleBlocks);
+      try {
+        await requireStudentAccess(block.studentId);
+      } catch (_) {
+        continue;
+      }
+      markWeek(block.studentId, block.weekStartMonday);
+    }
+
+    final dayRows =
+        await (_db.select(_db.dayWorkouts)..where(
+              (w) =>
+                  w.sourceWorkoutGroupId.equals(workoutGroupId) &
+                  _dayWorkoutSubjectToGroupTemplateSync(w),
+            ))
+            .get();
+
+    for (final w in dayRows) {
+      try {
+        await requireStudentAccess(w.studentId);
+      } catch (_) {
+        continue;
+      }
+      markWeek(w.studentId, w.dayDate);
+    }
   }
 
   bool _isWeekScheduleCloudPullMuted({
@@ -417,6 +484,7 @@ class AppDataRepository {
   /// [watch] por aluno+semana: broadcast por chave + último snapshot (replay para novos ouvintes).
   final Map<String, Stream<List<WeekScheduleRow>>> _weekScheduleInnerByKey = {};
   final Map<String, List<WeekScheduleRow>> _weekScheduleLastByKey = {};
+  final Map<String, int> _weekScheduleSnapshotGenerationByKey = {};
 
   final Map<String, Stream<List<DayWorkoutEntity>>>
   _studentWeekWorkoutsInnerByKey = {};
@@ -437,6 +505,7 @@ class AppDataRepository {
   void _clearReactiveStreamCaches() {
     _weekScheduleInnerByKey.clear();
     _weekScheduleLastByKey.clear();
+    _weekScheduleSnapshotGenerationByKey.clear();
     _weekScheduleCloudPullMutedUntilByKey.clear();
     for (final c in _weekScheduleManualPushByKey.values) {
       unawaited(c.close());
@@ -593,28 +662,31 @@ class AppDataRepository {
     return n;
   }
 
-  /// Troca senha local (SQLite) para o perfil da sessão; limpa [mustChangePassword].
+  /// Troca senha via Supabase Auth; limpa [mustChangePassword] no perfil local.
   Future<void> changePasswordForCurrentSession({
     required String currentPassword,
     required String newPassword,
   }) async {
-    if (newPassword.length < 4) {
-      throw ArgumentError('A nova senha deve ter pelo menos 4 caracteres.');
+    if (newPassword.length < 6) {
+      throw ArgumentError('A nova senha deve ter pelo menos 6 caracteres.');
     }
+    final email = await SupabaseAuthBridge.emailForSession(
+      session: _session,
+      repo: this,
+    );
+    await SupabaseAuthBridge.changePasswordForEmail(
+      email: email,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    final now = DateTime.now();
     if (_session.isStudent) {
       final id = _session.studentId;
       if (id == null) throw ArgumentError('Sessão de aluno inválida.');
-      final row = await getStudentById(id);
-      if (row == null) throw ArgumentError('Aluno não encontrado.');
-      final stored = row.passwordHash;
-      if (stored != null && stored.isNotEmpty && stored != currentPassword) {
-        throw ArgumentError('Senha atual incorreta.');
-      }
       await (_db.update(_db.students)..where((s) => s.id.equals(id))).write(
         StudentsCompanion(
-          passwordHash: Value(newPassword),
           mustChangePassword: const Value(false),
-          updatedAt: Value(DateTime.now()),
+          updatedAt: Value(now),
         ),
       );
       await _audit('password_change', 'student', entityId: id);
@@ -624,31 +696,23 @@ class AppDataRepository {
     final pid = _session.personalId;
     if (pid == null) {
       throw ArgumentError(
-        'Troca de senha local só para aluno ou personal com cadastro identificado.',
+        'Troca de senha só para aluno ou personal identificado.',
       );
-    }
-    final row = await getPersonalById(pid);
-    if (row == null) throw ArgumentError('Personal não encontrado.');
-    final stored = row.passwordHash;
-    if (stored != null && stored.isNotEmpty && stored != currentPassword) {
-      throw ArgumentError('Senha atual incorreta.');
     }
     await (_db.update(_db.personals)..where((p) => p.id.equals(pid))).write(
       PersonalsCompanion(
-        passwordHash: Value(newPassword),
         mustChangePassword: const Value(false),
-        updatedAt: Value(DateTime.now()),
+        updatedAt: Value(now),
       ),
     );
     await _audit('password_change', 'personal', entityId: pid);
     await _remote.mirrorPersonalRowNow(pid);
   }
 
-  /// Gera senha provisória para **personal** ou **aluno ativo** com o e-mail indicado.
-  /// Se existir [PASSWORD_RESET_WEBHOOK_URL], tenta notificar por e-mail via HTTP POST.
-  /// Retorna se o webhook aceitou e a senha provisória (para exibir só se o e-mail não foi enviado).
-  Future<({bool emailSent, String provisionalPassword})>
-  requestPasswordResetForActiveLocalUser(String rawEmail) async {
+  /// Envia e-mail de recuperação via Supabase Auth (sem gravar senha localmente).
+  Future<({bool emailSent})> requestPasswordResetForActiveLocalUser(
+    String rawEmail,
+  ) async {
     final email = rawEmail.trim().toLowerCase();
     if (email.isEmpty) {
       throw ArgumentError('Informe o e-mail.');
@@ -683,132 +747,83 @@ class AppDataRepository {
         'Não encontrámos personal nem aluno ativo com este e-mail.',
       );
     }
-    final newPass = _generateProvisionalLocalPassword();
-    final now = DateTime.now();
-    if (personal != null) {
-      final pRow = personal;
-      await (_db.update(
-        _db.personals,
-      )..where((x) => x.id.equals(pRow.id))).write(
-        PersonalsCompanion(
-          passwordHash: Value(newPass),
-          mustChangePassword: const Value(true),
-          updatedAt: Value(now),
-        ),
-      );
-      await _audit('password_change', 'personal', entityId: pRow.id);
-      await _remote.mirrorPersonalRowNow(pRow.id);
-      final sent = await PasswordResetWebhook.send(
-        toEmail: pRow.email.trim(),
-        newPassword: newPass,
-        displayName: pRow.name,
-        accountKind: 'personal',
-      );
-      return (emailSent: sent, provisionalPassword: newPass);
-    }
-    final st = student!;
-    await (_db.update(_db.students)..where((x) => x.id.equals(st.id))).write(
-      StudentsCompanion(
-        passwordHash: Value(newPass),
-        mustChangePassword: const Value(true),
-        updatedAt: Value(now),
-      ),
-    );
-    await _audit('password_change', 'student', entityId: st.id);
-    await _remote.mirrorStudentRowNow(st.id);
-    final toAddr = (st.email ?? '').trim();
-    final sent = await PasswordResetWebhook.send(
-      toEmail: toAddr.isNotEmpty ? toAddr : email,
-      newPassword: newPass,
-      displayName: st.name,
-      accountKind: 'student',
-    );
-    return (emailSent: sent, provisionalPassword: newPass);
+    await SupabaseAuthBridge.sendPasswordResetEmail(email);
+    return (emailSent: true);
   }
 
-  /// Cadastro: nova senha provisória para aluno **ativo** (não arquivado).
-  /// Tenta enviar por e-mail se houver webhook e e-mail cadastrado.
-  Future<({String provisionalPassword, bool emailSent, String? loginEmail})>
-  adminGenerateNewStudentPassword(String studentId) async {
+  /// Envia link seguro de acesso/recuperação — **sem gerar senha no app**.
+  Future<({bool emailSent, String loginEmail})> adminSendAccessLinkForStudent(
+    String studentId,
+  ) async {
     await requireStudentAccess(studentId);
     final st = await getStudentById(studentId);
     if (st == null) throw ArgumentError('Aluno não encontrado.');
     if (st.isArchived) {
       throw ArgumentError(
-        'Reative o aluno inativo antes de gerar uma nova senha.',
+        'Reative o aluno inativo antes de enviar link de acesso.',
       );
     }
-    final newPass = _generateProvisionalLocalPassword();
+    final loginEmail = st.email?.trim();
+    if (loginEmail == null || loginEmail.isEmpty) {
+      throw ArgumentError('Cadastre o e-mail do aluno antes de enviar o link.');
+    }
+    await SupabaseAuthBridge.sendSecureAccessLink(loginEmail);
     final now = DateTime.now();
     await (_db.update(
       _db.students,
     )..where((s) => s.id.equals(studentId))).write(
       StudentsCompanion(
-        passwordHash: Value(newPass),
         mustChangePassword: const Value(true),
         updatedAt: Value(now),
       ),
     );
-    await _audit('password_change', 'student', entityId: studentId);
+    await _audit('access_link_sent', 'student', entityId: studentId);
     await _remote.mirrorStudentRowNow(studentId);
-    final loginEmail = st.email?.trim();
-    var sent = false;
-    if (loginEmail != null && loginEmail.isNotEmpty) {
-      sent = await PasswordResetWebhook.send(
-        toEmail: loginEmail,
-        newPassword: newPass,
-        displayName: st.name,
-        accountKind: 'student',
-      );
-    }
-    return (
-      provisionalPassword: newPass,
-      emailSent: sent,
-      loginEmail: (loginEmail == null || loginEmail.isEmpty)
-          ? null
-          : loginEmail,
-    );
+    return (emailSent: true, loginEmail: loginEmail);
   }
 
-  /// Cadastro: nova senha provisória para um personal (próprio cadastro ou org admin).
-  Future<({String provisionalPassword, bool emailSent, String loginEmail})>
-  adminGenerateNewPersonalPassword(String personalId) async {
+  /// Envia link seguro de acesso/recuperação — **sem gerar senha no app**.
+  Future<({bool emailSent, String loginEmail})> adminSendAccessLinkForPersonal(
+    String personalId,
+  ) async {
     if (_session.isStudent) {
-      throw ArgumentError('Sem permissão para alterar senhas de personais.');
+      throw ArgumentError('Sem permissão para alterar acesso de personais.');
     }
     if (_session.isPersonalTrainer && !_session.hasFullOrgAccess) {
       if (personalId != _session.personalId) {
         throw ArgumentError(
-          'Só pode gerar senha para o seu próprio cadastro de personal.',
+          'Só pode enviar link para o seu próprio cadastro de personal.',
         );
       }
     }
     final row = await getPersonalById(personalId);
     if (row == null) throw ArgumentError('Personal não encontrado.');
-    final newPass = _generateProvisionalLocalPassword();
+    final addr = row.email.trim();
+    if (addr.isEmpty) {
+      throw ArgumentError(
+        'Cadastre o e-mail do personal antes de enviar o link.',
+      );
+    }
+    await SupabaseAuthBridge.sendSecureAccessLink(addr);
     final now = DateTime.now();
     await (_db.update(
       _db.personals,
     )..where((p) => p.id.equals(personalId))).write(
       PersonalsCompanion(
-        passwordHash: Value(newPass),
         mustChangePassword: const Value(true),
         updatedAt: Value(now),
       ),
     );
-    await _audit('password_change', 'personal', entityId: personalId);
+    await _audit('access_link_sent', 'personal', entityId: personalId);
     await _remote.mirrorPersonalRowNow(personalId);
-    final addr = row.email.trim();
-    var sent = false;
-    if (addr.isNotEmpty) {
-      sent = await PasswordResetWebhook.send(
-        toEmail: addr,
-        newPassword: newPass,
-        displayName: row.name,
-        accountKind: 'personal',
-      );
-    }
-    return (provisionalPassword: newPass, emailSent: sent, loginEmail: addr);
+    return (emailSent: true, loginEmail: addr);
+  }
+
+  /// Convite de acesso após cadastrar aluno com e-mail (sem senha provisória).
+  Future<void> sendAccessLinkForNewStudentEmail(String email) async {
+    final em = email.trim();
+    if (em.isEmpty) return;
+    await SupabaseAuthBridge.sendSecureAccessLink(em);
   }
 
   Future<void> requireStudentAccess(String studentId) async {
@@ -1004,8 +1019,6 @@ class AppDataRepository {
 
   Future<String> _syncDeviceId() =>
       _syncDeviceIdFuture ??= SyncDeviceIdentity.getOrCreate();
-
-  int _nextRevision(int current) => current < 0 ? 1 : current + 1;
 
   Future<String?> _existingPersonalIdOrNull(String? personalId) async {
     final pid = personalId?.trim();
@@ -1457,7 +1470,7 @@ class AppDataRepository {
     String? phoneMobile,
     required String email,
     bool mustChangePassword = true,
-    String? passwordHash,
+    String? authUserId,
     bool? isAdmin,
   }) async {
     if (_session.isStudent) {
@@ -1481,7 +1494,14 @@ class AppDataRepository {
             _db.personals,
           )..where((p) => p.id.equals(sid))).getSingleOrNull()
         : null;
-    final effectiveIsAdmin = isAdmin ?? prevPersonal?.isAdmin ?? false;
+    final effectiveIsAdmin = _session.hasFullOrgAccess
+        ? (isAdmin ?? prevPersonal?.isAdmin ?? false)
+        : (prevPersonal?.isAdmin ?? false);
+    await EmailUniquenessGuard.assertLoginEmailAvailable(
+      _db,
+      email: email,
+      excludePersonalId: sid,
+    );
     final tier = prevPersonal?.accessTier ?? AccessTiers.legacy;
     final cap = prevPersonal?.maxStudentsCap;
     await _db
@@ -1502,7 +1522,7 @@ class AppDataRepository {
             phoneMobile: Value(phoneMobile),
             email: email,
             mustChangePassword: Value(mustChangePassword),
-            passwordHash: Value(passwordHash),
+            authUserId: Value(authUserId ?? prevPersonal?.authUserId),
             isAdmin: Value(effectiveIsAdmin),
             accessTier: Value(tier),
             maxStudentsCap: Value(cap),
@@ -1511,7 +1531,6 @@ class AppDataRepository {
           ),
         );
     await _audit(id == null ? 'create' : 'update', 'personal', entityId: sid);
-    // TODO: integrar envio de e-mail com senha provisória (serviço backend).
   }
 
   Future<void> deletePersonal(String id) async {
@@ -1638,7 +1657,7 @@ class AppDataRepository {
     String? phoneMobile,
     List<String> gymIds = const [],
     bool mustChangePassword = true,
-    String? passwordHash,
+    bool sendAccessLinkAfterCreate = false,
   }) async {
     if (_session.isStudent) {
       if (id == null || id != _session.studentId) {
@@ -1695,6 +1714,14 @@ class AppDataRepository {
       tier = prev.accessTier;
     }
 
+    if (email != null && email.trim().isNotEmpty) {
+      await EmailUniquenessGuard.assertLoginEmailAvailable(
+        _db,
+        email: email,
+        excludeStudentId: sid,
+      );
+    }
+
     await _db.transaction(() async {
       await _db
           .into(_db.students)
@@ -1716,7 +1743,7 @@ class AppDataRepository {
               phoneCommercial: Value(phoneCommercial),
               phoneMobile: Value(phoneMobile),
               mustChangePassword: Value(mustChangePassword),
-              passwordHash: Value(passwordHash),
+              authUserId: Value(prev?.authUserId),
               createdByPersonalId: Value(ownerId),
               anamneseCompleted: Value(anamneseOk),
               accessTier: Value(tier),
@@ -1734,6 +1761,16 @@ class AppDataRepository {
             .insert(StudentGymsCompanion.insert(studentId: sid, gymId: gid));
       }
     });
+    if (prev == null &&
+        sendAccessLinkAfterCreate &&
+        email != null &&
+        email.trim().isNotEmpty) {
+      try {
+        await sendAccessLinkForNewStudentEmail(email);
+      } catch (_) {
+        // Cadastro local segue; admin pode reenviar link depois.
+      }
+    }
     await _audit(id == null ? 'create' : 'update', 'student', entityId: sid);
     return sid;
   }
@@ -1828,7 +1865,6 @@ class AppDataRepository {
           phoneCommercial: const Value(null),
           phoneMobile: const Value(null),
           mustChangePassword: const Value(true),
-          passwordHash: const Value(null),
           updatedAt: Value(DateTime.now()),
         ),
       );
@@ -1962,7 +1998,7 @@ class AppDataRepository {
             description: description,
             createdByPersonalId: Value(ownerId),
             isShared: Value(previous?.isShared ?? false),
-            revision: Value(_nextRevision(previous?.revision ?? 0)),
+            revision: Value(previous?.revision ?? 0),
             lastModifiedByDeviceId: Value(deviceId),
             createdAt: Value(previous?.createdAt ?? now),
             updatedAt: Value(now),
@@ -2422,6 +2458,7 @@ class AppDataRepository {
           },
         );
       }
+      await _notifyUiAfterWorkoutGroupTemplatePropagation(workoutGroupId);
       return (
         weekItemsUpdated: weekItemsUpdated,
         dayExercisesUpdated: dayExercisesUpdated,
@@ -2483,6 +2520,7 @@ class AppDataRepository {
       );
     }
 
+    await _notifyUiAfterWorkoutGroupTemplatePropagation(workoutGroupId);
     return (
       weekItemsUpdated: weekItemsUpdated,
       dayExercisesUpdated: dayExercisesUpdated,
@@ -3775,11 +3813,17 @@ class AppDataRepository {
       StreamSubscription<List<WeekScheduleRow>>? innerSub;
 
       Future<void> emitLocalSnapshot() async {
+        final generationAtStart =
+            _weekScheduleSnapshotGenerationByKey[key] ?? 0;
         try {
           final rows = await _queryWeekScheduleRowsMapped(
             studentId: studentId,
             weekMonday: mon,
           );
+          if ((_weekScheduleSnapshotGenerationByKey[key] ?? 0) !=
+              generationAtStart) {
+            return;
+          }
           _weekScheduleLastByKey[key] = rows;
           if (!controller.isClosed) controller.add(rows);
         } catch (e, st) {
@@ -3790,8 +3834,6 @@ class AppDataRepository {
       final cached = _weekScheduleLastByKey[key];
       if (cached != null) {
         controller.add(cached);
-      } else {
-        controller.add(const <WeekScheduleRow>[]);
       }
 
       unawaited(emitLocalSnapshot());
@@ -4169,6 +4211,13 @@ class AppDataRepository {
       startWeekMonday.month,
       startWeekMonday.day,
     );
+
+    // Invalida snapshots em voo antes de gravar (evita emitLocalSnapshot antigo
+    // sobrescrever a UI com lista vazia após o agendamento).
+    for (var wi = 0; wi < weekCount; wi++) {
+      final mon = start.add(Duration(days: wi * 7));
+      _invalidateWeekScheduleRowsCache(studentId: studentId, weekMonday: mon);
+    }
 
     var weeksWithAdds = 0;
     var itemsAdded = 0;
@@ -4825,17 +4874,6 @@ class AppDataRepository {
     final allStudents = await (_db.select(_db.students)).get();
     final visible = _visibleStudents(allStudents);
     if (visible.isEmpty) return [];
-    // Hidrata planning da semana na nuvem antes de decidir quem é programável.
-    // Limite para não degradar UX em bases muito grandes.
-    final refreshCandidates = visible.take(10).toList(growable: false);
-    await Future.wait(
-      refreshCandidates.map(
-        (s) => refreshStudentWeekScheduleFromCloud(
-          s.id,
-          weekMonday: monday,
-        ).timeout(const Duration(milliseconds: 650), onTimeout: () {}),
-      ),
-    );
     final visibleIds = visible.map((s) => s.id).toList();
     // Só alunos visíveis na sessão; sem janela SQL em week_start_monday (evita falsos negativos por data/UTC).
     final blockCandidates = await (_db.select(
@@ -4844,13 +4882,19 @@ class AppDataRepository {
     final blocks = blockCandidates
         .where((b) => _weekBlockMondayEquals(b.weekStartMonday, monday))
         .toList();
+    if (blocks.isEmpty) return [];
+
+    final studentIdByBlockId = {
+      for (final block in blocks) block.id: block.studentId,
+    };
+    final items = await (_db.select(
+      _db.weekScheduleItems,
+    )..where((i) => i.blockId.isIn(studentIdByBlockId.keys.toList()))).get();
     final okStudents = <String>{};
-    for (final b in blocks) {
-      final items = await (_db.select(
-        _db.weekScheduleItems,
-      )..where((i) => i.blockId.equals(b.id))).get();
-      final ok = items.any(weekScheduleItemHasValidPrescription);
-      if (ok) okStudents.add(b.studentId);
+    for (final item in items) {
+      if (!weekScheduleItemHasValidPrescription(item)) continue;
+      final studentId = studentIdByBlockId[item.blockId];
+      if (studentId != null) okStudents.add(studentId);
     }
     if (okStudents.isEmpty) return [];
     final list =
@@ -4867,14 +4911,30 @@ class AppDataRepository {
   ) async {
     await requireStudentAccess(studentId);
     final monday = normalizeMonday(day);
-    await refreshStudentWeekScheduleFromCloud(
-      studentId,
-      weekMonday: monday,
-    ).timeout(const Duration(milliseconds: 1500), onTimeout: () {});
-    final rows = await loadWeekScheduleRows(
+    // Leitura estritamente local primeiro. Iniciar o pull antes desta query
+    // fazia o Drift Web/IndexedDB enfileirar a leitura atrás de muitas escritas
+    // remotas, deixando a modal bloqueada por minutos.
+    var rows = await _queryWeekScheduleRowsMapped(
       studentId: studentId,
       weekMonday: monday,
     );
+    var refreshInBackground = false;
+    if (rows.isEmpty) {
+      // Cache web vazio: dá uma oportunidade curta à nuvem antes de concluir
+      // que não existem grupos. Com cache local, não bloqueia a abertura.
+      await refreshStudentWeekScheduleFromCloud(
+        studentId,
+        weekMonday: monday,
+      ).timeout(const Duration(milliseconds: 1500), onTimeout: () {});
+      rows = await _queryWeekScheduleRowsMapped(
+        studentId: studentId,
+        weekMonday: monday,
+      );
+    } else {
+      // Local-first: a modal abre imediatamente; a convergência continua sem
+      // bloquear a interação e estará refletida na próxima abertura.
+      refreshInBackground = true;
+    }
     final valid = rows
         .where((r) => weekScheduleItemHasValidPrescription(r.item))
         .toList();
@@ -4920,6 +4980,18 @@ class AppDataRepository {
       );
     }
     bundles.sort((a, b) => a.title.compareTo(b.title));
+    if (refreshInBackground) {
+      // Só iniciar depois de todas as leituras necessárias para construir a
+      // modal, evitando contenção de IndexedDB no caminho crítico.
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 2), () {
+          return refreshStudentWeekScheduleFromCloud(
+            studentId,
+            weekMonday: monday,
+          ).timeout(const Duration(milliseconds: 1500), onTimeout: () {});
+        }),
+      );
+    }
     return bundles;
   }
 
@@ -5157,6 +5229,16 @@ class AppDataRepository {
         studentId,
         weekMonday: weekMonday,
       );
+      // União aditiva após o pull: se este dispositivo possui itens que ainda
+      // não chegaram ao Supabase, publica somente os ausentes. Isso impede que
+      // app e web exibam quantidades diferentes sem ressuscitar exclusões nem
+      // sobrescrever versões remotas.
+      if (!_session.isStudent) {
+        await _remote.repairMissingStudentWeekScheduleItemsOnCloud(
+          studentId,
+          weekMonday: weekMonday,
+        );
+      }
     } catch (_) {
       // Best effort: UI segue com snapshot local.
     }
@@ -6086,9 +6168,11 @@ class AppDataRepository {
         'Com o treino em execução, preencha a carga (kg) e as repetições em cada série.',
       );
     }
+    final setId = PerformedSetsMerge.newSetId();
     final next = [
       ...existing,
       DayWorkoutPerformedSet(
+        setId: setId,
         loadKg: loadKg,
         reps: reps,
         loggedAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -6105,6 +6189,20 @@ class AppDataRepository {
 
     await _runWithDbRetry(() async {
       await _db.transaction(() async {
+        await _db
+            .into(_db.performedSetEvents)
+            .insertOnConflictUpdate(
+              PerformedSetEventsCompanion.insert(
+                id: setId,
+                lineId: lineId,
+                loadKg: Value(loadKg),
+                reps: reps,
+                loggedAtMs: Value(next.last.loggedAtMs),
+                deviceId: Value(deviceId),
+                synced: const Value(false),
+                createdAt: Value(now),
+              ),
+            );
         await (_db.update(
           _db.dayWorkoutExercises,
         )..where((x) => x.id.equals(lineId))).write(
@@ -6113,7 +6211,7 @@ class AppDataRepository {
             exerciseScore: Value(exerciseScore),
             loadKg: Value(newLoadKg),
             updatedAt: Value(now),
-            revision: Value(_nextRevision(row.revision)),
+            revision: Value(row.revision),
             lastModifiedByDeviceId: Value(deviceId),
             syncStatus: const Value('pending'),
           ),
@@ -6123,7 +6221,7 @@ class AppDataRepository {
         )..where((w) => w.id.equals(dayWorkoutId))).write(
           DayWorkoutsCompanion(
             updatedAt: Value(now),
-            revision: Value(_nextRevision(workout.revision)),
+            revision: Value(workout.revision),
             lastModifiedByDeviceId: Value(deviceId),
             syncStatus: const Value('pending'),
           ),
@@ -6300,7 +6398,7 @@ class AppDataRepository {
           exerciseScore: Value(exerciseScore),
           loadKg: Value(newLoadKg),
           updatedAt: Value(DateTime.now()),
-          revision: Value(_nextRevision(row.revision)),
+          revision: Value(row.revision),
           lastModifiedByDeviceId: Value(deviceId),
           syncStatus: const Value('pending'),
         ),
@@ -6324,7 +6422,7 @@ class AppDataRepository {
       )..where((w) => w.id.equals(dayWorkoutId))).write(
         DayWorkoutsCompanion(
           updatedAt: Value(now),
-          revision: Value(_nextRevision(current?.revision ?? 0)),
+          revision: Value(current?.revision ?? 0),
           lastModifiedByDeviceId: Value(deviceId),
           syncStatus: const Value('pending'),
         ),
@@ -6491,7 +6589,7 @@ class AppDataRepository {
         timerResumeAt: const Value(null),
         updatedAt: Value(DateTime.now()),
         deletedAt: Value(DateTime.now()),
-        revision: Value(_nextRevision(w.revision)),
+        revision: Value(w.revision),
         lastModifiedByDeviceId: Value(deviceId),
         syncStatus: const Value('pending'),
       ),
@@ -6516,7 +6614,7 @@ class AppDataRepository {
         startedAt: Value(now),
         timerResumeAt: Value(now),
         updatedAt: Value(now),
-        revision: Value(_nextRevision(cur.revision)),
+        revision: Value(cur.revision),
         lastModifiedByDeviceId: Value(deviceId),
         syncStatus: const Value('pending'),
       ),
@@ -6537,7 +6635,7 @@ class AppDataRepository {
         // `Value.absent()` não altera a coluna; é preciso NULL para pausar o cronômetro.
         timerResumeAt: const Value(null),
         updatedAt: Value(DateTime.now()),
-        revision: Value(_nextRevision(w.revision)),
+        revision: Value(w.revision),
         lastModifiedByDeviceId: Value(deviceId),
         syncStatus: const Value('pending'),
       ),
@@ -6555,7 +6653,7 @@ class AppDataRepository {
       DayWorkoutsCompanion(
         timerResumeAt: Value(DateTime.now()),
         updatedAt: Value(DateTime.now()),
-        revision: Value(_nextRevision(w.revision)),
+        revision: Value(w.revision),
         lastModifiedByDeviceId: Value(deviceId),
         syncStatus: const Value('pending'),
       ),
@@ -6625,7 +6723,7 @@ class AppDataRepository {
       DayWorkoutsCompanion(
         workoutScore: Value(ws),
         updatedAt: Value(now),
-        revision: Value(_nextRevision(w.revision)),
+        revision: Value(w.revision),
         lastModifiedByDeviceId: Value(await _syncDeviceId()),
         syncStatus: const Value('pending'),
       ),
@@ -6684,7 +6782,7 @@ class AppDataRepository {
           DayWorkoutExercisesCompanion(
             exerciseScore: Value(exScore),
             updatedAt: Value(now),
-            revision: Value(_nextRevision(e.revision)),
+            revision: Value(e.revision),
             lastModifiedByDeviceId: Value(deviceId),
             syncStatus: const Value('pending'),
           ),
@@ -6698,7 +6796,7 @@ class AppDataRepository {
           completedAt: Value(now),
           updatedAt: Value(now),
           workoutScore: Value(ws),
-          revision: Value(_nextRevision(before.revision)),
+          revision: Value(before.revision),
           lastModifiedByDeviceId: Value(deviceId),
           syncStatus: const Value('pending'),
         ),
@@ -6743,7 +6841,7 @@ class AppDataRepository {
             ? Value(avgHeartRateBpm)
             : const Value.absent(),
         updatedAt: Value(now),
-        revision: Value(_nextRevision(w.revision)),
+        revision: Value(w.revision),
         lastModifiedByDeviceId: Value(deviceId),
         syncStatus: const Value('pending'),
       ),

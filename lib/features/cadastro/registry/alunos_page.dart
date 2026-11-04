@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -19,106 +17,13 @@ import '../../../data/repositories/app_data_repository.dart';
 class AlunosPage extends StatelessWidget {
   const AlunosPage({super.key});
 
-  static String _generateTempPassword() {
-    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-    final r = Random.secure();
-    return List.generate(8, (_) => chars[r.nextInt(chars.length)]).join();
-  }
-
-  static Future<void> _showNewStudentCredentialsDialog(
-    BuildContext context, {
-    required String? studentEmail,
-    required String password,
-    bool afterAdminReset = false,
-  }) async {
-    final login = studentEmail?.trim();
-    final hasLogin = login != null && login.isNotEmpty;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: Text(
-          afterAdminReset
-              ? 'Nova senha provisória'
-              : 'Aluno criado — credenciais provisórias',
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+  static void _showAccessLinkSentSnackBar(BuildContext context, String email) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Link de acesso enviado para $email. '
+          'Peça ao aluno para verificar e-mail e spam.',
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              afterAdminReset
-                  ? 'A senha anterior deixou de valer. No próximo acesso o aluno deve definir uma nova senha.'
-                  : 'No app, o login do aluno é sempre o e-mail cadastrado.',
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'E-mail (login):',
-              style: TextStyle(
-                color: AppColors.splashMint.withValues(alpha: 0.9),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            SelectableText(
-              hasLogin ? login : '(ainda não cadastrado — preencha e salve o aluno)',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                fontStyle: hasLogin ? FontStyle.normal : FontStyle.italic,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Senha provisória:',
-              style: TextStyle(
-                color: AppColors.splashMint,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            SelectableText(
-              password,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              afterAdminReset
-                  ? 'Guarde ou copie agora. Se o envio por e-mail estiver ativo, o aluno também recebe a senha na caixa de entrada.'
-                  : 'O aluno deve alterar a senha no primeiro acesso. Guarde ou copie agora.',
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final clip = hasLogin
-                  ? 'Login (e-mail): $login\nSenha: $password'
-                  : 'Senha provisória: $password';
-              await Clipboard.setData(ClipboardData(text: clip));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Copiado para a área de transferência')),
-                );
-              }
-            },
-            child: const Text('Copiar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar'),
-          ),
-        ],
       ),
     );
   }
@@ -408,7 +313,6 @@ class AlunosPage extends StatelessWidget {
     DateTime? birth = x?.birthDate;
     String? uf = x?.stateUf;
     var sel = Set<String>.from(selectedGymIds);
-    var passwordHashForSave = x?.passwordHash;
     var mustChangeForSave = x?.mustChangePassword ?? true;
     var pwdBusy = false;
 
@@ -558,7 +462,7 @@ class AlunosPage extends StatelessWidget {
             ),
             const SizedBox(height: kCadastroFieldGap),
             Text(
-              'Senha provisória será enviada por e-mail quando o backend estiver ativo.',
+              'Ao salvar um aluno novo, um link seguro de acesso pode ser enviado por e-mail.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
             ),
             if (x != null) ...[
@@ -581,12 +485,12 @@ class AlunosPage extends StatelessWidget {
                             builder: (dCtx) => AlertDialog(
                               backgroundColor: AppColors.barBackground,
                               title: const Text(
-                                'Gerar nova senha?',
+                                'Enviar link de acesso?',
                                 style: TextStyle(color: AppColors.textPrimary),
                               ),
                               content: Text(
-                                'A senha atual deixará de funcionar. Será criada uma '
-                                'senha provisória; no próximo login será pedida troca de senha.',
+                                'Será enviado um link seguro por e-mail. '
+                                'O aluno define a senha ao abrir o link.',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.82),
                                   fontSize: 14,
@@ -600,7 +504,7 @@ class AlunosPage extends StatelessWidget {
                                 ),
                                 FilledButton(
                                   onPressed: () => Navigator.pop(dCtx, true),
-                                  child: const Text('Gerar'),
+                                  child: const Text('Enviar'),
                                 ),
                               ],
                             ),
@@ -608,33 +512,18 @@ class AlunosPage extends StatelessWidget {
                           if (go != true || !ctx.mounted) return;
                           setSt(() => pwdBusy = true);
                           try {
-                            final r = await repo.adminGenerateNewStudentPassword(x.id);
-                            passwordHashForSave = r.provisionalPassword;
+                            final r = await repo.adminSendAccessLinkForStudent(x.id);
                             mustChangeForSave = true;
                             if (!ctx.mounted) return;
                             if (r.emailSent) {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Nova senha enviada por e-mail (verifique spam). '
-                                    'O aluno deve usar essa senha no próximo acesso.',
-                                  ),
-                                ),
-                              );
-                            } else if (context.mounted) {
-                              await _showNewStudentCredentialsDialog(
-                                context,
-                                studentEmail: r.loginEmail,
-                                password: r.provisionalPassword,
-                                afterAdminReset: true,
-                              );
+                              _showAccessLinkSentSnackBar(ctx, r.loginEmail);
                             }
                           } on ArgumentError catch (e) {
                             if (ctx.mounted) {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    e.message ?? 'Não foi possível gerar.',
+                                    e.message ?? 'Não foi possível enviar o link.',
                                   ),
                                 ),
                               );
@@ -655,10 +544,10 @@ class AlunosPage extends StatelessWidget {
                       if (pwdBusy)
                         const ModernLoadingIndicator(size: 20)
                       else
-                        const Icon(Icons.vpn_key_outlined, size: 20),
+                        const Icon(Icons.mail_outline, size: 20),
                       const SizedBox(width: 10),
                       Text(
-                        pwdBusy ? 'A gerar…' : 'Gerar nova senha',
+                        pwdBusy ? 'A enviar…' : 'Enviar link de acesso',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ],
@@ -697,7 +586,6 @@ class AlunosPage extends StatelessWidget {
                 final telCom = brDigitsOnly(phoneCommercialC.text);
                 final telCel = brDigitsOnly(phoneMobileC.text);
                 final isNew = x == null;
-                final tempPass = isNew ? _generateTempPassword() : null;
                 await repo.upsertStudent(
                   id: x?.id,
                   name: name.text.trim(),
@@ -716,15 +604,11 @@ class AlunosPage extends StatelessWidget {
                   phoneMobile: telCel.isEmpty ? null : telCel,
                   gymIds: sel.toList(),
                   mustChangePassword: x == null ? true : mustChangeForSave,
-                  passwordHash: x == null ? tempPass : passwordHashForSave,
+                  sendAccessLinkAfterCreate: isNew && em.isNotEmpty,
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (isNew && tempPass != null && context.mounted) {
-                  await _showNewStudentCredentialsDialog(
-                    context,
-                    studentEmail: em.isEmpty ? null : em,
-                    password: tempPass,
-                  );
+                if (isNew && em.isNotEmpty && context.mounted) {
+                  _showAccessLinkSentSnackBar(context, em);
                 }
               },
             ),

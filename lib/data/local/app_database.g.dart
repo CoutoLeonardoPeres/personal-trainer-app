@@ -1681,12 +1681,12 @@ class $PersonalsTable extends Personals
     ),
     defaultValue: const Constant(true),
   );
-  static const VerificationMeta _passwordHashMeta = const VerificationMeta(
-    'passwordHash',
+  static const VerificationMeta _authUserIdMeta = const VerificationMeta(
+    'authUserId',
   );
   @override
-  late final GeneratedColumn<String> passwordHash = GeneratedColumn<String>(
-    'password_hash',
+  late final GeneratedColumn<String> authUserId = GeneratedColumn<String>(
+    'auth_user_id',
     aliasedName,
     true,
     type: DriftSqlType.string,
@@ -1770,7 +1770,7 @@ class $PersonalsTable extends Personals
     phoneCommercial,
     phoneMobile,
     mustChangePassword,
-    passwordHash,
+    authUserId,
     isAdmin,
     accessTier,
     maxStudentsCap,
@@ -1900,12 +1900,12 @@ class $PersonalsTable extends Personals
         ),
       );
     }
-    if (data.containsKey('password_hash')) {
+    if (data.containsKey('auth_user_id')) {
       context.handle(
-        _passwordHashMeta,
-        passwordHash.isAcceptableOrUnknown(
-          data['password_hash']!,
-          _passwordHashMeta,
+        _authUserIdMeta,
+        authUserId.isAcceptableOrUnknown(
+          data['auth_user_id']!,
+          _authUserIdMeta,
         ),
       );
     }
@@ -2007,9 +2007,9 @@ class $PersonalsTable extends Personals
         DriftSqlType.bool,
         data['${effectivePrefix}must_change_password'],
       )!,
-      passwordHash: attachedDatabase.typeMapping.read(
+      authUserId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}password_hash'],
+        data['${effectivePrefix}auth_user_id'],
       ),
       isAdmin: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
@@ -2055,7 +2055,9 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
   final String? phoneCommercial;
   final String? phoneMobile;
   final bool mustChangePassword;
-  final String? passwordHash;
+
+  /// UUID do utilizador em `auth.users` (Supabase Auth). Credenciais só no Auth.
+  final String? authUserId;
 
   /// Acesso total aos dados de todos os alunos (calendário, planejamento, cadastro).
   final bool isAdmin;
@@ -2082,7 +2084,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     this.phoneCommercial,
     this.phoneMobile,
     required this.mustChangePassword,
-    this.passwordHash,
+    this.authUserId,
     required this.isAdmin,
     required this.accessTier,
     this.maxStudentsCap,
@@ -2114,8 +2116,8 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       map['phone_mobile'] = Variable<String>(phoneMobile);
     }
     map['must_change_password'] = Variable<bool>(mustChangePassword);
-    if (!nullToAbsent || passwordHash != null) {
-      map['password_hash'] = Variable<String>(passwordHash);
+    if (!nullToAbsent || authUserId != null) {
+      map['auth_user_id'] = Variable<String>(authUserId);
     }
     map['is_admin'] = Variable<bool>(isAdmin);
     map['access_tier'] = Variable<String>(accessTier);
@@ -2149,9 +2151,9 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ? const Value.absent()
           : Value(phoneMobile),
       mustChangePassword: Value(mustChangePassword),
-      passwordHash: passwordHash == null && nullToAbsent
+      authUserId: authUserId == null && nullToAbsent
           ? const Value.absent()
-          : Value(passwordHash),
+          : Value(authUserId),
       isAdmin: Value(isAdmin),
       accessTier: Value(accessTier),
       maxStudentsCap: maxStudentsCap == null && nullToAbsent
@@ -2184,7 +2186,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       phoneCommercial: serializer.fromJson<String?>(json['phoneCommercial']),
       phoneMobile: serializer.fromJson<String?>(json['phoneMobile']),
       mustChangePassword: serializer.fromJson<bool>(json['mustChangePassword']),
-      passwordHash: serializer.fromJson<String?>(json['passwordHash']),
+      authUserId: serializer.fromJson<String?>(json['authUserId']),
       isAdmin: serializer.fromJson<bool>(json['isAdmin']),
       accessTier: serializer.fromJson<String>(json['accessTier']),
       maxStudentsCap: serializer.fromJson<int?>(json['maxStudentsCap']),
@@ -2210,7 +2212,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       'phoneCommercial': serializer.toJson<String?>(phoneCommercial),
       'phoneMobile': serializer.toJson<String?>(phoneMobile),
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
-      'passwordHash': serializer.toJson<String?>(passwordHash),
+      'authUserId': serializer.toJson<String?>(authUserId),
       'isAdmin': serializer.toJson<bool>(isAdmin),
       'accessTier': serializer.toJson<String>(accessTier),
       'maxStudentsCap': serializer.toJson<int?>(maxStudentsCap),
@@ -2234,7 +2236,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     Value<String?> phoneCommercial = const Value.absent(),
     Value<String?> phoneMobile = const Value.absent(),
     bool? mustChangePassword,
-    Value<String?> passwordHash = const Value.absent(),
+    Value<String?> authUserId = const Value.absent(),
     bool? isAdmin,
     String? accessTier,
     Value<int?> maxStudentsCap = const Value.absent(),
@@ -2257,7 +2259,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
         : this.phoneCommercial,
     phoneMobile: phoneMobile.present ? phoneMobile.value : this.phoneMobile,
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
-    passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
+    authUserId: authUserId.present ? authUserId.value : this.authUserId,
     isAdmin: isAdmin ?? this.isAdmin,
     accessTier: accessTier ?? this.accessTier,
     maxStudentsCap: maxStudentsCap.present
@@ -2292,9 +2294,9 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
       mustChangePassword: data.mustChangePassword.present
           ? data.mustChangePassword.value
           : this.mustChangePassword,
-      passwordHash: data.passwordHash.present
-          ? data.passwordHash.value
-          : this.passwordHash,
+      authUserId: data.authUserId.present
+          ? data.authUserId.value
+          : this.authUserId,
       isAdmin: data.isAdmin.present ? data.isAdmin.value : this.isAdmin,
       accessTier: data.accessTier.present
           ? data.accessTier.value
@@ -2324,7 +2326,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           ..write('phoneCommercial: $phoneCommercial, ')
           ..write('phoneMobile: $phoneMobile, ')
           ..write('mustChangePassword: $mustChangePassword, ')
-          ..write('passwordHash: $passwordHash, ')
+          ..write('authUserId: $authUserId, ')
           ..write('isAdmin: $isAdmin, ')
           ..write('accessTier: $accessTier, ')
           ..write('maxStudentsCap: $maxStudentsCap, ')
@@ -2350,7 +2352,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
     phoneCommercial,
     phoneMobile,
     mustChangePassword,
-    passwordHash,
+    authUserId,
     isAdmin,
     accessTier,
     maxStudentsCap,
@@ -2375,7 +2377,7 @@ class PersonalEntity extends DataClass implements Insertable<PersonalEntity> {
           other.phoneCommercial == this.phoneCommercial &&
           other.phoneMobile == this.phoneMobile &&
           other.mustChangePassword == this.mustChangePassword &&
-          other.passwordHash == this.passwordHash &&
+          other.authUserId == this.authUserId &&
           other.isAdmin == this.isAdmin &&
           other.accessTier == this.accessTier &&
           other.maxStudentsCap == this.maxStudentsCap &&
@@ -2398,7 +2400,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
   final Value<String?> phoneCommercial;
   final Value<String?> phoneMobile;
   final Value<bool> mustChangePassword;
-  final Value<String?> passwordHash;
+  final Value<String?> authUserId;
   final Value<bool> isAdmin;
   final Value<String> accessTier;
   final Value<int?> maxStudentsCap;
@@ -2420,7 +2422,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.phoneCommercial = const Value.absent(),
     this.phoneMobile = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
-    this.passwordHash = const Value.absent(),
+    this.authUserId = const Value.absent(),
     this.isAdmin = const Value.absent(),
     this.accessTier = const Value.absent(),
     this.maxStudentsCap = const Value.absent(),
@@ -2443,7 +2445,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     this.phoneCommercial = const Value.absent(),
     this.phoneMobile = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
-    this.passwordHash = const Value.absent(),
+    this.authUserId = const Value.absent(),
     this.isAdmin = const Value.absent(),
     this.accessTier = const Value.absent(),
     this.maxStudentsCap = const Value.absent(),
@@ -2474,7 +2476,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Expression<String>? phoneCommercial,
     Expression<String>? phoneMobile,
     Expression<bool>? mustChangePassword,
-    Expression<String>? passwordHash,
+    Expression<String>? authUserId,
     Expression<bool>? isAdmin,
     Expression<String>? accessTier,
     Expression<int>? maxStudentsCap,
@@ -2499,7 +2501,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       if (phoneMobile != null) 'phone_mobile': phoneMobile,
       if (mustChangePassword != null)
         'must_change_password': mustChangePassword,
-      if (passwordHash != null) 'password_hash': passwordHash,
+      if (authUserId != null) 'auth_user_id': authUserId,
       if (isAdmin != null) 'is_admin': isAdmin,
       if (accessTier != null) 'access_tier': accessTier,
       if (maxStudentsCap != null) 'max_students_cap': maxStudentsCap,
@@ -2524,7 +2526,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     Value<String?>? phoneCommercial,
     Value<String?>? phoneMobile,
     Value<bool>? mustChangePassword,
-    Value<String?>? passwordHash,
+    Value<String?>? authUserId,
     Value<bool>? isAdmin,
     Value<String>? accessTier,
     Value<int?>? maxStudentsCap,
@@ -2547,7 +2549,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
       phoneCommercial: phoneCommercial ?? this.phoneCommercial,
       phoneMobile: phoneMobile ?? this.phoneMobile,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
-      passwordHash: passwordHash ?? this.passwordHash,
+      authUserId: authUserId ?? this.authUserId,
       isAdmin: isAdmin ?? this.isAdmin,
       accessTier: accessTier ?? this.accessTier,
       maxStudentsCap: maxStudentsCap ?? this.maxStudentsCap,
@@ -2604,8 +2606,8 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
     if (mustChangePassword.present) {
       map['must_change_password'] = Variable<bool>(mustChangePassword.value);
     }
-    if (passwordHash.present) {
-      map['password_hash'] = Variable<String>(passwordHash.value);
+    if (authUserId.present) {
+      map['auth_user_id'] = Variable<String>(authUserId.value);
     }
     if (isAdmin.present) {
       map['is_admin'] = Variable<bool>(isAdmin.value);
@@ -2645,7 +2647,7 @@ class PersonalsCompanion extends UpdateCompanion<PersonalEntity> {
           ..write('phoneCommercial: $phoneCommercial, ')
           ..write('phoneMobile: $phoneMobile, ')
           ..write('mustChangePassword: $mustChangePassword, ')
-          ..write('passwordHash: $passwordHash, ')
+          ..write('authUserId: $authUserId, ')
           ..write('isAdmin: $isAdmin, ')
           ..write('accessTier: $accessTier, ')
           ..write('maxStudentsCap: $maxStudentsCap, ')
@@ -2850,12 +2852,12 @@ class $StudentsTable extends Students
     ),
     defaultValue: const Constant(true),
   );
-  static const VerificationMeta _passwordHashMeta = const VerificationMeta(
-    'passwordHash',
+  static const VerificationMeta _authUserIdMeta = const VerificationMeta(
+    'authUserId',
   );
   @override
-  late final GeneratedColumn<String> passwordHash = GeneratedColumn<String>(
-    'password_hash',
+  late final GeneratedColumn<String> authUserId = GeneratedColumn<String>(
+    'auth_user_id',
     aliasedName,
     true,
     type: DriftSqlType.string,
@@ -2957,7 +2959,7 @@ class $StudentsTable extends Students
     phoneCommercial,
     phoneMobile,
     mustChangePassword,
-    passwordHash,
+    authUserId,
     createdByPersonalId,
     anamneseCompleted,
     accessTier,
@@ -3095,12 +3097,12 @@ class $StudentsTable extends Students
         ),
       );
     }
-    if (data.containsKey('password_hash')) {
+    if (data.containsKey('auth_user_id')) {
       context.handle(
-        _passwordHashMeta,
-        passwordHash.isAcceptableOrUnknown(
-          data['password_hash']!,
-          _passwordHashMeta,
+        _authUserIdMeta,
+        authUserId.isAcceptableOrUnknown(
+          data['auth_user_id']!,
+          _authUserIdMeta,
         ),
       );
     }
@@ -3230,9 +3232,9 @@ class $StudentsTable extends Students
         DriftSqlType.bool,
         data['${effectivePrefix}must_change_password'],
       )!,
-      passwordHash: attachedDatabase.typeMapping.read(
+      authUserId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}password_hash'],
+        data['${effectivePrefix}auth_user_id'],
       ),
       createdByPersonalId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -3288,7 +3290,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
 
   /// Quando true, o app exige troca de senha no próximo acesso.
   final bool mustChangePassword;
-  final String? passwordHash;
+
+  /// UUID do utilizador em `auth.users` (Supabase Auth). Credenciais só no Auth.
+  final String? authUserId;
 
   /// Personal que cadastrou o aluno — visibilidade dos dados (com admin e o próprio aluno).
   final String? createdByPersonalId;
@@ -3322,7 +3326,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     this.phoneCommercial,
     this.phoneMobile,
     required this.mustChangePassword,
-    this.passwordHash,
+    this.authUserId,
     this.createdByPersonalId,
     required this.anamneseCompleted,
     required this.accessTier,
@@ -3379,8 +3383,8 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       map['phone_mobile'] = Variable<String>(phoneMobile);
     }
     map['must_change_password'] = Variable<bool>(mustChangePassword);
-    if (!nullToAbsent || passwordHash != null) {
-      map['password_hash'] = Variable<String>(passwordHash);
+    if (!nullToAbsent || authUserId != null) {
+      map['auth_user_id'] = Variable<String>(authUserId);
     }
     if (!nullToAbsent || createdByPersonalId != null) {
       map['created_by_personal_id'] = Variable<String>(createdByPersonalId);
@@ -3435,9 +3439,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           ? const Value.absent()
           : Value(phoneMobile),
       mustChangePassword: Value(mustChangePassword),
-      passwordHash: passwordHash == null && nullToAbsent
+      authUserId: authUserId == null && nullToAbsent
           ? const Value.absent()
-          : Value(passwordHash),
+          : Value(authUserId),
       createdByPersonalId: createdByPersonalId == null && nullToAbsent
           ? const Value.absent()
           : Value(createdByPersonalId),
@@ -3475,7 +3479,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       phoneCommercial: serializer.fromJson<String?>(json['phoneCommercial']),
       phoneMobile: serializer.fromJson<String?>(json['phoneMobile']),
       mustChangePassword: serializer.fromJson<bool>(json['mustChangePassword']),
-      passwordHash: serializer.fromJson<String?>(json['passwordHash']),
+      authUserId: serializer.fromJson<String?>(json['authUserId']),
       createdByPersonalId: serializer.fromJson<String?>(
         json['createdByPersonalId'],
       ),
@@ -3510,7 +3514,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       'phoneCommercial': serializer.toJson<String?>(phoneCommercial),
       'phoneMobile': serializer.toJson<String?>(phoneMobile),
       'mustChangePassword': serializer.toJson<bool>(mustChangePassword),
-      'passwordHash': serializer.toJson<String?>(passwordHash),
+      'authUserId': serializer.toJson<String?>(authUserId),
       'createdByPersonalId': serializer.toJson<String?>(createdByPersonalId),
       'anamneseCompleted': serializer.toJson<bool>(anamneseCompleted),
       'accessTier': serializer.toJson<String>(accessTier),
@@ -3541,7 +3545,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     Value<String?> phoneCommercial = const Value.absent(),
     Value<String?> phoneMobile = const Value.absent(),
     bool? mustChangePassword,
-    Value<String?> passwordHash = const Value.absent(),
+    Value<String?> authUserId = const Value.absent(),
     Value<String?> createdByPersonalId = const Value.absent(),
     bool? anamneseCompleted,
     String? accessTier,
@@ -3569,7 +3573,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
         : this.phoneCommercial,
     phoneMobile: phoneMobile.present ? phoneMobile.value : this.phoneMobile,
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
-    passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
+    authUserId: authUserId.present ? authUserId.value : this.authUserId,
     createdByPersonalId: createdByPersonalId.present
         ? createdByPersonalId.value
         : this.createdByPersonalId,
@@ -3613,9 +3617,9 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
       mustChangePassword: data.mustChangePassword.present
           ? data.mustChangePassword.value
           : this.mustChangePassword,
-      passwordHash: data.passwordHash.present
-          ? data.passwordHash.value
-          : this.passwordHash,
+      authUserId: data.authUserId.present
+          ? data.authUserId.value
+          : this.authUserId,
       createdByPersonalId: data.createdByPersonalId.present
           ? data.createdByPersonalId.value
           : this.createdByPersonalId,
@@ -3654,7 +3658,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           ..write('phoneCommercial: $phoneCommercial, ')
           ..write('phoneMobile: $phoneMobile, ')
           ..write('mustChangePassword: $mustChangePassword, ')
-          ..write('passwordHash: $passwordHash, ')
+          ..write('authUserId: $authUserId, ')
           ..write('createdByPersonalId: $createdByPersonalId, ')
           ..write('anamneseCompleted: $anamneseCompleted, ')
           ..write('accessTier: $accessTier, ')
@@ -3685,7 +3689,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
     phoneCommercial,
     phoneMobile,
     mustChangePassword,
-    passwordHash,
+    authUserId,
     createdByPersonalId,
     anamneseCompleted,
     accessTier,
@@ -3715,7 +3719,7 @@ class StudentEntity extends DataClass implements Insertable<StudentEntity> {
           other.phoneCommercial == this.phoneCommercial &&
           other.phoneMobile == this.phoneMobile &&
           other.mustChangePassword == this.mustChangePassword &&
-          other.passwordHash == this.passwordHash &&
+          other.authUserId == this.authUserId &&
           other.createdByPersonalId == this.createdByPersonalId &&
           other.anamneseCompleted == this.anamneseCompleted &&
           other.accessTier == this.accessTier &&
@@ -3743,7 +3747,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
   final Value<String?> phoneCommercial;
   final Value<String?> phoneMobile;
   final Value<bool> mustChangePassword;
-  final Value<String?> passwordHash;
+  final Value<String?> authUserId;
   final Value<String?> createdByPersonalId;
   final Value<bool> anamneseCompleted;
   final Value<String> accessTier;
@@ -3770,7 +3774,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     this.phoneCommercial = const Value.absent(),
     this.phoneMobile = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
-    this.passwordHash = const Value.absent(),
+    this.authUserId = const Value.absent(),
     this.createdByPersonalId = const Value.absent(),
     this.anamneseCompleted = const Value.absent(),
     this.accessTier = const Value.absent(),
@@ -3798,7 +3802,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     this.phoneCommercial = const Value.absent(),
     this.phoneMobile = const Value.absent(),
     this.mustChangePassword = const Value.absent(),
-    this.passwordHash = const Value.absent(),
+    this.authUserId = const Value.absent(),
     this.createdByPersonalId = const Value.absent(),
     this.anamneseCompleted = const Value.absent(),
     this.accessTier = const Value.absent(),
@@ -3827,7 +3831,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     Expression<String>? phoneCommercial,
     Expression<String>? phoneMobile,
     Expression<bool>? mustChangePassword,
-    Expression<String>? passwordHash,
+    Expression<String>? authUserId,
     Expression<String>? createdByPersonalId,
     Expression<bool>? anamneseCompleted,
     Expression<String>? accessTier,
@@ -3856,7 +3860,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
       if (phoneMobile != null) 'phone_mobile': phoneMobile,
       if (mustChangePassword != null)
         'must_change_password': mustChangePassword,
-      if (passwordHash != null) 'password_hash': passwordHash,
+      if (authUserId != null) 'auth_user_id': authUserId,
       if (createdByPersonalId != null)
         'created_by_personal_id': createdByPersonalId,
       if (anamneseCompleted != null) 'anamnese_completed': anamneseCompleted,
@@ -3888,7 +3892,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     Value<String?>? phoneCommercial,
     Value<String?>? phoneMobile,
     Value<bool>? mustChangePassword,
-    Value<String?>? passwordHash,
+    Value<String?>? authUserId,
     Value<String?>? createdByPersonalId,
     Value<bool>? anamneseCompleted,
     Value<String>? accessTier,
@@ -3916,7 +3920,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
       phoneCommercial: phoneCommercial ?? this.phoneCommercial,
       phoneMobile: phoneMobile ?? this.phoneMobile,
       mustChangePassword: mustChangePassword ?? this.mustChangePassword,
-      passwordHash: passwordHash ?? this.passwordHash,
+      authUserId: authUserId ?? this.authUserId,
       createdByPersonalId: createdByPersonalId ?? this.createdByPersonalId,
       anamneseCompleted: anamneseCompleted ?? this.anamneseCompleted,
       accessTier: accessTier ?? this.accessTier,
@@ -3984,8 +3988,8 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
     if (mustChangePassword.present) {
       map['must_change_password'] = Variable<bool>(mustChangePassword.value);
     }
-    if (passwordHash.present) {
-      map['password_hash'] = Variable<String>(passwordHash.value);
+    if (authUserId.present) {
+      map['auth_user_id'] = Variable<String>(authUserId.value);
     }
     if (createdByPersonalId.present) {
       map['created_by_personal_id'] = Variable<String>(
@@ -4036,7 +4040,7 @@ class StudentsCompanion extends UpdateCompanion<StudentEntity> {
           ..write('phoneCommercial: $phoneCommercial, ')
           ..write('phoneMobile: $phoneMobile, ')
           ..write('mustChangePassword: $mustChangePassword, ')
-          ..write('passwordHash: $passwordHash, ')
+          ..write('authUserId: $authUserId, ')
           ..write('createdByPersonalId: $createdByPersonalId, ')
           ..write('anamneseCompleted: $anamneseCompleted, ')
           ..write('accessTier: $accessTier, ')
@@ -9472,6 +9476,698 @@ class DayWorkoutExercisesCompanion
   }
 }
 
+class $PerformedSetEventsTable extends PerformedSetEvents
+    with TableInfo<$PerformedSetEventsTable, PerformedSetEventEntity> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PerformedSetEventsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lineIdMeta = const VerificationMeta('lineId');
+  @override
+  late final GeneratedColumn<String> lineId = GeneratedColumn<String>(
+    'line_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES day_workout_exercises (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _loadKgMeta = const VerificationMeta('loadKg');
+  @override
+  late final GeneratedColumn<double> loadKg = GeneratedColumn<double>(
+    'load_kg',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _repsMeta = const VerificationMeta('reps');
+  @override
+  late final GeneratedColumn<int> reps = GeneratedColumn<int>(
+    'reps',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _loggedAtMsMeta = const VerificationMeta(
+    'loggedAtMs',
+  );
+  @override
+  late final GeneratedColumn<int> loggedAtMs = GeneratedColumn<int>(
+    'logged_at_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _restPrescribedSecMeta = const VerificationMeta(
+    'restPrescribedSec',
+  );
+  @override
+  late final GeneratedColumn<int> restPrescribedSec = GeneratedColumn<int>(
+    'rest_prescribed_sec',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _restCountdownElapsedMsMeta =
+      const VerificationMeta('restCountdownElapsedMs');
+  @override
+  late final GeneratedColumn<int> restCountdownElapsedMs = GeneratedColumn<int>(
+    'rest_countdown_elapsed_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _postRestModalMsMeta = const VerificationMeta(
+    'postRestModalMs',
+  );
+  @override
+  late final GeneratedColumn<int> postRestModalMs = GeneratedColumn<int>(
+    'post_rest_modal_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _syncedMeta = const VerificationMeta('synced');
+  @override
+  late final GeneratedColumn<bool> synced = GeneratedColumn<bool>(
+    'synced',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("synced" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    lineId,
+    loadKg,
+    reps,
+    loggedAtMs,
+    restPrescribedSec,
+    restCountdownElapsedMs,
+    postRestModalMs,
+    deviceId,
+    synced,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'performed_set_events';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PerformedSetEventEntity> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('line_id')) {
+      context.handle(
+        _lineIdMeta,
+        lineId.isAcceptableOrUnknown(data['line_id']!, _lineIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lineIdMeta);
+    }
+    if (data.containsKey('load_kg')) {
+      context.handle(
+        _loadKgMeta,
+        loadKg.isAcceptableOrUnknown(data['load_kg']!, _loadKgMeta),
+      );
+    }
+    if (data.containsKey('reps')) {
+      context.handle(
+        _repsMeta,
+        reps.isAcceptableOrUnknown(data['reps']!, _repsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_repsMeta);
+    }
+    if (data.containsKey('logged_at_ms')) {
+      context.handle(
+        _loggedAtMsMeta,
+        loggedAtMs.isAcceptableOrUnknown(
+          data['logged_at_ms']!,
+          _loggedAtMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rest_prescribed_sec')) {
+      context.handle(
+        _restPrescribedSecMeta,
+        restPrescribedSec.isAcceptableOrUnknown(
+          data['rest_prescribed_sec']!,
+          _restPrescribedSecMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rest_countdown_elapsed_ms')) {
+      context.handle(
+        _restCountdownElapsedMsMeta,
+        restCountdownElapsedMs.isAcceptableOrUnknown(
+          data['rest_countdown_elapsed_ms']!,
+          _restCountdownElapsedMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('post_rest_modal_ms')) {
+      context.handle(
+        _postRestModalMsMeta,
+        postRestModalMs.isAcceptableOrUnknown(
+          data['post_rest_modal_ms']!,
+          _postRestModalMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    }
+    if (data.containsKey('synced')) {
+      context.handle(
+        _syncedMeta,
+        synced.isAcceptableOrUnknown(data['synced']!, _syncedMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PerformedSetEventEntity map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PerformedSetEventEntity(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      lineId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}line_id'],
+      )!,
+      loadKg: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}load_kg'],
+      ),
+      reps: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reps'],
+      )!,
+      loggedAtMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}logged_at_ms'],
+      ),
+      restPrescribedSec: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rest_prescribed_sec'],
+      ),
+      restCountdownElapsedMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rest_countdown_elapsed_ms'],
+      ),
+      postRestModalMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}post_rest_modal_ms'],
+      ),
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      ),
+      synced: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}synced'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PerformedSetEventsTable createAlias(String alias) {
+    return $PerformedSetEventsTable(attachedDatabase, alias);
+  }
+}
+
+class PerformedSetEventEntity extends DataClass
+    implements Insertable<PerformedSetEventEntity> {
+  final String id;
+  final String lineId;
+  final double? loadKg;
+  final int reps;
+  final int? loggedAtMs;
+  final int? restPrescribedSec;
+  final int? restCountdownElapsedMs;
+  final int? postRestModalMs;
+  final String? deviceId;
+  final bool synced;
+  final DateTime createdAt;
+  const PerformedSetEventEntity({
+    required this.id,
+    required this.lineId,
+    this.loadKg,
+    required this.reps,
+    this.loggedAtMs,
+    this.restPrescribedSec,
+    this.restCountdownElapsedMs,
+    this.postRestModalMs,
+    this.deviceId,
+    required this.synced,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['line_id'] = Variable<String>(lineId);
+    if (!nullToAbsent || loadKg != null) {
+      map['load_kg'] = Variable<double>(loadKg);
+    }
+    map['reps'] = Variable<int>(reps);
+    if (!nullToAbsent || loggedAtMs != null) {
+      map['logged_at_ms'] = Variable<int>(loggedAtMs);
+    }
+    if (!nullToAbsent || restPrescribedSec != null) {
+      map['rest_prescribed_sec'] = Variable<int>(restPrescribedSec);
+    }
+    if (!nullToAbsent || restCountdownElapsedMs != null) {
+      map['rest_countdown_elapsed_ms'] = Variable<int>(restCountdownElapsedMs);
+    }
+    if (!nullToAbsent || postRestModalMs != null) {
+      map['post_rest_modal_ms'] = Variable<int>(postRestModalMs);
+    }
+    if (!nullToAbsent || deviceId != null) {
+      map['device_id'] = Variable<String>(deviceId);
+    }
+    map['synced'] = Variable<bool>(synced);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  PerformedSetEventsCompanion toCompanion(bool nullToAbsent) {
+    return PerformedSetEventsCompanion(
+      id: Value(id),
+      lineId: Value(lineId),
+      loadKg: loadKg == null && nullToAbsent
+          ? const Value.absent()
+          : Value(loadKg),
+      reps: Value(reps),
+      loggedAtMs: loggedAtMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(loggedAtMs),
+      restPrescribedSec: restPrescribedSec == null && nullToAbsent
+          ? const Value.absent()
+          : Value(restPrescribedSec),
+      restCountdownElapsedMs: restCountdownElapsedMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(restCountdownElapsedMs),
+      postRestModalMs: postRestModalMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(postRestModalMs),
+      deviceId: deviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deviceId),
+      synced: Value(synced),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory PerformedSetEventEntity.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PerformedSetEventEntity(
+      id: serializer.fromJson<String>(json['id']),
+      lineId: serializer.fromJson<String>(json['lineId']),
+      loadKg: serializer.fromJson<double?>(json['loadKg']),
+      reps: serializer.fromJson<int>(json['reps']),
+      loggedAtMs: serializer.fromJson<int?>(json['loggedAtMs']),
+      restPrescribedSec: serializer.fromJson<int?>(json['restPrescribedSec']),
+      restCountdownElapsedMs: serializer.fromJson<int?>(
+        json['restCountdownElapsedMs'],
+      ),
+      postRestModalMs: serializer.fromJson<int?>(json['postRestModalMs']),
+      deviceId: serializer.fromJson<String?>(json['deviceId']),
+      synced: serializer.fromJson<bool>(json['synced']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'lineId': serializer.toJson<String>(lineId),
+      'loadKg': serializer.toJson<double?>(loadKg),
+      'reps': serializer.toJson<int>(reps),
+      'loggedAtMs': serializer.toJson<int?>(loggedAtMs),
+      'restPrescribedSec': serializer.toJson<int?>(restPrescribedSec),
+      'restCountdownElapsedMs': serializer.toJson<int?>(restCountdownElapsedMs),
+      'postRestModalMs': serializer.toJson<int?>(postRestModalMs),
+      'deviceId': serializer.toJson<String?>(deviceId),
+      'synced': serializer.toJson<bool>(synced),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  PerformedSetEventEntity copyWith({
+    String? id,
+    String? lineId,
+    Value<double?> loadKg = const Value.absent(),
+    int? reps,
+    Value<int?> loggedAtMs = const Value.absent(),
+    Value<int?> restPrescribedSec = const Value.absent(),
+    Value<int?> restCountdownElapsedMs = const Value.absent(),
+    Value<int?> postRestModalMs = const Value.absent(),
+    Value<String?> deviceId = const Value.absent(),
+    bool? synced,
+    DateTime? createdAt,
+  }) => PerformedSetEventEntity(
+    id: id ?? this.id,
+    lineId: lineId ?? this.lineId,
+    loadKg: loadKg.present ? loadKg.value : this.loadKg,
+    reps: reps ?? this.reps,
+    loggedAtMs: loggedAtMs.present ? loggedAtMs.value : this.loggedAtMs,
+    restPrescribedSec: restPrescribedSec.present
+        ? restPrescribedSec.value
+        : this.restPrescribedSec,
+    restCountdownElapsedMs: restCountdownElapsedMs.present
+        ? restCountdownElapsedMs.value
+        : this.restCountdownElapsedMs,
+    postRestModalMs: postRestModalMs.present
+        ? postRestModalMs.value
+        : this.postRestModalMs,
+    deviceId: deviceId.present ? deviceId.value : this.deviceId,
+    synced: synced ?? this.synced,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  PerformedSetEventEntity copyWithCompanion(PerformedSetEventsCompanion data) {
+    return PerformedSetEventEntity(
+      id: data.id.present ? data.id.value : this.id,
+      lineId: data.lineId.present ? data.lineId.value : this.lineId,
+      loadKg: data.loadKg.present ? data.loadKg.value : this.loadKg,
+      reps: data.reps.present ? data.reps.value : this.reps,
+      loggedAtMs: data.loggedAtMs.present
+          ? data.loggedAtMs.value
+          : this.loggedAtMs,
+      restPrescribedSec: data.restPrescribedSec.present
+          ? data.restPrescribedSec.value
+          : this.restPrescribedSec,
+      restCountdownElapsedMs: data.restCountdownElapsedMs.present
+          ? data.restCountdownElapsedMs.value
+          : this.restCountdownElapsedMs,
+      postRestModalMs: data.postRestModalMs.present
+          ? data.postRestModalMs.value
+          : this.postRestModalMs,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      synced: data.synced.present ? data.synced.value : this.synced,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PerformedSetEventEntity(')
+          ..write('id: $id, ')
+          ..write('lineId: $lineId, ')
+          ..write('loadKg: $loadKg, ')
+          ..write('reps: $reps, ')
+          ..write('loggedAtMs: $loggedAtMs, ')
+          ..write('restPrescribedSec: $restPrescribedSec, ')
+          ..write('restCountdownElapsedMs: $restCountdownElapsedMs, ')
+          ..write('postRestModalMs: $postRestModalMs, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('synced: $synced, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    lineId,
+    loadKg,
+    reps,
+    loggedAtMs,
+    restPrescribedSec,
+    restCountdownElapsedMs,
+    postRestModalMs,
+    deviceId,
+    synced,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PerformedSetEventEntity &&
+          other.id == this.id &&
+          other.lineId == this.lineId &&
+          other.loadKg == this.loadKg &&
+          other.reps == this.reps &&
+          other.loggedAtMs == this.loggedAtMs &&
+          other.restPrescribedSec == this.restPrescribedSec &&
+          other.restCountdownElapsedMs == this.restCountdownElapsedMs &&
+          other.postRestModalMs == this.postRestModalMs &&
+          other.deviceId == this.deviceId &&
+          other.synced == this.synced &&
+          other.createdAt == this.createdAt);
+}
+
+class PerformedSetEventsCompanion
+    extends UpdateCompanion<PerformedSetEventEntity> {
+  final Value<String> id;
+  final Value<String> lineId;
+  final Value<double?> loadKg;
+  final Value<int> reps;
+  final Value<int?> loggedAtMs;
+  final Value<int?> restPrescribedSec;
+  final Value<int?> restCountdownElapsedMs;
+  final Value<int?> postRestModalMs;
+  final Value<String?> deviceId;
+  final Value<bool> synced;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const PerformedSetEventsCompanion({
+    this.id = const Value.absent(),
+    this.lineId = const Value.absent(),
+    this.loadKg = const Value.absent(),
+    this.reps = const Value.absent(),
+    this.loggedAtMs = const Value.absent(),
+    this.restPrescribedSec = const Value.absent(),
+    this.restCountdownElapsedMs = const Value.absent(),
+    this.postRestModalMs = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.synced = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PerformedSetEventsCompanion.insert({
+    required String id,
+    required String lineId,
+    this.loadKg = const Value.absent(),
+    required int reps,
+    this.loggedAtMs = const Value.absent(),
+    this.restPrescribedSec = const Value.absent(),
+    this.restCountdownElapsedMs = const Value.absent(),
+    this.postRestModalMs = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.synced = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       lineId = Value(lineId),
+       reps = Value(reps);
+  static Insertable<PerformedSetEventEntity> custom({
+    Expression<String>? id,
+    Expression<String>? lineId,
+    Expression<double>? loadKg,
+    Expression<int>? reps,
+    Expression<int>? loggedAtMs,
+    Expression<int>? restPrescribedSec,
+    Expression<int>? restCountdownElapsedMs,
+    Expression<int>? postRestModalMs,
+    Expression<String>? deviceId,
+    Expression<bool>? synced,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (lineId != null) 'line_id': lineId,
+      if (loadKg != null) 'load_kg': loadKg,
+      if (reps != null) 'reps': reps,
+      if (loggedAtMs != null) 'logged_at_ms': loggedAtMs,
+      if (restPrescribedSec != null) 'rest_prescribed_sec': restPrescribedSec,
+      if (restCountdownElapsedMs != null)
+        'rest_countdown_elapsed_ms': restCountdownElapsedMs,
+      if (postRestModalMs != null) 'post_rest_modal_ms': postRestModalMs,
+      if (deviceId != null) 'device_id': deviceId,
+      if (synced != null) 'synced': synced,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PerformedSetEventsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? lineId,
+    Value<double?>? loadKg,
+    Value<int>? reps,
+    Value<int?>? loggedAtMs,
+    Value<int?>? restPrescribedSec,
+    Value<int?>? restCountdownElapsedMs,
+    Value<int?>? postRestModalMs,
+    Value<String?>? deviceId,
+    Value<bool>? synced,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return PerformedSetEventsCompanion(
+      id: id ?? this.id,
+      lineId: lineId ?? this.lineId,
+      loadKg: loadKg ?? this.loadKg,
+      reps: reps ?? this.reps,
+      loggedAtMs: loggedAtMs ?? this.loggedAtMs,
+      restPrescribedSec: restPrescribedSec ?? this.restPrescribedSec,
+      restCountdownElapsedMs:
+          restCountdownElapsedMs ?? this.restCountdownElapsedMs,
+      postRestModalMs: postRestModalMs ?? this.postRestModalMs,
+      deviceId: deviceId ?? this.deviceId,
+      synced: synced ?? this.synced,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (lineId.present) {
+      map['line_id'] = Variable<String>(lineId.value);
+    }
+    if (loadKg.present) {
+      map['load_kg'] = Variable<double>(loadKg.value);
+    }
+    if (reps.present) {
+      map['reps'] = Variable<int>(reps.value);
+    }
+    if (loggedAtMs.present) {
+      map['logged_at_ms'] = Variable<int>(loggedAtMs.value);
+    }
+    if (restPrescribedSec.present) {
+      map['rest_prescribed_sec'] = Variable<int>(restPrescribedSec.value);
+    }
+    if (restCountdownElapsedMs.present) {
+      map['rest_countdown_elapsed_ms'] = Variable<int>(
+        restCountdownElapsedMs.value,
+      );
+    }
+    if (postRestModalMs.present) {
+      map['post_rest_modal_ms'] = Variable<int>(postRestModalMs.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (synced.present) {
+      map['synced'] = Variable<bool>(synced.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PerformedSetEventsCompanion(')
+          ..write('id: $id, ')
+          ..write('lineId: $lineId, ')
+          ..write('loadKg: $loadKg, ')
+          ..write('reps: $reps, ')
+          ..write('loggedAtMs: $loggedAtMs, ')
+          ..write('restPrescribedSec: $restPrescribedSec, ')
+          ..write('restCountdownElapsedMs: $restCountdownElapsedMs, ')
+          ..write('postRestModalMs: $postRestModalMs, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('synced: $synced, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $AuditLogsTable extends AuditLogs
     with TableInfo<$AuditLogsTable, AuditLogEntity> {
   @override
@@ -10829,6 +11525,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $DayWorkoutsTable dayWorkouts = $DayWorkoutsTable(this);
   late final $DayWorkoutExercisesTable dayWorkoutExercises =
       $DayWorkoutExercisesTable(this);
+  late final $PerformedSetEventsTable performedSetEvents =
+      $PerformedSetEventsTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
   late final $SyncQueueTable syncQueue = $SyncQueueTable(this);
   @override
@@ -10849,9 +11547,20 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     weekScheduleItems,
     dayWorkouts,
     dayWorkoutExercises,
+    performedSetEvents,
     auditLogs,
     syncQueue,
   ];
+  @override
+  StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'day_workout_exercises',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('performed_set_events', kind: UpdateKind.delete)],
+    ),
+  ]);
 }
 
 typedef $$MuscleGroupsTableCreateCompanionBuilder =
@@ -12286,7 +12995,7 @@ typedef $$PersonalsTableCreateCompanionBuilder =
       Value<String?> phoneCommercial,
       Value<String?> phoneMobile,
       Value<bool> mustChangePassword,
-      Value<String?> passwordHash,
+      Value<String?> authUserId,
       Value<bool> isAdmin,
       Value<String> accessTier,
       Value<int?> maxStudentsCap,
@@ -12310,7 +13019,7 @@ typedef $$PersonalsTableUpdateCompanionBuilder =
       Value<String?> phoneCommercial,
       Value<String?> phoneMobile,
       Value<bool> mustChangePassword,
-      Value<String?> passwordHash,
+      Value<String?> authUserId,
       Value<bool> isAdmin,
       Value<String> accessTier,
       Value<int?> maxStudentsCap,
@@ -12463,8 +13172,8 @@ class $$PersonalsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  ColumnFilters<String> get authUserId => $composableBuilder(
+    column: $table.authUserId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12648,8 +13357,8 @@ class $$PersonalsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  ColumnOrderings<String> get authUserId => $composableBuilder(
+    column: $table.authUserId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -12740,8 +13449,8 @@ class $$PersonalsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  GeneratedColumn<String> get authUserId => $composableBuilder(
+    column: $table.authUserId,
     builder: (column) => column,
   );
 
@@ -12886,7 +13595,7 @@ class $$PersonalsTableTableManager
                 Value<String?> phoneCommercial = const Value.absent(),
                 Value<String?> phoneMobile = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
+                Value<String?> authUserId = const Value.absent(),
                 Value<bool> isAdmin = const Value.absent(),
                 Value<String> accessTier = const Value.absent(),
                 Value<int?> maxStudentsCap = const Value.absent(),
@@ -12908,7 +13617,7 @@ class $$PersonalsTableTableManager
                 phoneCommercial: phoneCommercial,
                 phoneMobile: phoneMobile,
                 mustChangePassword: mustChangePassword,
-                passwordHash: passwordHash,
+                authUserId: authUserId,
                 isAdmin: isAdmin,
                 accessTier: accessTier,
                 maxStudentsCap: maxStudentsCap,
@@ -12932,7 +13641,7 @@ class $$PersonalsTableTableManager
                 Value<String?> phoneCommercial = const Value.absent(),
                 Value<String?> phoneMobile = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
+                Value<String?> authUserId = const Value.absent(),
                 Value<bool> isAdmin = const Value.absent(),
                 Value<String> accessTier = const Value.absent(),
                 Value<int?> maxStudentsCap = const Value.absent(),
@@ -12954,7 +13663,7 @@ class $$PersonalsTableTableManager
                 phoneCommercial: phoneCommercial,
                 phoneMobile: phoneMobile,
                 mustChangePassword: mustChangePassword,
-                passwordHash: passwordHash,
+                authUserId: authUserId,
                 isAdmin: isAdmin,
                 accessTier: accessTier,
                 maxStudentsCap: maxStudentsCap,
@@ -13095,7 +13804,7 @@ typedef $$StudentsTableCreateCompanionBuilder =
       Value<String?> phoneCommercial,
       Value<String?> phoneMobile,
       Value<bool> mustChangePassword,
-      Value<String?> passwordHash,
+      Value<String?> authUserId,
       Value<String?> createdByPersonalId,
       Value<bool> anamneseCompleted,
       Value<String> accessTier,
@@ -13124,7 +13833,7 @@ typedef $$StudentsTableUpdateCompanionBuilder =
       Value<String?> phoneCommercial,
       Value<String?> phoneMobile,
       Value<bool> mustChangePassword,
-      Value<String?> passwordHash,
+      Value<String?> authUserId,
       Value<String?> createdByPersonalId,
       Value<bool> anamneseCompleted,
       Value<String> accessTier,
@@ -13338,8 +14047,8 @@ class $$StudentsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  ColumnFilters<String> get authUserId => $composableBuilder(
+    column: $table.authUserId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -13591,8 +14300,8 @@ class $$StudentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  ColumnOrderings<String> get authUserId => $composableBuilder(
+    column: $table.authUserId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -13720,8 +14429,8 @@ class $$StudentsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  GeneratedColumn<String> get authUserId => $composableBuilder(
+    column: $table.authUserId,
     builder: (column) => column,
   );
 
@@ -13923,7 +14632,7 @@ class $$StudentsTableTableManager
                 Value<String?> phoneCommercial = const Value.absent(),
                 Value<String?> phoneMobile = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
+                Value<String?> authUserId = const Value.absent(),
                 Value<String?> createdByPersonalId = const Value.absent(),
                 Value<bool> anamneseCompleted = const Value.absent(),
                 Value<String> accessTier = const Value.absent(),
@@ -13950,7 +14659,7 @@ class $$StudentsTableTableManager
                 phoneCommercial: phoneCommercial,
                 phoneMobile: phoneMobile,
                 mustChangePassword: mustChangePassword,
-                passwordHash: passwordHash,
+                authUserId: authUserId,
                 createdByPersonalId: createdByPersonalId,
                 anamneseCompleted: anamneseCompleted,
                 accessTier: accessTier,
@@ -13979,7 +14688,7 @@ class $$StudentsTableTableManager
                 Value<String?> phoneCommercial = const Value.absent(),
                 Value<String?> phoneMobile = const Value.absent(),
                 Value<bool> mustChangePassword = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
+                Value<String?> authUserId = const Value.absent(),
                 Value<String?> createdByPersonalId = const Value.absent(),
                 Value<bool> anamneseCompleted = const Value.absent(),
                 Value<String> accessTier = const Value.absent(),
@@ -14006,7 +14715,7 @@ class $$StudentsTableTableManager
                 phoneCommercial: phoneCommercial,
                 phoneMobile: phoneMobile,
                 mustChangePassword: mustChangePassword,
-                passwordHash: passwordHash,
+                authUserId: authUserId,
                 createdByPersonalId: createdByPersonalId,
                 anamneseCompleted: anamneseCompleted,
                 accessTier: accessTier,
@@ -18295,6 +19004,33 @@ final class $$DayWorkoutExercisesTableReferences
       manager.$state.copyWith(prefetchedData: [item]),
     );
   }
+
+  static MultiTypedResultKey<
+    $PerformedSetEventsTable,
+    List<PerformedSetEventEntity>
+  >
+  _performedSetEventsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.performedSetEvents,
+        aliasName: $_aliasNameGenerator(
+          db.dayWorkoutExercises.id,
+          db.performedSetEvents.lineId,
+        ),
+      );
+
+  $$PerformedSetEventsTableProcessedTableManager get performedSetEventsRefs {
+    final manager = $$PerformedSetEventsTableTableManager(
+      $_db,
+      $_db.performedSetEvents,
+    ).filter((f) => f.lineId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _performedSetEventsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$DayWorkoutExercisesTableFilterComposer
@@ -18448,6 +19184,31 @@ class $$DayWorkoutExercisesTableFilterComposer
           ),
     );
     return composer;
+  }
+
+  Expression<bool> performedSetEventsRefs(
+    Expression<bool> Function($$PerformedSetEventsTableFilterComposer f) f,
+  ) {
+    final $$PerformedSetEventsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.performedSetEvents,
+      getReferencedColumn: (t) => t.lineId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PerformedSetEventsTableFilterComposer(
+            $db: $db,
+            $table: $db.performedSetEvents,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
   }
 }
 
@@ -18737,6 +19498,32 @@ class $$DayWorkoutExercisesTableAnnotationComposer
     );
     return composer;
   }
+
+  Expression<T> performedSetEventsRefs<T extends Object>(
+    Expression<T> Function($$PerformedSetEventsTableAnnotationComposer a) f,
+  ) {
+    final $$PerformedSetEventsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.performedSetEvents,
+          getReferencedColumn: (t) => t.lineId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$PerformedSetEventsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.performedSetEvents,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$DayWorkoutExercisesTableTableManager
@@ -18756,6 +19543,7 @@ class $$DayWorkoutExercisesTableTableManager
             bool dayWorkoutId,
             bool exerciseId,
             bool trainingMethodId,
+            bool performedSetEventsRefs,
           })
         > {
   $$DayWorkoutExercisesTableTableManager(
@@ -18874,10 +19662,13 @@ class $$DayWorkoutExercisesTableTableManager
                 dayWorkoutId = false,
                 exerciseId = false,
                 trainingMethodId = false,
+                performedSetEventsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
-                  explicitlyWatchedTables: [],
+                  explicitlyWatchedTables: [
+                    if (performedSetEventsRefs) db.performedSetEvents,
+                  ],
                   addJoins:
                       <
                         T extends TableManagerState<
@@ -18943,7 +19734,29 @@ class $$DayWorkoutExercisesTableTableManager
                         return state;
                       },
                   getPrefetchedDataCallback: (items) async {
-                    return [];
+                    return [
+                      if (performedSetEventsRefs)
+                        await $_getPrefetchedData<
+                          DayWorkoutExerciseEntity,
+                          $DayWorkoutExercisesTable,
+                          PerformedSetEventEntity
+                        >(
+                          currentTable: table,
+                          referencedTable: $$DayWorkoutExercisesTableReferences
+                              ._performedSetEventsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$DayWorkoutExercisesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).performedSetEventsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.lineId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
                   },
                 );
               },
@@ -18967,7 +19780,470 @@ typedef $$DayWorkoutExercisesTableProcessedTableManager =
         bool dayWorkoutId,
         bool exerciseId,
         bool trainingMethodId,
+        bool performedSetEventsRefs,
       })
+    >;
+typedef $$PerformedSetEventsTableCreateCompanionBuilder =
+    PerformedSetEventsCompanion Function({
+      required String id,
+      required String lineId,
+      Value<double?> loadKg,
+      required int reps,
+      Value<int?> loggedAtMs,
+      Value<int?> restPrescribedSec,
+      Value<int?> restCountdownElapsedMs,
+      Value<int?> postRestModalMs,
+      Value<String?> deviceId,
+      Value<bool> synced,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$PerformedSetEventsTableUpdateCompanionBuilder =
+    PerformedSetEventsCompanion Function({
+      Value<String> id,
+      Value<String> lineId,
+      Value<double?> loadKg,
+      Value<int> reps,
+      Value<int?> loggedAtMs,
+      Value<int?> restPrescribedSec,
+      Value<int?> restCountdownElapsedMs,
+      Value<int?> postRestModalMs,
+      Value<String?> deviceId,
+      Value<bool> synced,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+final class $$PerformedSetEventsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $PerformedSetEventsTable,
+          PerformedSetEventEntity
+        > {
+  $$PerformedSetEventsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $DayWorkoutExercisesTable _lineIdTable(_$AppDatabase db) =>
+      db.dayWorkoutExercises.createAlias(
+        $_aliasNameGenerator(
+          db.performedSetEvents.lineId,
+          db.dayWorkoutExercises.id,
+        ),
+      );
+
+  $$DayWorkoutExercisesTableProcessedTableManager get lineId {
+    final $_column = $_itemColumn<String>('line_id')!;
+
+    final manager = $$DayWorkoutExercisesTableTableManager(
+      $_db,
+      $_db.dayWorkoutExercises,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_lineIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$PerformedSetEventsTableFilterComposer
+    extends Composer<_$AppDatabase, $PerformedSetEventsTable> {
+  $$PerformedSetEventsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get loadKg => $composableBuilder(
+    column: $table.loadKg,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reps => $composableBuilder(
+    column: $table.reps,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get loggedAtMs => $composableBuilder(
+    column: $table.loggedAtMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get restPrescribedSec => $composableBuilder(
+    column: $table.restPrescribedSec,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get restCountdownElapsedMs => $composableBuilder(
+    column: $table.restCountdownElapsedMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get postRestModalMs => $composableBuilder(
+    column: $table.postRestModalMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get synced => $composableBuilder(
+    column: $table.synced,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$DayWorkoutExercisesTableFilterComposer get lineId {
+    final $$DayWorkoutExercisesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.lineId,
+      referencedTable: $db.dayWorkoutExercises,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$DayWorkoutExercisesTableFilterComposer(
+            $db: $db,
+            $table: $db.dayWorkoutExercises,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$PerformedSetEventsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PerformedSetEventsTable> {
+  $$PerformedSetEventsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get loadKg => $composableBuilder(
+    column: $table.loadKg,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get reps => $composableBuilder(
+    column: $table.reps,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get loggedAtMs => $composableBuilder(
+    column: $table.loggedAtMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get restPrescribedSec => $composableBuilder(
+    column: $table.restPrescribedSec,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get restCountdownElapsedMs => $composableBuilder(
+    column: $table.restCountdownElapsedMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get postRestModalMs => $composableBuilder(
+    column: $table.postRestModalMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get synced => $composableBuilder(
+    column: $table.synced,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$DayWorkoutExercisesTableOrderingComposer get lineId {
+    final $$DayWorkoutExercisesTableOrderingComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.lineId,
+          referencedTable: $db.dayWorkoutExercises,
+          getReferencedColumn: (t) => t.id,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$DayWorkoutExercisesTableOrderingComposer(
+                $db: $db,
+                $table: $db.dayWorkoutExercises,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return composer;
+  }
+}
+
+class $$PerformedSetEventsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PerformedSetEventsTable> {
+  $$PerformedSetEventsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<double> get loadKg =>
+      $composableBuilder(column: $table.loadKg, builder: (column) => column);
+
+  GeneratedColumn<int> get reps =>
+      $composableBuilder(column: $table.reps, builder: (column) => column);
+
+  GeneratedColumn<int> get loggedAtMs => $composableBuilder(
+    column: $table.loggedAtMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get restPrescribedSec => $composableBuilder(
+    column: $table.restPrescribedSec,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get restCountdownElapsedMs => $composableBuilder(
+    column: $table.restCountdownElapsedMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get postRestModalMs => $composableBuilder(
+    column: $table.postRestModalMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<bool> get synced =>
+      $composableBuilder(column: $table.synced, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$DayWorkoutExercisesTableAnnotationComposer get lineId {
+    final $$DayWorkoutExercisesTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.lineId,
+          referencedTable: $db.dayWorkoutExercises,
+          getReferencedColumn: (t) => t.id,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$DayWorkoutExercisesTableAnnotationComposer(
+                $db: $db,
+                $table: $db.dayWorkoutExercises,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return composer;
+  }
+}
+
+class $$PerformedSetEventsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PerformedSetEventsTable,
+          PerformedSetEventEntity,
+          $$PerformedSetEventsTableFilterComposer,
+          $$PerformedSetEventsTableOrderingComposer,
+          $$PerformedSetEventsTableAnnotationComposer,
+          $$PerformedSetEventsTableCreateCompanionBuilder,
+          $$PerformedSetEventsTableUpdateCompanionBuilder,
+          (PerformedSetEventEntity, $$PerformedSetEventsTableReferences),
+          PerformedSetEventEntity,
+          PrefetchHooks Function({bool lineId})
+        > {
+  $$PerformedSetEventsTableTableManager(
+    _$AppDatabase db,
+    $PerformedSetEventsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PerformedSetEventsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PerformedSetEventsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PerformedSetEventsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> lineId = const Value.absent(),
+                Value<double?> loadKg = const Value.absent(),
+                Value<int> reps = const Value.absent(),
+                Value<int?> loggedAtMs = const Value.absent(),
+                Value<int?> restPrescribedSec = const Value.absent(),
+                Value<int?> restCountdownElapsedMs = const Value.absent(),
+                Value<int?> postRestModalMs = const Value.absent(),
+                Value<String?> deviceId = const Value.absent(),
+                Value<bool> synced = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PerformedSetEventsCompanion(
+                id: id,
+                lineId: lineId,
+                loadKg: loadKg,
+                reps: reps,
+                loggedAtMs: loggedAtMs,
+                restPrescribedSec: restPrescribedSec,
+                restCountdownElapsedMs: restCountdownElapsedMs,
+                postRestModalMs: postRestModalMs,
+                deviceId: deviceId,
+                synced: synced,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String lineId,
+                Value<double?> loadKg = const Value.absent(),
+                required int reps,
+                Value<int?> loggedAtMs = const Value.absent(),
+                Value<int?> restPrescribedSec = const Value.absent(),
+                Value<int?> restCountdownElapsedMs = const Value.absent(),
+                Value<int?> postRestModalMs = const Value.absent(),
+                Value<String?> deviceId = const Value.absent(),
+                Value<bool> synced = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PerformedSetEventsCompanion.insert(
+                id: id,
+                lineId: lineId,
+                loadKg: loadKg,
+                reps: reps,
+                loggedAtMs: loggedAtMs,
+                restPrescribedSec: restPrescribedSec,
+                restCountdownElapsedMs: restCountdownElapsedMs,
+                postRestModalMs: postRestModalMs,
+                deviceId: deviceId,
+                synced: synced,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$PerformedSetEventsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({lineId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (lineId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.lineId,
+                                referencedTable:
+                                    $$PerformedSetEventsTableReferences
+                                        ._lineIdTable(db),
+                                referencedColumn:
+                                    $$PerformedSetEventsTableReferences
+                                        ._lineIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$PerformedSetEventsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PerformedSetEventsTable,
+      PerformedSetEventEntity,
+      $$PerformedSetEventsTableFilterComposer,
+      $$PerformedSetEventsTableOrderingComposer,
+      $$PerformedSetEventsTableAnnotationComposer,
+      $$PerformedSetEventsTableCreateCompanionBuilder,
+      $$PerformedSetEventsTableUpdateCompanionBuilder,
+      (PerformedSetEventEntity, $$PerformedSetEventsTableReferences),
+      PerformedSetEventEntity,
+      PrefetchHooks Function({bool lineId})
     >;
 typedef $$AuditLogsTableCreateCompanionBuilder =
     AuditLogsCompanion Function({
@@ -19847,6 +21123,8 @@ class $AppDatabaseManager {
       $$DayWorkoutsTableTableManager(_db, _db.dayWorkouts);
   $$DayWorkoutExercisesTableTableManager get dayWorkoutExercises =>
       $$DayWorkoutExercisesTableTableManager(_db, _db.dayWorkoutExercises);
+  $$PerformedSetEventsTableTableManager get performedSetEvents =>
+      $$PerformedSetEventsTableTableManager(_db, _db.performedSetEvents);
   $$AuditLogsTableTableManager get auditLogs =>
       $$AuditLogsTableTableManager(_db, _db.auditLogs);
   $$SyncQueueTableTableManager get syncQueue =>

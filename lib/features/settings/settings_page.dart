@@ -67,7 +67,7 @@ class SettingsPage extends StatelessWidget {
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               subtitle: const Text(
-                'Atualiza o SQLite local e, se existir sessão Supabase Auth, a senha na nuvem.',
+                'Altera a senha no Supabase Auth (reautenticação com a senha atual).',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
               onTap: () => _passwordSheet(context),
@@ -82,8 +82,8 @@ class SettingsPage extends StatelessWidget {
                 style: TextStyle(color: AppColors.textPrimary),
               ),
               subtitle: const Text(
-                'Encerra a sessão local e a Supabase (se houver). O app fecha; ao '
-                'abrir de novo, será pedido e-mail e senha do cadastro.',
+                'Encerra a sessão Supabase Auth e local. O app fecha; ao abrir de novo, '
+                'será pedido e-mail e senha.',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
               onTap: () => _confirmLogoutAndExit(context),
@@ -127,7 +127,7 @@ class SettingsPage extends StatelessWidget {
         ),
         content: const Text(
           'A sessão será encerrada e o app fechado. Ao reabrir, use o e-mail e a senha '
-          'do personal ou do aluno cadastrado neste aparelho.',
+          'da sua conta Supabase Auth.',
           style: TextStyle(color: AppColors.textMuted, fontSize: 14),
         ),
         actions: [
@@ -185,8 +185,7 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Senha atual = provisória ou a que usa hoje no aparelho. '
-                  'Com Supabase Auth ativo, a nova senha é enviada também à nuvem.',
+                  'Senha atual e nova senha são validadas no Supabase Auth.',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                 ),
                 const SizedBox(height: 12),
@@ -230,10 +229,6 @@ class SettingsPage extends StatelessWidget {
                     }
                     final repo = ctx.read<AppDataRepository>();
                     try {
-                      if (supabaseAppEnabled &&
-                          SupabaseAuthService.currentSession != null) {
-                        await SupabaseAuthService.updatePassword(next.text);
-                      }
                       await repo.changePasswordForCurrentSession(
                         currentPassword: current.text,
                         newPassword: next.text,

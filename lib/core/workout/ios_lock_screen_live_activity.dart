@@ -1,6 +1,5 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:live_activities/live_activities.dart';
 
 import '../preferences/workout_runtime_prefs.dart';
@@ -28,8 +27,11 @@ final class IosLockScreenLiveActivity {
   static var _inited = false;
   static var _lastThrottleMs = 0;
 
+  static bool get _isIos =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
   static Future<void> ensureInit() async {
-    if (!Platform.isIOS || _inited) return;
+    if (!_isIos || _inited) return;
     try {
       await _plugin.init(
         appGroupId: kIosWorkoutLiveActivitiesAppGroup,
@@ -49,7 +51,7 @@ final class IosLockScreenLiveActivity {
     /// Ignora throttle de 1s (útil ao ir para background / ecrã bloqueado).
     bool force = false,
   }) async {
-    if (!Platform.isIOS) return;
+    if (!_isIos) return;
     final liveActivityEnabled =
         await WorkoutRuntimePrefs.isLiveActivityEnabled();
     if (!liveActivityEnabled) {
@@ -174,7 +176,7 @@ final class IosLockScreenLiveActivity {
   }
 
   static Future<void> endIfAny() async {
-    if (!Platform.isIOS) return;
+    if (!_isIos) return;
     await ensureInit();
     if (!_inited) return;
     try {

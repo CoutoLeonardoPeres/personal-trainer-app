@@ -16,93 +16,13 @@ import '../../../data/repositories/app_data_repository.dart';
 class PersonaisPage extends StatelessWidget {
   const PersonaisPage({super.key});
 
-  static Future<void> _showPersonalPasswordResetDialog(
-    BuildContext context, {
-    required String loginEmail,
-    required String password,
-  }) async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: const Text(
-          'Nova senha provisória',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+  static void _showAccessLinkSentSnackBar(BuildContext context, String email) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Link de acesso enviado para $email. '
+          'Peça ao personal para verificar e-mail e spam.',
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'No app, o login do personal é o e-mail cadastrado. '
-              'No próximo acesso será pedida troca de senha.',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'E-mail (login):',
-              style: TextStyle(
-                color: AppColors.splashMint.withValues(alpha: 0.9),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            SelectableText(
-              loginEmail.isEmpty ? '(e-mail em branco no cadastro)' : loginEmail,
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                fontStyle: loginEmail.isEmpty ? FontStyle.italic : FontStyle.normal,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Senha provisória:',
-              style: TextStyle(
-                color: AppColors.splashMint,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            SelectableText(
-              password,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Guarde ou copie agora. Se o envio por e-mail estiver ativo, '
-              'a senha também foi enviada para a caixa de entrada.',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final clip = loginEmail.isEmpty
-                  ? 'Senha provisória: $password'
-                  : 'Login (e-mail): $loginEmail\nSenha: $password';
-              await Clipboard.setData(ClipboardData(text: clip));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Copiado para a área de transferência')),
-                );
-              }
-            },
-            child: const Text('Copiar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar'),
-          ),
-        ],
       ),
     );
   }
@@ -186,7 +106,6 @@ class PersonaisPage extends StatelessWidget {
     );
     String? uf = x?.stateUf;
     var isAdmin = x?.isAdmin ?? false;
-    var passwordHashForSave = x?.passwordHash;
     var mustChangeForSave = x?.mustChangePassword ?? true;
     var pwdBusy = false;
 
@@ -272,7 +191,7 @@ class PersonaisPage extends StatelessWidget {
             ),
             const SizedBox(height: kCadastroFieldGap),
             Text(
-              'Senha provisória: enviar por e-mail quando o serviço de e-mail estiver configurado.',
+              'Link seguro de acesso é enviado por e-mail quando solicitado.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
             ),
             if (x != null) ...[
@@ -295,12 +214,12 @@ class PersonaisPage extends StatelessWidget {
                             builder: (dCtx) => AlertDialog(
                               backgroundColor: AppColors.barBackground,
                               title: const Text(
-                                'Gerar nova senha?',
+                                'Enviar link de acesso?',
                                 style: TextStyle(color: AppColors.textPrimary),
                               ),
                               content: Text(
-                                'A senha atual deixará de funcionar. Será criada uma '
-                                'senha provisória; no próximo login será pedida troca de senha.',
+                                'Será enviado um link seguro por e-mail. '
+                                'O personal define a senha ao abrir o link.',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.82),
                                   fontSize: 14,
@@ -314,7 +233,7 @@ class PersonaisPage extends StatelessWidget {
                                 ),
                                 FilledButton(
                                   onPressed: () => Navigator.pop(dCtx, true),
-                                  child: const Text('Gerar'),
+                                  child: const Text('Enviar'),
                                 ),
                               ],
                             ),
@@ -322,32 +241,18 @@ class PersonaisPage extends StatelessWidget {
                           if (go != true || !ctx.mounted) return;
                           setSt(() => pwdBusy = true);
                           try {
-                            final r = await repo.adminGenerateNewPersonalPassword(x.id);
-                            passwordHashForSave = r.provisionalPassword;
+                            final r = await repo.adminSendAccessLinkForPersonal(x.id);
                             mustChangeForSave = true;
                             if (!ctx.mounted) return;
                             if (r.emailSent) {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Nova senha enviada por e-mail (verifique spam). '
-                                    'Use essa senha no próximo acesso.',
-                                  ),
-                                ),
-                              );
-                            } else if (context.mounted) {
-                              await _showPersonalPasswordResetDialog(
-                                context,
-                                loginEmail: r.loginEmail,
-                                password: r.provisionalPassword,
-                              );
+                              _showAccessLinkSentSnackBar(ctx, r.loginEmail);
                             }
                           } on ArgumentError catch (e) {
                             if (ctx.mounted) {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    e.message ?? 'Não foi possível gerar.',
+                                    e.message ?? 'Não foi possível enviar o link.',
                                   ),
                                 ),
                               );
@@ -368,10 +273,10 @@ class PersonaisPage extends StatelessWidget {
                       if (pwdBusy)
                         const ModernLoadingIndicator(size: 20)
                       else
-                        const Icon(Icons.vpn_key_outlined, size: 20),
+                        const Icon(Icons.mail_outline, size: 20),
                       const SizedBox(width: 10),
                       Text(
-                        pwdBusy ? 'A gerar…' : 'Gerar nova senha',
+                        pwdBusy ? 'A enviar…' : 'Enviar link de acesso',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ],
@@ -436,7 +341,6 @@ class PersonaisPage extends StatelessWidget {
                   phoneMobile: telCel.isEmpty ? null : telCel,
                   email: email.text.trim(),
                   mustChangePassword: mustChangeForSave,
-                  passwordHash: passwordHashForSave,
                   isAdmin: isAdmin,
                 );
                 await repo.refreshSessionPersonalAdminFlag();

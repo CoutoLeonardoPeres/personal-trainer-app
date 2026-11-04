@@ -10,6 +10,8 @@ import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
 import '../models/day_workout_performed_set.dart';
+import 'conflict_resolver.dart';
+import 'performed_set_sync_service.dart';
 import 'remote_sync_service.dart';
 import 'supabase_catalog_cloud_reconcile.dart';
 import 'supabase_pull_sync_service.dart';
@@ -741,8 +743,6 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     }
   }
 
-  String _isoUpdatedAt(DateTime d) => d.toUtc().toIso8601String();
-
   DateTime _parseTs(dynamic v) {
     if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
     if (v is String) return DateTime.parse(v);
@@ -765,66 +765,103 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
     required String? remoteDeviceId,
   }) {
     if (localRevision != remoteRevision) {
-      return localRevision > remoteRevision;
+      return ConflictResolver.localMayPush(
+        localRevision: localRevision,
+        serverRevision: remoteRevision,
+      );
     }
-    if (localUpdatedAt != remoteUpdatedAt) {
-      return localUpdatedAt.isAfter(remoteUpdatedAt);
-    }
-    final ld = (localDeviceId ?? '').trim();
-    final rd = (remoteDeviceId ?? '').trim();
-    if (ld.isEmpty || rd.isEmpty) return false;
-    return ld.compareTo(rd) >= 0;
+    return false;
   }
 
-  Future<bool> _lwwUpdateById({
+  Future<void> _syncLocalRevisionFromServer({
+    required String table,
+    required String id,
+    required SupabaseClient client,
+  }) async {
+    try {
+      final res = await client
+          .from(table)
+          .select('revision')
+          .eq('id', id)
+          .maybeSingle();
+      if (res == null) return;
+      final rev = _parseIntOpt(
+        Map<String, dynamic>.from(res as Map),
+        'revision',
+        0,
+      );
+      if (table == 'day_workouts') {
+        await (_db.update(
+          _db.dayWorkouts,
+        )..where((w) => w.id.equals(id))).write(
+          DayWorkoutsCompanion(
+            revision: Value(rev),
+            syncStatus: const Value('synced'),
+          ),
+        );
+      } else if (table == 'day_workout_exercises') {
+        await (_db.update(
+          _db.dayWorkoutExercises,
+        )..where((e) => e.id.equals(id))).write(
+          DayWorkoutExercisesCompanion(
+            revision: Value(rev),
+            syncStatus: const Value('synced'),
+          ),
+        );
+      } else if (table == 'workout_groups') {
+        await (_db.update(_db.workoutGroups)..where((g) => g.id.equals(id)))
+            .write(WorkoutGroupsCompanion(revision: Value(rev)));
+      }
+    } catch (_) {}
+  }
+
+  Future<bool> _pushPendingPerformedSetEvents(
+    SupabaseClient client,
+    String lineId,
+  ) async {
+    final pending = await (_db.select(
+      _db.performedSetEvents,
+    )..where((e) => e.lineId.equals(lineId) & e.synced.equals(false))).get();
+    var ok = true;
+    for (final ev in pending) {
+      final pushed = await PerformedSetSyncService.pushEvent(client, ev);
+      if (pushed) {
+        await (_db.update(_db.performedSetEvents)
+              ..where((e) => e.id.equals(ev.id)))
+            .write(const PerformedSetEventsCompanion(synced: Value(true)));
+      } else {
+        ok = false;
+      }
+    }
+    return ok;
+  }
+
+  Future<bool> _optimisticUpdateByRevision({
     required SupabaseClient client,
     required String table,
     required String id,
     required Map<String, dynamic> map,
-    required DateTime localUpdatedAt,
+    required int expectedRevision,
   }) async {
     Future<bool> runWithMap(Map<String, dynamic> data) async {
-      final localRevision = data['revision'];
-      if (localRevision is num) {
-        final rev = localRevision.toInt();
-        final byLowerRevision = await client
-            .from(table)
-            .update(data)
-            .eq('id', id)
-            .lt('revision', rev)
-            .select('id');
-        final updatedByRevision = byLowerRevision as List<dynamic>;
-        if (updatedByRevision.isNotEmpty) return true;
-
-        final bySameRevisionOlderTs = await client
-            .from(table)
-            .update(data)
-            .eq('id', id)
-            .eq('revision', rev)
-            .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
-            .select('id');
-        final updatedByTimestamp = bySameRevisionOlderTs as List<dynamic>;
-        if (updatedByTimestamp.isNotEmpty) return true;
-
-        final byNullRevision = await client
-            .from(table)
-            .update(data)
-            .eq('id', id)
-            .isFilter('revision', null)
-            .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
-            .select('id');
-        final updatedByNullRevision = byNullRevision as List<dynamic>;
-        return updatedByNullRevision.isNotEmpty;
-      }
-
+      final payload = Map<String, dynamic>.from(data);
+      payload.remove('revision');
       final res = await client
           .from(table)
-          .update(data)
+          .update(payload)
           .eq('id', id)
-          .lt('updated_at', _isoUpdatedAt(localUpdatedAt))
-          .select('id');
+          .eq('revision', expectedRevision)
+          .select('id, revision');
       final list = res as List<dynamic>;
-      return list.isNotEmpty;
+      if (list.isNotEmpty) {
+        await _syncLocalRevisionFromServer(
+          table: table,
+          id: id,
+          client: client,
+        );
+        return true;
+      }
+      return false;
     }
 
     try {
@@ -838,6 +875,36 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
       }
       rethrow;
     }
+  }
+
+  Future<bool> _lwwUpdateById({
+    required SupabaseClient client,
+    required String table,
+    required String id,
+    required Map<String, dynamic> map,
+    required DateTime localUpdatedAt,
+  }) async {
+    // Tabelas legadas (incluindo planejamento semanal) ainda não possuem
+    // `revision` no SQLite. Filtrar revision=0 fazia toda atualização após o
+    // primeiro insert falhar e deixava itens presos em apenas um dispositivo.
+    if (!map.containsKey('revision')) {
+      final payload = Map<String, dynamic>.from(map);
+      final res = await client
+          .from(table)
+          .update(payload)
+          .eq('id', id)
+          .lte('updated_at', supabaseTs(localUpdatedAt))
+          .select('id');
+      return (res as List<dynamic>).isNotEmpty;
+    }
+    final expectedRevision = _parseIntOpt(map, 'revision', 0);
+    return _optimisticUpdateByRevision(
+      client: client,
+      table: table,
+      id: id,
+      map: map,
+      expectedRevision: expectedRevision,
+    );
   }
 
   Future<bool> _tryInsert({
@@ -1511,6 +1578,89 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
   }
 
   @override
+  Future<void> repairMissingStudentWeekScheduleItemsOnCloud(
+    String studentId, {
+    required DateTime weekMonday,
+  }) async {
+    if (!supabaseAppEnabled) return;
+    final client = Supabase.instance.client;
+    final monday = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
+
+    bool sameMonday(DateTime value) {
+      final local = value.toLocal();
+      return local.year == monday.year &&
+          local.month == monday.month &&
+          local.day == monday.day;
+    }
+
+    final localBlocks = await (_db.select(
+      _db.weekScheduleBlocks,
+    )..where((b) => b.studentId.equals(studentId))).get();
+    final weekBlocks = localBlocks
+        .where((b) => sameMonday(b.weekStartMonday))
+        .toList(growable: false);
+    if (weekBlocks.isEmpty) return;
+
+    _controller.beginUpload();
+    try {
+      for (final block in weekBlocks) {
+        final remoteBlock = await client
+            .from('week_schedule_blocks')
+            .select('id')
+            .eq('id', block.id)
+            .maybeSingle();
+        if (remoteBlock == null) {
+          try {
+            await client
+                .from('week_schedule_blocks')
+                .insert(supabaseWeekBlock(block));
+          } catch (e) {
+            if (!_looksLikeDuplicateKey(e)) rethrow;
+          }
+        }
+
+        final localItems = await (_db.select(
+          _db.weekScheduleItems,
+        )..where((i) => i.blockId.equals(block.id))).get();
+        if (localItems.isEmpty) continue;
+
+        final remoteRows = await client
+            .from('week_schedule_items')
+            .select('id')
+            .eq('block_id', block.id);
+        final remoteIds = (remoteRows as List<dynamic>)
+            .map((row) => (row as Map)['id']?.toString())
+            .whereType<String>()
+            .toSet();
+
+        for (final item in localItems) {
+          if (remoteIds.contains(item.id)) continue;
+          await _ensureExerciseDependenciesMirrored(client, item.exerciseId);
+          try {
+            await client
+                .from('week_schedule_items')
+                .insert(supabaseWeekItem(item));
+          } catch (e) {
+            if (!_looksLikeDuplicateKey(e)) rethrow;
+          }
+        }
+      }
+      _controller.noteConnected();
+      _controller.noteBackgroundPushSuccess();
+    } catch (e, st) {
+      debugPrint(
+        'SupabaseRemoteSyncService '
+        'repairMissingStudentWeekScheduleItemsOnCloud: $e\n$st',
+      );
+      _controller.noteDisconnected();
+      _controller.noteBackgroundPushError(e);
+      rethrow;
+    } finally {
+      _controller.endUpload();
+    }
+  }
+
+  @override
   Future<void> refreshExercisesCatalogFromCloud() async {
     if (!supabaseAppEnabled) return;
     final pull = SupabasePullSyncService(_db, _controller, session: null);
@@ -1763,6 +1913,28 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             );
             if (i % 8 == 7) await Future<void>.delayed(Duration.zero);
           }
+          // Remove na nuvem linhas que foram apagadas localmente (evita “ressuscitar”
+          // exercícios em outros dispositivos quando o delete individual falhou na fila).
+          try {
+            final keepIds = lines.map((l) => l.id).toSet();
+            final remoteLines = await client
+                .from('workout_group_exercises')
+                .select('id')
+                .eq('workout_group_id', eid);
+            for (final raw in remoteLines as List<dynamic>) {
+              final rid = (raw as Map)['id'] as String?;
+              if (rid == null || keepIds.contains(rid)) continue;
+              await client
+                  .from('workout_group_exercises')
+                  .delete()
+                  .eq('id', rid);
+            }
+          } catch (e, st) {
+            debugPrint(
+              'SupabaseRemoteSyncService prune workout_group_exercises '
+              'group=$eid: $e\n$st',
+            );
+          }
         }
       case 'workout_group_exercise':
         if (isDelete) {
@@ -1859,10 +2031,11 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
             row.dayWorkoutId,
             auditLogId: auditLogId,
           );
-          // Hot path de treino: não depender de reconcile de catálogo aqui.
-          // Se a FK do exercício já existe na nuvem (cenário normal), o upsert da
-          // linha deve seguir direto para reduzir latência e evitar falha em cascata
-          // por chamadas adicionais (ex.: muscle_groups) durante instabilidade de rede.
+          if (action == 'append_set' ||
+              action == 'update_set' ||
+              action == 'patch_set_rest') {
+            await _pushPendingPerformedSetEvents(client, eid);
+          }
           final pushed = await _lwwUpsertOrConflictPull(
             auditLogId: auditLogId,
             client: client,
@@ -1958,7 +2131,15 @@ class SupabaseRemoteSyncService implements RemoteSyncService {
         map: supabaseWeekBlock(block),
         localUpdatedAt: block.updatedAt,
       );
-      if (!ok) return;
+      // Um conflito no metadado do bloco-pai não deve impedir o envio de
+      // filhos com IDs próprios. O pai remoto já existe nesse cenário e os
+      // itens abaixo convergem individualmente.
+      if (!ok) {
+        debugPrint(
+          'SupabaseRemoteSyncService: bloco semanal $blockId manteve versão '
+          'remota; continuando sincronização aditiva dos itens.',
+        );
+      }
     } else {
       await client
           .from('week_schedule_blocks')

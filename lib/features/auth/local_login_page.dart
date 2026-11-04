@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/app_session.dart';
+import '../../core/auth/supabase_auth_bridge.dart';
+import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/modern_loading.dart';
 import '../../core/ui/futuristic_background.dart';
@@ -11,7 +12,7 @@ import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
 import '../shell/main_shell.dart';
 
-/// Login local (SQLite) com e-mail + senha após «Sair da conta» nas configurações.
+/// Login com Supabase Auth (JWT) — liga ao perfil local personal/aluno.
 class LocalLoginPage extends StatefulWidget {
   const LocalLoginPage({super.key});
 
@@ -54,9 +55,8 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
           style: TextStyle(color: AppColors.textPrimary),
         ),
         content: Text(
-          'Será gerada uma nova senha provisória para o e-mail:\n$email\n\n'
-          'Se o envio automático estiver configurado, receberá um e-mail. '
-          'Caso contrário, o app mostrará a nova senha para copiar.',
+          'Será enviado um e-mail de recuperação para:\n$email\n\n'
+          'Siga o link recebido para definir uma nova senha no Supabase Auth.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.82),
             fontSize: 14,
@@ -70,7 +70,7 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dCtx, true),
-            child: const Text('Continuar'),
+            child: const Text('Enviar e-mail'),
           ),
         ],
       ),
@@ -82,90 +82,13 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
       final repo = context.read<AppDataRepository>();
       final result = await repo.requestPasswordResetForActiveLocalUser(email);
       if (!mounted) return;
-      if (result.emailSent) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Nova senha enviada. Verifique o e-mail (e a pasta de spam). '
-              'No próximo acesso use a senha recebida.',
-            ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.emailSent
+                ? 'E-mail de recuperação enviado. Verifique a caixa de entrada e o spam.'
+                : 'Pedido de recuperação registado.',
           ),
-        );
-        return;
-      }
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dCtx) => AlertDialog(
-          backgroundColor: AppColors.barBackground,
-          title: const Text(
-            'Nova senha provisória',
-            style: TextStyle(color: AppColors.textPrimary),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                const String.fromEnvironment('PASSWORD_RESET_WEBHOOK_URL')
-                        .trim()
-                        .isEmpty
-                    ? 'O envio automático por e-mail ainda não está configurado '
-                        '(defina PASSWORD_RESET_WEBHOOK_URL na build). A senha já '
-                        'foi atualizada no aparelho — guarde ou copie agora.'
-                    : 'Não foi possível confirmar o envio do e-mail. A senha já foi '
-                        'atualizada no aparelho — guarde ou copie agora.',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  fontSize: 13,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 14),
-              SelectableText(
-                result.provisionalPassword,
-                style: const TextStyle(
-                  color: AppColors.splashMint,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                await Clipboard.setData(
-                  ClipboardData(text: result.provisionalPassword),
-                );
-                if (dCtx.mounted) {
-                  ScaffoldMessenger.of(dCtx).showSnackBar(
-                    const SnackBar(content: Text('Senha copiada.')),
-                  );
-                }
-              },
-              child: const Text('Copiar'),
-            ),
-            TextButton(
-              onPressed: () async {
-                await SharePlus.instance.share(
-                  ShareParams(
-                    text:
-                        'Personal Gym — nova senha provisória\n\n'
-                        'E-mail de acesso: $email\n'
-                        'Senha: ${result.provisionalPassword}\n\n'
-                        'Altere a senha ao entrar no app.',
-                    subject: 'Personal Gym — nova senha',
-                  ),
-                );
-              },
-              child: const Text('Partilhar…'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dCtx),
-              child: const Text('Fechar'),
-            ),
-          ],
         ),
       );
     } on ArgumentError catch (e) {
@@ -174,10 +97,30 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
           SnackBar(content: Text(e.message ?? 'Não foi possível recuperar.')),
         );
       }
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      final rateLimited =
+          e.statusCode == '429' || e.code == 'over_email_send_rate_limit';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            rateLimited
+                ? 'Limite de e-mails do Supabase atingido. Aguarde até 1 hora '
+                      'desde os últimos envios e tente novamente.'
+                : 'Não foi possível enviar o e-mail de recuperação. '
+                      'Tente novamente mais tarde.',
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro: $e')),
+          const SnackBar(
+            content: Text(
+              'Não foi possível enviar o e-mail de recuperação. '
+              'Tente novamente mais tarde.',
+            ),
+          ),
         );
       }
     } finally {
@@ -189,8 +132,19 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
     final email = _normEmail(_email.text);
     final password = _pass.text;
     if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Informe e-mail e senha.')));
+      return;
+    }
+    if (!supabaseAppEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe e-mail e senha.')),
+        const SnackBar(
+          content: Text(
+            'Supabase Auth não está configurado neste build. '
+            'Defina SUPABASE_ANON_KEY.',
+          ),
+        ),
       );
       return;
     }
@@ -200,77 +154,19 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
       final session = context.read<AppSession>();
       final repo = context.read<AppDataRepository>();
 
-      final personals = await db.select(db.personals).get();
-      PersonalEntity? personal;
-      for (final p in personals) {
-        if (_normEmail(p.email) == email) {
-          personal = p;
-          break;
-        }
-      }
-
-      final students = await (db.select(db.students)
-            ..where((s) => s.isArchived.equals(false)))
-          .get();
-      StudentEntity? student;
-      for (final s in students) {
-        final em = s.email?.trim();
-        if (em == null || em.isEmpty) continue;
-        if (_normEmail(em) == email) {
-          student = s;
-          break;
-        }
-      }
-
-      if (personal != null && student != null) {
-        throw ArgumentError(
-          'Há personal e aluno com o mesmo e-mail no cadastro. Corrija no SQLite.',
-        );
-      }
-
-      if (personal != null) {
-        final stored = personal.passwordHash;
-        if (stored == null || stored.isEmpty) {
-          throw ArgumentError(
-            'Este personal não tem senha definida no cadastro local.',
-          );
-        }
-        if (stored != password) {
-          throw ArgumentError('E-mail ou senha incorretos.');
-        }
-        await session.completeLocalLoginAfterPasswordCheck(
-          role: personal.isAdmin
-              ? SessionRole.adminPersonal
-              : SessionRole.personalTrainer,
-          personalId: personal.id,
-          studentId: null,
-        );
-        await repo.refreshSessionPersonalAdminFlag();
-      } else if (student != null) {
-        final stored = student.passwordHash;
-        if (stored == null || stored.isEmpty) {
-          throw ArgumentError(
-            'Este aluno não tem senha definida. Peça ao personal para cadastrar.',
-          );
-        }
-        if (stored != password) {
-          throw ArgumentError('E-mail ou senha incorretos.');
-        }
-        await session.completeLocalLoginAfterPasswordCheck(
-          role: SessionRole.student,
-          personalId: null,
-          studentId: student.id,
-        );
-        await repo.refreshSessionPersonalAdminFlag();
-      } else {
-        throw ArgumentError(
-          'Nenhum personal ou aluno ativo encontrado com este e-mail.',
-        );
-      }
+      await SupabaseAuthBridge.signInAndBindAppSession(
+        db: db,
+        session: session,
+        email: email,
+        password: password,
+      );
+      await repo.refreshSessionPersonalAdminFlag();
 
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true)
-          .pushReplacementNamed(MainShell.routeName);
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushReplacementNamed(MainShell.routeName);
     } on ArgumentError catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -280,7 +176,11 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro: $e')),
+          SnackBar(
+            content: Text(
+              'E-mail ou senha incorretos, ou conta sem perfil ligado.',
+            ),
+          ),
         );
       }
     } finally {
@@ -313,8 +213,8 @@ class _LocalLoginPageState extends State<LocalLoginPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Entre com o e-mail e a senha do cadastro local '
-                      '(personal ou aluno).',
+                      'Entre com o e-mail e a senha da sua conta '
+                      '(autenticação segura via Supabase).',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.62),

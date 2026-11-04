@@ -36,6 +36,7 @@ class _PlanningPageState extends State<PlanningPage> {
   String? _studentId;
   final Set<String> _expandedGroupKeys = <String>{};
   final Set<String> _collapsedGroupKeys = <String>{};
+  int _weekScheduleUiEpoch = 0;
 
   void _hydrateVisibleWeekPlanning(AppDataRepository repo) {
     final studentId = _studentId;
@@ -80,6 +81,7 @@ class _PlanningPageState extends State<PlanningPage> {
           weekMonday: mon,
         );
       }
+      setState(() => _weekScheduleUiEpoch++);
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -288,7 +290,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                 pageMonday: pageMonday,
                                 child: StreamBuilder<List<WeekScheduleRow>>(
                                   key: ValueKey(
-                                    '$studentId-${pageMonday.toIso8601String()}',
+                                    '$studentId-${pageMonday.toIso8601String()}-$_weekScheduleUiEpoch',
                                   ),
                                   stream: repo.watchWeekScheduleRows(
                                     studentId: studentId,

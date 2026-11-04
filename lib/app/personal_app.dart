@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../core/auth/app_session.dart';
 import '../core/diagnostic/launch_diagnostic.dart';
 import '../core/supabase/supabase_app_init.dart';
+import '../core/auth/supabase_auth_bridge.dart';
 import '../core/supabase/supabase_auth_service.dart';
 import '../core/supabase/supabase_sync_controller.dart';
 import '../core/notifications/workout_activity_local_notifier.dart';
@@ -30,6 +31,7 @@ import '../data/sync/supabase_cloud_fidelity_checker.dart';
 import '../data/sync/supabase_realtime_sync_service.dart';
 import '../data/sync/supabase_remote_sync_service.dart';
 import '../features/auth/local_login_page.dart';
+import '../features/auth/password_recovery_page.dart';
 import '../features/shell/main_shell.dart';
 import '../features/splash/splash_page.dart';
 
@@ -103,6 +105,18 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     if (uri.host == 'login-callback') {
       try {
         await SupabaseAuthService.handleAuthCallback(uri);
+        if (uri.queryParameters['flow'] == 'recovery') {
+          _rootNavigatorKey.currentState?.pushNamedAndRemoveUntil(
+            PasswordRecoveryPage.routeName,
+            (_) => false,
+          );
+          return;
+        }
+        await SupabaseAuthBridge.tryHydrateAppSessionFromSupabaseAuth(
+          db: s.db,
+          session: s.session,
+        );
+        await s.repo.refreshSessionPersonalAdminFlag();
       } catch (e, st) {
         logLaunch('OAuth callback error', error: e, stackTrace: st);
       }
@@ -503,7 +517,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
           unawaited(_realtimeSync!.reconnectAfterResume());
         }
         unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
-    unawaited(RestTimerSound.preload());
+        unawaited(RestTimerSound.preload());
         unawaited(s.repo.applyPremiumTierExpiryDowngrades());
         SchedulerBinding.instance.scheduleTask(
           () {
@@ -601,6 +615,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         routes: {
           MainShell.routeName: (_) => const MainShell(),
           LocalLoginPage.routeName: (_) => const LocalLoginPage(),
+          PasswordRecoveryPage.routeName: (_) => const PasswordRecoveryPage(),
         },
       ),
     );

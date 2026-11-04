@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -10,6 +10,7 @@ import '../../core/utils/calendar_day_utils.dart';
 import '../../core/utils/muscle_group_utils.dart';
 import '../../domain/scoring.dart' as scoring;
 import '../models/day_workout_performed_set.dart';
+import '../sync/performed_sets_merge.dart';
 import 'exercise_seed_defaults.dart';
 
 part 'app_database.g.dart';
@@ -104,7 +105,9 @@ class Personals extends Table {
   TextColumn get phoneMobile => text().nullable()();
   BoolColumn get mustChangePassword =>
       boolean().withDefault(const Constant(true))();
-  TextColumn get passwordHash => text().nullable()();
+
+  /// UUID do utilizador em `auth.users` (Supabase Auth). Credenciais só no Auth.
+  TextColumn get authUserId => text().nullable()();
 
   /// Acesso total aos dados de todos os alunos (calendário, planejamento, cadastro).
   BoolColumn get isAdmin => boolean().withDefault(const Constant(false))();
@@ -145,7 +148,9 @@ class Students extends Table {
   /// Quando true, o app exige troca de senha no próximo acesso.
   BoolColumn get mustChangePassword =>
       boolean().withDefault(const Constant(true))();
-  TextColumn get passwordHash => text().nullable()();
+
+  /// UUID do utilizador em `auth.users` (Supabase Auth). Credenciais só no Auth.
+  TextColumn get authUserId => text().nullable()();
 
   /// Personal que cadastrou o aluno — visibilidade dos dados (com admin e o próprio aluno).
   TextColumn get createdByPersonalId =>
@@ -386,6 +391,25 @@ class DayWorkoutExercises extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+@DataClassName('PerformedSetEventEntity')
+class PerformedSetEvents extends Table {
+  TextColumn get id => text()();
+  TextColumn get lineId =>
+      text().references(DayWorkoutExercises, #id, onDelete: KeyAction.cascade)();
+  RealColumn get loadKg => real().nullable()();
+  IntColumn get reps => integer()();
+  IntColumn get loggedAtMs => integer().nullable()();
+  IntColumn get restPrescribedSec => integer().nullable()();
+  IntColumn get restCountdownElapsedMs => integer().nullable()();
+  IntColumn get postRestModalMs => integer().nullable()();
+  TextColumn get deviceId => text().nullable()();
+  BoolColumn get synced => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 // ——— Auditoria / logs ———
 
 @DataClassName('AuditLogEntity')
@@ -439,6 +463,7 @@ class SyncQueue extends Table {
     WeekScheduleItems,
     DayWorkouts,
     DayWorkoutExercises,
+    PerformedSetEvents,
     AuditLogs,
     SyncQueue,
   ],
@@ -447,7 +472,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 35;
+  int get schemaVersion => 37;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -478,7 +503,9 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await m.addColumn(personals, personals.mustChangePassword);
-        await m.addColumn(personals, personals.passwordHash);
+        await customStatement(
+          'ALTER TABLE personals ADD COLUMN password_hash TEXT',
+        );
       }
       if (from < 3) {
         await m.addColumn(dayWorkouts, dayWorkouts.timerResumeAt);
@@ -697,6 +724,20 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 35) {
         await recomputeAllCompletedWorkoutScores();
+      }
+      if (from < 36) {
+        await m.addColumn(personals, personals.authUserId);
+        await m.addColumn(students, students.authUserId);
+        await customStatement(
+          'ALTER TABLE personals DROP COLUMN password_hash',
+        );
+        await customStatement(
+          'ALTER TABLE students DROP COLUMN password_hash',
+        );
+      }
+      if (from < 37) {
+        await m.createTable(performedSetEvents);
+        await _backfillPerformedSetEventsFromJson();
       }
     },
     beforeOpen: (details) async {
@@ -1267,6 +1308,56 @@ class AppDatabase extends _$AppDatabase {
     return ws;
   }
 
+  /// Recalcula score de uma linha a partir dos eventos / cache JSON.
+  Future<void> recomputeExerciseScoreForLine(String lineId) async {
+    final line = await (select(dayWorkoutExercises)
+          ..where((e) => e.id.equals(lineId)))
+        .getSingleOrNull();
+    if (line == null) return;
+    final performed = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+    final score = performed.isNotEmpty
+        ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
+        : line.exerciseScore;
+    await (update(dayWorkoutExercises)..where((e) => e.id.equals(lineId))).write(
+      DayWorkoutExercisesCompanion(exerciseScore: Value(score)),
+    );
+  }
+
+  /// Migração v37: JSON legado → eventos append-only locais.
+  Future<void> _backfillPerformedSetEventsFromJson() async {
+    const uuid = Uuid();
+    final lines = await select(dayWorkoutExercises).get();
+    for (final line in lines) {
+      final decoded = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+      if (decoded.isEmpty) continue;
+      final normalized = PerformedSetsMerge.normalizeLegacySets(
+        decoded,
+        lineId: line.id,
+      );
+      for (final s in normalized) {
+        final sid = s.setId ?? uuid.v4();
+        await into(performedSetEvents).insertOnConflictUpdate(
+          PerformedSetEventsCompanion.insert(
+            id: sid,
+            lineId: line.id,
+            loadKg: Value(s.loadKg),
+            reps: s.reps,
+            loggedAtMs: Value(s.loggedAtMs),
+            restPrescribedSec: Value(s.restPrescribedSec),
+            restCountdownElapsedMs: Value(s.restCountdownElapsedMs),
+            postRestModalMs: Value(s.postRestModalMs),
+            synced: const Value(true),
+          ),
+        );
+      }
+      final cache = PerformedSetsMerge.toCacheJson(normalized);
+      if (cache != (line.performedSetsJson ?? '')) {
+        await (update(dayWorkoutExercises)..where((e) => e.id.equals(line.id)))
+            .write(DayWorkoutExercisesCompanion(performedSetsJson: Value(cache)));
+      }
+    }
+  }
+
   /// Recalcula [workout_score] de todos os treinos concluídos (pós-sync / migração).
   Future<void> recomputeAllCompletedWorkoutScores() async {
     final completed = await (select(dayWorkouts)
@@ -1280,13 +1371,20 @@ class AppDatabase extends _$AppDatabase {
   static QueryExecutor _openConnection() {
     return driftDatabase(
       name: 'app_personal',
-      native: DriftNativeOptions(databaseDirectory: _getDirectory),
+      web: DriftWebOptions(
+        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+        driftWorker: Uri.parse('drift_worker.js'),
+      ),
+      native: kIsWeb
+          ? null
+          : DriftNativeOptions(databaseDirectory: _getDirectory),
     );
   }
 }
 
 Future<String> _getDirectory() async {
-  if (Platform.isAndroid || Platform.isIOS) {
+  if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
     final dir = await getApplicationDocumentsDirectory();
     return p.join(dir.path, 'drift');
   }

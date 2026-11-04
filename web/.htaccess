@@ -1,0 +1,39 @@
+# Personal Gym — Flutter Web (Hostinger / Apache)
+# Coloque este arquivo na raiz do site (mesmo nível do index.html).
+
+Options -MultiViews
+RewriteEngine On
+
+# HTTPS (descomente se o domínio já tiver SSL)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Não reescrever arquivos/pastas reais
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# SPA: rotas do Flutter → index.html
+RewriteRule ^ index.html [L]
+
+# Cache de assets estáticos
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|otf|wasm)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "^(index\.html|flutter_service_worker\.js|manifest\.json|version\.json)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
+# MIME types úteis
+<IfModule mod_mime.c>
+  AddType application/javascript .js
+  AddType application/wasm .wasm
+  AddType application/json .json
+  AddType text/cache-manifest .appcache
+</IfModule>
+
+# Drift / sqlite3.wasm exige Content-Type correto
+<IfModule mod_mime.c>
+  AddType application/wasm .wasm
+</IfModule>
