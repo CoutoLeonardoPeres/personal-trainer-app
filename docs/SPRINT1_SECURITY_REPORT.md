@@ -1,5 +1,8 @@
 # Sprint 1 — Relatório de Segurança
 
+> Documento histórico. Os SQL citados foram desativados e não devem ser
+> executados; novas mudanças devem usar `supabase/migrations/`.
+
 **Projeto:** Personal Gym (Flutter + Supabase)
 **Escopo:** Bloqueadores críticos de vazamento de dados
 **Data:** Julho 2026
@@ -22,11 +25,11 @@ Eliminar o risco de vazamento e adulteração total da base causado por:
 
 ### 1. RLS permissivo com `anon` → RLS por `auth.uid()`
 
-**Arquivo:** `scripts/sprint1_security_migration.sql`
+**Arquivo:** `docs/legacy-sql/sprint1_security_migration.sql.disabled`
 
 - Remove políticas `app_sync_anon_all` / `app_sync_authenticated_all`
 - Revoga `GRANT` para `anon` em todas as tabelas `public`
-- Aplica políticas restritivas por `authenticated` usando funções `app_*` (pré-requisito: secção 1 de `scripts/supabase_rls_strict_auth_uid.sql`)
+- Aplica políticas restritivas por `authenticated` usando funções `app_*` (pré-requisito: secção 1 de `docs/legacy-sql/supabase_rls_strict_auth_uid.sql.disabled`)
 
 ### 2. Login local inseguro → Supabase Auth
 
@@ -43,7 +46,7 @@ Eliminar o risco de vazamento e adulteração total da base causado por:
 - Coluna `password_hash` removida de `personals` e `students`
 - Nova coluna `auth_user_id` (ligação a `auth.users`)
 
-**Postgres** (`scripts/sprint1_security_migration.sql`):
+**Postgres** (`docs/legacy-sql/sprint1_security_migration.sql.disabled`):
 
 - `ALTER TABLE ... DROP COLUMN password_hash`
 
@@ -73,8 +76,8 @@ Eliminar o risco de vazamento e adulteração total da base causado por:
 
 | Ordem | Script |
 |-------|--------|
-| 1 | `scripts/supabase_rls_strict_auth_uid.sql` (secção 1 — funções) |
-| 2 | `scripts/sprint1_security_migration.sql` (drop senhas + RLS + revoke anon) |
+| 1 | `docs/legacy-sql/supabase_rls_strict_auth_uid.sql.disabled` (secção 1 — funções) |
+| 2 | `docs/legacy-sql/sprint1_security_migration.sql.disabled` (drop senhas + RLS + revoke anon) |
 
 ### 8. Fluxos de senha (pós-sprint)
 
@@ -120,7 +123,7 @@ Eliminar o risco de vazamento e adulteração total da base causado por:
 | Dados | `app_database.dart` (schema 36), `app_data_repository.dart` |
 | Sync | `supabase_table_mappers.dart`, `supabase_pull_sync_service.dart` |
 | UI | `splash_page.dart`, `settings_page.dart`, `alunos_page.dart`, `personais_page.dart` |
-| SQL | `scripts/sprint1_security_migration.sql` |
+| SQL | `docs/legacy-sql/sprint1_security_migration.sql.disabled` |
 
 ---
 

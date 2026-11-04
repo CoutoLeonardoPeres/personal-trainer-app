@@ -15,7 +15,7 @@ Inclui `index.html`, `main.dart.js`, assets, CanvasKit e `.htaccess` (SPA).
 
 ```bash
 # 1) Confirme dart_defines.prod.json (SUPABASE_URL + SUPABASE_ANON_KEY)
-cp dart_defines.prod.example.json dart_defines.prod.json   # se ainda não existir
+cp dart_defines.example.json dart_defines.prod.json   # se ainda não existir
 
 # 2) Gere a pasta + ZIP
 chmod +x scripts/build_web_hostinger.sh
