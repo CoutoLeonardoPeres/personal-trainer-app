@@ -1,5 +1,8 @@
 # Arquitetura de sincronização — App Personal (Sprint 3)
 
+> Documento histórico. O SQL legado citado está desativado e serve apenas para
+> auditoria; novas mudanças usam `supabase/migrations/`.
+
 ## Princípios
 
 1. **PostgreSQL é a fonte da verdade** para `revision` e conflitos.
@@ -46,7 +49,7 @@ SyncCoordinator.pullIncremental
 
 ## SQL (Supabase)
 
-Aplicar `scripts/sprint3_sync_migration.sql`:
+Referência histórica: `docs/legacy-sql/sprint3_sync_migration.sql.disabled`:
 
 - Trigger `app_bump_row_revision` em `day_workouts`, `day_workout_exercises`, `workout_groups`
 - Tabela `day_workout_performed_sets` (append-only, RLS)

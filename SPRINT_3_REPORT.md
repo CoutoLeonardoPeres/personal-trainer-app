@@ -1,5 +1,8 @@
 # Sprint 3 — Relatório de sincronização
 
+> Documento histórico. Os SQL citados estão desativados e não devem ser
+> executados; novas mudanças usam `supabase/migrations/`.
+
 **Projeto:** App Personal (Flutter + Drift + Supabase)
 **Data:** 2026-07-09
 **Escopo:** motor de sync, conflitos, séries append-only, pull incremental, testes
@@ -11,7 +14,7 @@
 | # | Objetivo | Status |
 |---|----------|--------|
 | 1 | Remover conflito por relógio local | ✅ Resolver só usa `revision` |
-| 2 | `revision` atômico no PostgreSQL | ✅ `scripts/sprint3_sync_migration.sql` |
+| 2 | `revision` atômico no PostgreSQL | ✅ `docs/legacy-sql/sprint3_sync_migration.sql.disabled` |
 | 3 | Optimistic concurrency real | ✅ `UPDATE … eq(revision, expected)` |
 | 4 | Séries append-only | ✅ `PerformedSetEvents` + tabela remota |
 | 5 | Reduzir sobregravação | ✅ Merge por `setId`; push de eventos |
@@ -24,7 +27,7 @@
 ## Arquivos principais
 
 ### Criados
-- `scripts/sprint3_sync_migration.sql`
+- `docs/legacy-sql/sprint3_sync_migration.sql.disabled`
 - `lib/data/sync/conflict_resolver.dart`
 - `lib/data/sync/performed_sets_merge.dart`
 - `lib/data/sync/performed_set_sync_service.dart`
@@ -56,7 +59,8 @@ flutter test               # 23 tests passed
 
 ## Pré-requisito produção
 
-Executar `scripts/sprint3_sync_migration.sql` no Supabase após Sprint 1/2.
+Não executar o arquivo legado. Converter somente as partes ainda necessárias
+em uma nova migração versionada e testada.
 
 ---
 

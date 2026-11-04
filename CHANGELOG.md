@@ -7,7 +7,7 @@ All notable changes to App Personal are documented in this file.
 ### Sprint 3 — Sync engine (2026-07-09)
 
 #### Added
-- Server-side atomic `revision` triggers and append-only `day_workout_performed_sets` table (`scripts/sprint3_sync_migration.sql`).
+- Server-side atomic `revision` triggers and append-only `day_workout_performed_sets` table (`docs/legacy-sql/sprint3_sync_migration.sql.disabled`).
 - `ConflictResolver`, `PerformedSetsMerge`, `PerformedSetSyncService`, `SyncWatermarkStore`, `SyncCoordinator`.
 - Drift schema v37: local `PerformedSetEvents` table.
 - Incremental pull via `pullIncrementalSince` and watermark cursors.

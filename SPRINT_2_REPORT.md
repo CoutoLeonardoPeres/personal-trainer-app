@@ -1,5 +1,8 @@
 # Sprint 2 — Relatório de Segurança
 
+> Documento histórico. Os SQL citados estão desativados e não devem ser
+> executados; novas mudanças usam `supabase/migrations/`.
+
 **Projeto:** App Personal (Flutter + Drift + Supabase)
 **Data:** 2026-07-09
 **Escopo:** reset seguro, RBAC server-side, unicidade de e-mail, RLS reforçado e testes de segurança (sem Sprint 3)
@@ -37,7 +40,7 @@
 | `lib/features/cadastro/registry/alunos_page.dart` | Remover senhas; botão «Enviar link de acesso» | ✅ |
 | `lib/features/cadastro/registry/personais_page.dart` | Idem | ✅ |
 | `lib/core/auth/password_reset_webhook.dart` | **Remover** | ✅ |
-| `scripts/sprint2_security_migration.sql` | **Criar** — unique e-mail, triggers, RLS privilegiado | ✅ |
+| `docs/legacy-sql/sprint2_security_migration.sql.disabled` | **Criar** — unique e-mail, triggers, RLS privilegiado | ✅ |
 | `test/email_uniqueness_guard_test.dart` | Testes de unicidade e colisão | ✅ |
 | `test/app_session_server_profile_test.dart` | Testes RBAC server-side | ✅ |
 
@@ -78,7 +81,7 @@
 - Normalização: `trim` + `lowercase` (`SupabaseAuthBridge.normEmail`).
 - Alunos arquivados não bloqueiam reutilização do e-mail.
 
-**Servidor (Postgres — `scripts/sprint2_security_migration.sql`):**
+**Servidor (Postgres — `docs/legacy-sql/sprint2_security_migration.sql.disabled`):**
 
 - Índices únicos parciais em `app_norm_email(email)`.
 - Trigger `app_assert_login_email_unique` impede personal ↔ aluno com mesmo e-mail.
@@ -101,9 +104,9 @@
 
 Ordem recomendada:
 
-1. `scripts/supabase_rls_strict_auth_uid.sql`
-2. `scripts/sprint1_security_migration.sql`
-3. **`scripts/sprint2_security_migration.sql`**
+1. `docs/legacy-sql/supabase_rls_strict_auth_uid.sql.disabled`
+2. `docs/legacy-sql/sprint1_security_migration.sql.disabled`
+3. **`docs/legacy-sql/sprint2_security_migration.sql.disabled`**
 
 Validar após aplicar:
 
@@ -153,7 +156,7 @@ flutter test               # 14 tests passed
 
 ## 7. Riscos remanescentes / próximos passos (Sprint 3+)
 
-- Aplicar `sprint2_security_migration.sql` no projeto Supabase de produção (obrigatório para proteção server-side completa).
+- Converter as proteções necessárias em migração versionada antes de qualquer aplicação remota.
 - Offline: privilégios do servidor indisponíveis — app usa fallback local conservador até reconectar.
 - Edge Function para convites admin com audit trail (opcional, Sprint 3).
 - Sincronização LWW, performance e publicação permanecem fora desta sprint.
@@ -163,6 +166,6 @@ flutter test               # 14 tests passed
 ## 8. Referências
 
 - Sprint 1: `SPRINT_1_REPORT.md`
-- Migração Sprint 1: `scripts/sprint1_security_migration.sql`
-- Migração Sprint 2: `scripts/sprint2_security_migration.sql`
-- Funções RLS base: `scripts/supabase_rls_strict_auth_uid.sql`
+- Migração Sprint 1: `docs/legacy-sql/sprint1_security_migration.sql.disabled`
+- Migração Sprint 2: `docs/legacy-sql/sprint2_security_migration.sql.disabled`
+- Funções RLS base: `docs/legacy-sql/supabase_rls_strict_auth_uid.sql.disabled`

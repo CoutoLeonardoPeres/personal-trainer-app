@@ -1,5 +1,8 @@
 # Sprint 1 — Relatório de Segurança
 
+> Documento histórico. Os SQL citados estão desativados e não devem ser
+> executados; novas mudanças usam `supabase/migrations/`.
+
 **Projeto:** App Personal (Flutter + Drift + Supabase)
 **Data:** 2026-07-09
 **Escopo:** exclusivamente bloqueadores críticos de segurança (sem Sprint 2)
@@ -14,7 +17,7 @@
 |---|--------|------------|-----------|
 | A1 | Senhas em **texto puro** no SQLite (`password_hash` sem hash) | Crítico | `local_login_page.dart` comparava `stored != password` |
 | A2 | Senhas sincronizadas para Postgres via `anon` | Crítico | `supabase_table_mappers.dart` enviava `password_hash` |
-| A3 | RLS permissivo: `using (true)` para role `anon` em 17 tabelas | Crítico | `scripts/supabase.sql` políticas `app_sync_anon_all` |
+| A3 | RLS permissivo: `using (true)` para role `anon` em 17 tabelas | Crítico | `docs/legacy-sql/supabase.sql.disabled` políticas `app_sync_anon_all` |
 | A4 | Login local sem JWT; `AppSession` independente do Supabase Auth | Crítico | Boot auto-entrava como primeiro admin |
 | A5 | `auth_user_id` existia no SQL mas **não era usado** no app | Alto | Colunas sem lógica Dart |
 | A6 | Webhook enviava `new_password` em JSON | Alto | `password_reset_webhook.dart` |
@@ -47,8 +50,8 @@
 | `lib/features/cadastro/registry/alunos_page.dart` | `provisionalPasswordForNewAuth` em vez de hash local | ✅ |
 | `lib/features/cadastro/registry/personais_page.dart` | Remover `passwordHash` do save | ✅ |
 | `lib/features/settings/settings_page.dart` | Textos e troca de senha só Auth | ✅ |
-| `scripts/sprint1_security_migration.sql` | **Criar** — drop senhas + RLS estrito + revoke `anon` | ✅ |
-| `scripts/supabase.sql` | Schema base sem `password_hash`; drop legado | ✅ |
+| `docs/legacy-sql/sprint1_security_migration.sql.disabled` | **Criar** — drop senhas + RLS estrito + revoke `anon` | ✅ |
+| `docs/legacy-sql/supabase.sql.disabled` | Schema base sem `password_hash`; drop legado | ✅ |
 | `test/supabase_auth_bridge_test.dart` | Teste unitário `normEmail` | ✅ |
 
 **Fora do escopo Sprint 1 (Sprint 2+):** performance, UI, sync LWW complexo, publicação App Store, Edge Functions admin.
@@ -108,8 +111,8 @@ dart analyze lib
 
 **Ordem:**
 
-1. `scripts/supabase_rls_strict_auth_uid.sql` — secção 1 (funções `app_*`)
-2. `scripts/sprint1_security_migration.sql` — drop senhas + RLS + revoke `anon`
+1. `docs/legacy-sql/supabase_rls_strict_auth_uid.sql.disabled` — secção 1 (funções `app_*`)
+2. `docs/legacy-sql/sprint1_security_migration.sql.disabled` — drop senhas + RLS + revoke `anon`
 
 **Dados:**
 
@@ -145,7 +148,7 @@ flutter build ios --release --dart-define-from-file=dart_defines.prod.json
 - Utilizadores legados sem conta em `auth.users` não entram até provisionamento manual.
 - `signUp` no cliente depende da configuração do projeto Supabase.
 - Builds **sem** `SUPABASE_ANON_KEY` bloqueiam login (comportamento esperado).
-- `scripts/supabase_FIXED_COPY_PASTE.sql` ainda referencia `password_hash` (cópia legada; usar `sprint1_security_migration.sql`).
+- `docs/legacy-sql/supabase_FIXED_COPY_PASTE.sql.disabled` ainda referencia `password_hash` (cópia legada; usar `sprint1_security_migration.sql`).
 
 ---
 
@@ -153,7 +156,7 @@ flutter build ios --release --dart-define-from-file=dart_defines.prod.json
 
 ```
 lib/core/auth/supabase_auth_bridge.dart          (novo)
-scripts/sprint1_security_migration.sql           (novo)
+docs/legacy-sql/sprint1_security_migration.sql.disabled           (novo)
 test/supabase_auth_bridge_test.dart              (novo)
 SPRINT_1_REPORT.md                               (este arquivo)
 ```

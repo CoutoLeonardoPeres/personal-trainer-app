@@ -1,5 +1,8 @@
 # Auditoria Técnica — App Personal (Flutter + Supabase)
 
+> Registro histórico. Os caminhos SQL citados apontam para arquivos
+> desativados e não são instruções de execução.
+
 Revisão de arquitetura, cibersegurança, banco de dados, sincronização, observabilidade,
 prontidão para produção e UI/performance. Análise crua, sem suavizar. Cada item traz
 severidade, o arquivo/linha onde está o problema e a correção recomendada.
@@ -40,7 +43,7 @@ Abaixo, o detalhamento.
 ## 1. Segurança e controle de acesso
 
 ### 1.1 🔴 RLS permissivo — acesso total via chave anônima
-`scripts/supabase.sql` (linhas ~704–712) cria, para praticamente todas as tabelas:
+`docs/legacy-sql/supabase.sql.disabled` (linhas ~704–712) cria, para praticamente todas as tabelas:
 
 ```sql
 create policy app_sync_anon_all on public.<tabela>
