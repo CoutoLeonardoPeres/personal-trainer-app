@@ -1,0 +1,14 @@
+title = "App Personal gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "local_auth_darwin package checksums misclassified as generic API keys"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^ios/Podfile\.lock$''',
+  '''^macos/Podfile\.lock$''',
+]
+regexes = ['''local_auth_darwin: [A-Fa-f0-9]{40}''']

@@ -45,3 +45,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /android/build/
+
+# Chaves de produção (copie de dart_defines.example.json)
+dart_defines.prod.json
+dart_defines.*.json
+!dart_defines.example.json
+
+# Backups e artefatos locais
+/lib.zip
+
+# Artefatos de deploy web (Hostinger)
+/deploy/
