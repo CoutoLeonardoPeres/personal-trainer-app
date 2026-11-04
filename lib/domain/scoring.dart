@@ -49,10 +49,7 @@ String formatExecutionPercentLabel({
   required double current,
   required double? previous,
 }) {
-  final pct = executionPercentVsPrevious(
-    current: current,
-    previous: previous,
-  );
+  final pct = executionPercentVsPrevious(current: current, previous: previous);
   final decimals = pct.abs() >= 100 ? 0 : 1;
   return '${pct.toStringAsFixed(decimals).replaceAll('.', ',')}%';
 }

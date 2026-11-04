@@ -25,8 +25,11 @@ Future<List<MuscleGroupPieSlice>> _loadMusclePieSlices(
   String studentId,
 ) async {
   final now = DateTime.now();
-  final from = DateTime(now.year, now.month, now.day)
-      .subtract(const Duration(days: kMusclePieWindowDays));
+  final from = DateTime(
+    now.year,
+    now.month,
+    now.day,
+  ).subtract(const Duration(days: kMusclePieWindowDays));
   final toExclusive = DateTime(now.year, now.month, now.day + 1);
   final snapshots = await repo.completedWorkoutSnapshots(
     studentId: studentId,
@@ -63,13 +66,8 @@ class MuscleGroupVolumePieChart extends StatelessWidget {
             'Sem treinos concluídos nas últimas 8 semanas, ou sem exercícios '
             'com grupo muscular no cadastro.',
         buildChart: (slices, constraints) {
-          final merged = mergeSmallestPieSlices(
-            slices,
-            8,
-            (s) => s.lineCount,
-          );
-          final pieSize =
-              (constraints.maxWidth * 0.48).clamp(132.0, 200.0);
+          final merged = mergeSmallestPieSlices(slices, 8, (s) => s.lineCount);
+          final pieSize = (constraints.maxWidth * 0.48).clamp(132.0, 200.0);
           return _pieBlock(
             title: 'Onde mais treinou (volume)',
             subtitle: 'Participação por nº de exercícios no dia',
@@ -111,8 +109,7 @@ class MuscleGroupScorePieChart extends StatelessWidget {
             8,
             (s) => s.scoreTotal.round(),
           );
-          final pieSize =
-              (constraints.maxWidth * 0.48).clamp(132.0, 200.0);
+          final pieSize = (constraints.maxWidth * 0.48).clamp(132.0, 200.0);
           return _pieBlock(
             title: 'Rendimento por grupo',
             subtitle: 'Participação na soma dos scores das linhas',
@@ -132,12 +129,11 @@ Widget _pieChartBody({
   required Widget Function(
     List<MuscleGroupPieSlice> slices,
     BoxConstraints constraints,
-  ) buildChart,
+  )
+  buildChart,
 }) {
   if (snap.connectionState == ConnectionState.waiting) {
-    return const Center(
-      child: ModernLoadingIndicator(size: 36),
-    );
+    return const Center(child: ModernLoadingIndicator(size: 36));
   }
   if (snap.hasError) {
     return Center(
@@ -207,9 +203,7 @@ Widget _pieBlock({
           fontSize: 11,
           fontWeight: FontWeight.w800,
           color: Colors.white.withValues(alpha: 0.92),
-          shadows: const [
-            Shadow(color: Colors.black54, blurRadius: 4),
-          ],
+          shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
         ),
       ),
     );
@@ -285,7 +279,9 @@ Widget _pieBlock({
                     borderRadius: BorderRadius.circular(12),
                     color: Colors.white.withValues(alpha: 0.04),
                     border: Border.all(
-                      color: AppColors.cadastroCardBorder.withValues(alpha: 0.35),
+                      color: AppColors.cadastroCardBorder.withValues(
+                        alpha: 0.35,
+                      ),
                     ),
                   ),
                   child: Padding(
@@ -332,9 +328,7 @@ class _LegendRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(3),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.2),
-              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
             ),
           ),
         ),

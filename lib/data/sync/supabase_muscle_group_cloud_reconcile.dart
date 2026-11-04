@@ -37,7 +37,9 @@ Future<void> reconcileLocalMuscleGroupsWithSupabase(
     }
   }
 
-  final raw = await client.from('muscle_groups').select('id,name,created_at,updated_at');
+  final raw = await client
+      .from('muscle_groups')
+      .select('id,name,created_at,updated_at');
   final remoteList = (raw as List<dynamic>).cast<Map<String, dynamic>>();
 
   final byNorm = <String, Map<String, dynamic>>{};
@@ -66,24 +68,27 @@ Future<void> reconcileLocalMuscleGroupsWithSupabase(
       if (remoteId == L.id) continue;
 
       final remoteName = (remoteRow['name'] as String?)?.trim();
-      final nameToStore =
-          (remoteName != null && remoteName.isNotEmpty) ? remoteName : L.name.trim();
+      final nameToStore = (remoteName != null && remoteName.isNotEmpty)
+          ? remoteName
+          : L.name.trim();
       final created = _parseSupabaseTs(remoteRow['created_at']);
       final updated = _parseSupabaseTs(remoteRow['updated_at']);
 
       // Libera o índice único local (mesmo nome normalizado) antes de inserir o id da nuvem.
       await (db.update(db.muscleGroups)..where((t) => t.id.equals(L.id))).write(
-            MuscleGroupsCompanion(
-              name: Value('__sync_reconcile_${L.id}'),
-              updatedAt: Value(DateTime.now()),
-            ),
-          );
+        MuscleGroupsCompanion(
+          name: Value('__sync_reconcile_${L.id}'),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
 
-      final existingRemoteLocally = await (db.select(db.muscleGroups)
-            ..where((t) => t.id.equals(remoteId)))
-          .getSingleOrNull();
+      final existingRemoteLocally = await (db.select(
+        db.muscleGroups,
+      )..where((t) => t.id.equals(remoteId))).getSingleOrNull();
       if (existingRemoteLocally == null) {
-        await db.into(db.muscleGroups).insert(
+        await db
+            .into(db.muscleGroups)
+            .insert(
               MuscleGroupsCompanion.insert(
                 id: remoteId,
                 name: nameToStore.isEmpty ? 'Sem nome' : nameToStore,
@@ -93,7 +98,8 @@ Future<void> reconcileLocalMuscleGroupsWithSupabase(
             );
       }
 
-      await (db.update(db.exercises)..where((e) => e.muscleGroupId.equals(L.id)))
+      await (db.update(db.exercises)
+            ..where((e) => e.muscleGroupId.equals(L.id)))
           .write(ExercisesCompanion(muscleGroupId: Value(remoteId)));
       await (db.delete(db.muscleGroups)..where((t) => t.id.equals(L.id))).go();
     }

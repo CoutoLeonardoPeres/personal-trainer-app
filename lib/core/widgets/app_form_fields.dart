@@ -227,8 +227,12 @@ class BrazilStateDropdown extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 15,
-                color: selected != null ? AppColors.textPrimary : AppColors.textMuted,
-                fontWeight: selected != null ? FontWeight.w500 : FontWeight.w400,
+                color: selected != null
+                    ? AppColors.textPrimary
+                    : AppColors.textMuted,
+                fontWeight: selected != null
+                    ? FontWeight.w500
+                    : FontWeight.w400,
               ),
             ),
           ),
@@ -268,10 +272,17 @@ class AppPrimaryButton extends StatelessWidget {
           ? ElevatedButton.icon(
               style: style,
               onPressed: onPressed,
-              icon: Icon(icon, size: 22, color: onPressed == null ? Colors.black54 : Colors.black),
+              icon: Icon(
+                icon,
+                size: 22,
+                color: onPressed == null ? Colors.black54 : Colors.black,
+              ),
               label: Text(
                 label,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
               ),
             )
           : ElevatedButton(
@@ -279,7 +290,10 @@ class AppPrimaryButton extends StatelessWidget {
               onPressed: onPressed,
               child: Text(
                 label,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
               ),
             ),
     );

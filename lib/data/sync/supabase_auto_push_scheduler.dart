@@ -77,13 +77,16 @@ abstract final class SupabaseAutoPushScheduler {
     await prefs.setInt(_kLastAttemptMs, now);
 
     if (kDebugMode) {
-      debugPrint('SupabaseAutoPushScheduler: iniciando envio completo SQLite → Supabase…');
+      debugPrint(
+        'SupabaseAutoPushScheduler: iniciando envio completo SQLite → Supabase…',
+      );
     }
 
     final svc = SupabaseManualSyncService(db, sync);
     final report = await svc.testConnectionAndPushAll(session: session);
 
-    final allOk = report.connectionTest.ok &&
+    final allOk =
+        report.connectionTest.ok &&
         report.tables.isNotEmpty &&
         report.tables.every((t) => t.ok);
 

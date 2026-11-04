@@ -9,9 +9,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // iOS: não fixar orientação — alinha com UISupportedInterfaceOrientations (revisão App Store).
   if (defaultTargetPlatform == TargetPlatform.android) {
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
   installGlobalErrorLogging();
   installBootDiagnostics();

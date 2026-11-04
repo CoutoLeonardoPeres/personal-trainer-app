@@ -26,9 +26,7 @@ class FreeAiTrainingReportService {
     if (uri == null) return null;
 
     try {
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-      };
+      final headers = <String, String>{'Content-Type': 'application/json'};
       if (_apiKey.trim().isNotEmpty) {
         headers['Authorization'] = 'Bearer $_apiKey';
       }

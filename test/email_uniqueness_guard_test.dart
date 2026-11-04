@@ -19,7 +19,9 @@ void main() {
     required String id,
     required String email,
   }) async {
-    await db.into(db.personals).insert(
+    await db
+        .into(db.personals)
+        .insert(
           PersonalsCompanion.insert(
             id: id,
             name: 'Personal $id',
@@ -39,7 +41,9 @@ void main() {
     required String email,
     bool archived = false,
   }) async {
-    await db.into(db.students).insert(
+    await db
+        .into(db.students)
+        .insert(
           StudentsCompanion.insert(
             id: id,
             name: 'Aluno $id',

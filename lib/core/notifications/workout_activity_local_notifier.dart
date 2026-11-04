@@ -34,7 +34,9 @@ class WorkoutActivityLocalNotifier {
       tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
     } catch (e, st) {
       if (kDebugMode) {
-        debugPrint('WorkoutActivityLocalNotifier: timezone fallback UTC: $e\n$st');
+        debugPrint(
+          'WorkoutActivityLocalNotifier: timezone fallback UTC: $e\n$st',
+        );
       }
     }
     _timezoneInitialized = true;
@@ -59,8 +61,10 @@ class WorkoutActivityLocalNotifier {
     );
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final androidImpl = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       await androidImpl?.requestNotificationsPermission();
       await androidImpl?.createNotificationChannel(
         const AndroidNotificationChannel(
@@ -76,8 +80,10 @@ class WorkoutActivityLocalNotifier {
         ),
       );
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final iosImpl = _plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
+      final iosImpl = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
       await iosImpl?.requestPermissions(
         alert: true,
         badge: false,

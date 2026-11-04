@@ -16,18 +16,24 @@ abstract final class AppColors {
   static const Color textMuted = Color(0xB3FFFFFF);
   static const Color danger = Color(0xFFE53935);
   static const Color calendarIncomplete = Color(0xFFE53935);
+
   /// Dias futuros com treino programado / em aberto no calendário.
   static const Color calendarFutureProgrammed = Color(0xFF42A5F5);
+
   /// Borda dos cards na tela Cadastro e listas de registro (subtelas).
   static const Color cadastroCardBorder = Color(0xFF42A5F5);
+
   /// Azul claro (ciano) — cartão de **seção** (grupo muscular, bloco na semana de planejamento).
   static const Color registrySectionBlueLight = Color(0xFF81D4FA);
+
   /// Azul mais fechado — cartão de **linha** (exercício em lista, item agendado).
   static const Color registryRowBlueDeep = Color(0xFF1565C0);
 
   /// Preenchimento translúcido de dia com treino no calendário (e cards concluídos).
-  static Color workoutDayFillTint(Color accent) => accent.withValues(alpha: 0.24);
+  static Color workoutDayFillTint(Color accent) =>
+      accent.withValues(alpha: 0.24);
 
   /// Borda de dia com treino no calendário (e cards concluídos).
-  static Color workoutDayBorderTint(Color accent) => accent.withValues(alpha: 0.5);
+  static Color workoutDayBorderTint(Color accent) =>
+      accent.withValues(alpha: 0.5);
 }

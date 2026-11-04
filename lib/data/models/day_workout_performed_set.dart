@@ -39,28 +39,27 @@ class DayWorkoutPerformedSet {
     int? restPrescribedSec,
     int? restCountdownElapsedMs,
     int? postRestModalMs,
-  }) =>
-      DayWorkoutPerformedSet(
-        setId: setId ?? this.setId,
-        loadKg: loadKg ?? this.loadKg,
-        reps: reps ?? this.reps,
-        loggedAtMs: loggedAtMs ?? this.loggedAtMs,
-        restPrescribedSec: restPrescribedSec ?? this.restPrescribedSec,
-        restCountdownElapsedMs:
-            restCountdownElapsedMs ?? this.restCountdownElapsedMs,
-        postRestModalMs: postRestModalMs ?? this.postRestModalMs,
-      );
+  }) => DayWorkoutPerformedSet(
+    setId: setId ?? this.setId,
+    loadKg: loadKg ?? this.loadKg,
+    reps: reps ?? this.reps,
+    loggedAtMs: loggedAtMs ?? this.loggedAtMs,
+    restPrescribedSec: restPrescribedSec ?? this.restPrescribedSec,
+    restCountdownElapsedMs:
+        restCountdownElapsedMs ?? this.restCountdownElapsedMs,
+    postRestModalMs: postRestModalMs ?? this.postRestModalMs,
+  );
 
   Map<String, dynamic> toJson() => {
-        if (setId != null && setId!.isNotEmpty) 'setId': setId,
-        'loadKg': loadKg,
-        'reps': reps,
-        if (loggedAtMs != null) 'loggedAtMs': loggedAtMs,
-        if (restPrescribedSec != null) 'restPrescribedSec': restPrescribedSec,
-        if (restCountdownElapsedMs != null)
-          'restCountdownElapsedMs': restCountdownElapsedMs,
-        if (postRestModalMs != null) 'postRestModalMs': postRestModalMs,
-      };
+    if (setId != null && setId!.isNotEmpty) 'setId': setId,
+    'loadKg': loadKg,
+    'reps': reps,
+    if (loggedAtMs != null) 'loggedAtMs': loggedAtMs,
+    if (restPrescribedSec != null) 'restPrescribedSec': restPrescribedSec,
+    if (restCountdownElapsedMs != null)
+      'restCountdownElapsedMs': restCountdownElapsedMs,
+    if (postRestModalMs != null) 'postRestModalMs': postRestModalMs,
+  };
 
   static DayWorkoutPerformedSet? fromJson(Object? e) {
     if (e is! Map) return null;
@@ -70,7 +69,7 @@ class DayWorkoutPerformedSet {
     final reps = (repsRaw is num) ? repsRaw.toInt() : int.tryParse('$repsRaw');
     if (reps == null || reps < 1) return null;
     final setIdRaw = m['setId'];
-    final setId = setIdRaw == null ? null : setIdRaw.toString().trim();
+    final setId = setIdRaw?.toString().trim();
     final loadRaw = m['loadKg'];
     double? loadKg;
     if (loadRaw != null) {
@@ -113,7 +112,10 @@ abstract final class DayWorkoutPerformedSetCodec {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List<dynamic>) return [];
-      return decoded.map(DayWorkoutPerformedSet.fromJson).whereType<DayWorkoutPerformedSet>().toList();
+      return decoded
+          .map(DayWorkoutPerformedSet.fromJson)
+          .whereType<DayWorkoutPerformedSet>()
+          .toList();
     } catch (_) {
       return [];
     }

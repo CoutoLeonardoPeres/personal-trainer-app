@@ -2,8 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'supabase_bootstrap.dart';
 
-/// Login com JWT por utilizador — necessário quando o Postgres usa RLS com `auth.uid()`
-/// (ver `scripts/supabase_rls_strict_auth_uid.sql`).
+/// Login com JWT por utilizador, necessário quando o Postgres usa RLS com
+/// `auth.uid()`.
 class SupabaseAuthService {
   SupabaseAuthService._();
 
@@ -38,10 +38,7 @@ class SupabaseAuthService {
     if (c == null) {
       throw StateError('Supabase não está inicializado.');
     }
-    await c.auth.signInWithOAuth(
-      OAuthProvider.google,
-      redirectTo: redirectTo,
-    );
+    await c.auth.signInWithOAuth(OAuthProvider.google, redirectTo: redirectTo);
   }
 
   static Future<void> signInWithGitHub({
@@ -51,10 +48,7 @@ class SupabaseAuthService {
     if (c == null) {
       throw StateError('Supabase não está inicializado.');
     }
-    await c.auth.signInWithOAuth(
-      OAuthProvider.github,
-      redirectTo: redirectTo,
-    );
+    await c.auth.signInWithOAuth(OAuthProvider.github, redirectTo: redirectTo);
   }
 
   /// Finaliza o login OAuth via deep link (ex.: `apppersonal://login-callback#access_token=...`).

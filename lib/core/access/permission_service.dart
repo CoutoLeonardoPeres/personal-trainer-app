@@ -4,19 +4,14 @@ import 'access_tiers.dart';
 
 /// RBAC derivado de [AppSession] + entidades locais (sem duplicar regras na UI).
 class PermissionService {
-  const PermissionService({
-    required this.session,
-    this.student,
-    this.personal,
-  });
+  const PermissionService({required this.session, this.student, this.personal});
 
   final AppSession session;
   final StudentEntity? student;
   final PersonalEntity? personal;
 
   bool get _studentLegacy {
-    final tier =
-        session.authoritativeStudentAccessTier ?? student?.accessTier;
+    final tier = session.authoritativeStudentAccessTier ?? student?.accessTier;
     return student == null || tier == AccessTiers.legacy;
   }
 

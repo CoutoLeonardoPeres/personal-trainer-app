@@ -29,15 +29,15 @@ Future<void> initializeSupabaseApp() async {
       supabaseFromDartDefine = true;
       bootTrace('initializeSupabaseApp', 'chave dart-define');
       try {
-        await Supabase.initialize(
-          url: supabaseUrl,
-          anonKey: publicKey,
-        );
+        await Supabase.initialize(url: supabaseUrl, anonKey: publicKey);
         supabaseAppEnabled = true;
         bootTrace('initializeSupabaseApp', 'Supabase.initialize OK (define)');
         logLaunch('Supabase.initialize ok (dart-define)');
       } catch (e, st) {
-        bootTrace('initializeSupabaseApp', 'Supabase.initialize FALHOU (define): $e');
+        bootTrace(
+          'initializeSupabaseApp',
+          'Supabase.initialize FALHOU (define): $e',
+        );
         logLaunch('Supabase.initialize falhou', error: e, stackTrace: st);
         supabaseAppEnabled = false;
       }
@@ -57,8 +57,15 @@ Future<void> initializeSupabaseApp() async {
         bootTrace('initializeSupabaseApp', 'Supabase.initialize OK (prefs)');
         logLaunch('Supabase.initialize ok (SharedPreferences)');
       } catch (e, st) {
-        bootTrace('initializeSupabaseApp', 'Supabase.initialize FALHOU (prefs): $e');
-        logLaunch('Supabase.initialize falhou (prefs)', error: e, stackTrace: st);
+        bootTrace(
+          'initializeSupabaseApp',
+          'Supabase.initialize FALHOU (prefs): $e',
+        );
+        logLaunch(
+          'Supabase.initialize falhou (prefs)',
+          error: e,
+          stackTrace: st,
+        );
         supabaseAppEnabled = false;
       }
     } else {

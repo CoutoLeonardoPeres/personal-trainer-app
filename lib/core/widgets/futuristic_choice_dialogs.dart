@@ -145,11 +145,7 @@ class FuturisticConfirmDialog extends StatelessWidget {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(10),
-                          child: Icon(
-                            headerIcon,
-                            color: ring,
-                            size: 22,
-                          ),
+                          child: Icon(headerIcon, color: ring, size: 22),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -298,11 +294,7 @@ class FuturisticInfoDialog extends StatelessWidget {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(10),
-                          child: Icon(
-                            headerIcon,
-                            color: ring,
-                            size: 22,
-                          ),
+                          child: Icon(headerIcon, color: ring, size: 22),
                         ),
                       ),
                       const SizedBox(width: 12),

@@ -26,15 +26,14 @@ bool dayWorkoutLineExecutedOutOfPlannedOrder(
 
   for (var j = 0; j < myIdx; j++) {
     final earlier = plannedOrder[j];
-    final earlierPerf =
-        DayWorkoutPerformedSetCodec.decode(earlier.performedSetsJson);
+    final earlierPerf = DayWorkoutPerformedSetCodec.decode(
+      earlier.performedSetsJson,
+    );
     if (earlierPerf.isEmpty) {
       return true;
     }
     final earlierFirst = DayWorkoutPerformedSetCodec.minLoggedAtMs(earlierPerf);
-    if (myFirst != null &&
-        earlierFirst != null &&
-        myFirst < earlierFirst) {
+    if (myFirst != null && earlierFirst != null && myFirst < earlierFirst) {
       return true;
     }
   }

@@ -77,8 +77,9 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
       final end = _restLive?.countdownEndsAt;
       if (end != null) {
         setState(() {
-          _countdownStart =
-              end.subtract(Duration(seconds: widget.prescribedSec));
+          _countdownStart = end.subtract(
+            Duration(seconds: widget.prescribedSec),
+          );
         });
       }
       unawaited(_syncPhaseWithWallClock());
@@ -107,8 +108,9 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
     if (_transitionedToPost) return;
     _transitionedToPost = true;
     _phaseCountdown = false;
-    final defaultStart =
-        _countdownStart.add(Duration(seconds: widget.prescribedSec));
+    final defaultStart = _countdownStart.add(
+      Duration(seconds: widget.prescribedSec),
+    );
     _postPhaseStart = startedAt ?? defaultStart;
     _restLive?.enterPostPhase(startedAt: _postPhaseStart);
     if (playSound && !_playedEndSound) {
@@ -240,7 +242,9 @@ class _InterSetRestDialogState extends State<_InterSetRestDialog>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _phaseCountdown ? 'Descanso entre séries' : 'Pronto para a próxima',
+                      _phaseCountdown
+                          ? 'Descanso entre séries'
+                          : 'Pronto para a próxima',
                       style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 17,
@@ -344,14 +348,8 @@ class _DigitalClockDisplay extends StatelessWidget {
       letterSpacing: 4,
       color: digitColor,
       shadows: [
-        Shadow(
-          color: glow.withValues(alpha: 0.95),
-          blurRadius: 22,
-        ),
-        Shadow(
-          color: glow.withValues(alpha: 0.55),
-          blurRadius: 42,
-        ),
+        Shadow(color: glow.withValues(alpha: 0.95), blurRadius: 22),
+        Shadow(color: glow.withValues(alpha: 0.55), blurRadius: 42),
         Shadow(
           color: Colors.white.withValues(alpha: 0.35),
           blurRadius: 2,
@@ -373,10 +371,7 @@ class _DigitalClockDisplay extends StatelessWidget {
             Colors.black.withValues(alpha: 0.92),
           ],
         ),
-        border: Border.all(
-          color: glow.withValues(alpha: 0.55),
-          width: 2,
-        ),
+        border: Border.all(color: glow.withValues(alpha: 0.55), width: 2),
         boxShadow: [
           BoxShadow(
             color: glow.withValues(alpha: 0.2),
@@ -404,10 +399,7 @@ class _DigitalClockDisplay extends StatelessWidget {
                 ),
                 Text(
                   secondaryTicks!,
-                  style: digitStyle.copyWith(
-                    fontSize: 36,
-                    letterSpacing: 3,
-                  ),
+                  style: digitStyle.copyWith(fontSize: 36, letterSpacing: 3),
                 ),
               ],
             ],

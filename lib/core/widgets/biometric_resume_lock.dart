@@ -100,7 +100,8 @@ class _BiometricResumeLockState extends State<BiometricResumeLock>
       return;
     }
     if (_lockEntry != null) return;
-    final overlay = widget.rootNavigatorKey?.currentState?.overlay ??
+    final overlay =
+        widget.rootNavigatorKey?.currentState?.overlay ??
         Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -137,10 +138,7 @@ class _BiometricResumeLockState extends State<BiometricResumeLock>
                 const Text(
                   'Use Face ID ou impressão digital para continuar.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),

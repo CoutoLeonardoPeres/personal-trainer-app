@@ -66,7 +66,9 @@ class _BrazilStateSheetBodyState extends State<_BrazilStateSheetBody> {
   @override
   void initState() {
     super.initState();
-    _search.addListener(() => setState(() => _query = _search.text.trim().toLowerCase()));
+    _search.addListener(
+      () => setState(() => _query = _search.text.trim().toLowerCase()),
+    );
   }
 
   @override
@@ -153,13 +155,16 @@ class _BrazilStateSheetBodyState extends State<_BrazilStateSheetBody> {
                     Expanded(
                       child: ShaderMask(
                         blendMode: BlendMode.srcIn,
-                        shaderCallback: (bounds) => LinearGradient(
-                          colors: [
-                            AppColors.splashMint,
-                            AppColors.headerGradientMint,
-                            AppColors.accentPink.withValues(alpha: 0.95),
-                          ],
-                        ).createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
+                        shaderCallback: (bounds) =>
+                            LinearGradient(
+                              colors: [
+                                AppColors.splashMint,
+                                AppColors.headerGradientMint,
+                                AppColors.accentPink.withValues(alpha: 0.95),
+                              ],
+                            ).createShader(
+                              Rect.fromLTWH(0, 0, bounds.width, bounds.height),
+                            ),
                         child: Text(
                           widget.title,
                           style: const TextStyle(
@@ -193,21 +198,32 @@ class _BrazilStateSheetBodyState extends State<_BrazilStateSheetBody> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 child: TextField(
                   controller: _search,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                  ),
                   cursorColor: AppColors.splashMint,
                   decoration: InputDecoration(
                     hintText: 'Ex.: São Paulo, SP…',
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
                     prefixIcon: Icon(
                       Icons.travel_explore_rounded,
                       color: AppColors.splashMint.withValues(alpha: 0.85),
                     ),
                     filled: true,
                     fillColor: Colors.black.withValues(alpha: 0.35),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(
@@ -222,7 +238,10 @@ class _BrazilStateSheetBodyState extends State<_BrazilStateSheetBody> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.splashMint, width: 2),
+                      borderSide: const BorderSide(
+                        color: AppColors.splashMint,
+                        width: 2,
+                      ),
                     ),
                   ),
                 ),
@@ -235,7 +254,8 @@ class _BrazilStateSheetBodyState extends State<_BrazilStateSheetBody> {
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
                     final s = _filtered[i];
-                    final isSelected = widget.selectedUf != null &&
+                    final isSelected =
+                        widget.selectedUf != null &&
                         widget.selectedUf!.toUpperCase() == s.uf;
                     return _StateRowTile(
                       state: s,
@@ -312,7 +332,10 @@ class _StateRowTile extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
@@ -344,7 +367,9 @@ class _StateRowTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? AppColors.textPrimary : AppColors.textMuted,
+                    color: selected
+                        ? AppColors.textPrimary
+                        : AppColors.textMuted,
                     height: 1.2,
                   ),
                 ),

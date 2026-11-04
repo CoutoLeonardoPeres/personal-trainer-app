@@ -19,9 +19,7 @@ Widget? _titleWithTrafficIndicator(
   if (title == null) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        SupabaseTrafficIndicator(),
-      ],
+      children: [SupabaseTrafficIndicator()],
     );
   }
   if (centerTitleInToolbar) {
@@ -53,9 +51,7 @@ Widget? _titleWithTrafficIndicator(
           child: Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                const SupabaseTrafficIndicator(),
-              ],
+              children: [const SupabaseTrafficIndicator()],
             ),
           ),
         ),

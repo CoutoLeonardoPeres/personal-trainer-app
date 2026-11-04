@@ -245,9 +245,8 @@ class _ExercisePrescriptionEditDialogState
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: AppColors.cadastroCardBorder.withValues(
-                                    alpha: 0.55,
-                                  ),
+                                  color: AppColors.cadastroCardBorder
+                                      .withValues(alpha: 0.55),
                                 ),
                                 gradient: RadialGradient(
                                   colors: [
@@ -388,7 +387,8 @@ class _ExercisePrescriptionEditDialogState
                         ),
                         const SizedBox(height: kCadastroFieldGap),
                         StreamBuilder<List<TrainingMethodEntity>>(
-                          stream: widget.repo.watchTrainingMethodsAlphabetical(),
+                          stream: widget.repo
+                              .watchTrainingMethodsAlphabetical(),
                           builder: (context, snap) {
                             final methods = snap.data ?? [];
                             return TrainingMethodPickerField(

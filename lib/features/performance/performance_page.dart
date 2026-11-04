@@ -189,39 +189,36 @@ class _PerformancePageState extends State<PerformancePage> {
     AsyncSnapshot<List<StudentEntity>> snap,
     AppDataRepository repo,
   ) {
-              final students = snap.data ?? [];
-              final waitingFirstStudents =
-                  snap.connectionState == ConnectionState.waiting &&
-                  !snap.hasData;
+    final students = snap.data ?? [];
+    final waitingFirstStudents =
+        snap.connectionState == ConnectionState.waiting && !snap.hasData;
 
-              if (_studentId != null &&
-                  students.isNotEmpty &&
-                  !students.any((s) => s.id == _studentId)) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _studentId = null);
-                });
-              }
-              if (_studentId != null && students.isEmpty && snap.hasData) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _studentId = null);
-                });
-              }
-              if (_studentId != null &&
-                  students.isEmpty &&
-                  waitingFirstStudents) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: ModernLoadingIndicator(size: 28),
-                  ),
-                );
-              }
+    if (_studentId != null &&
+        students.isNotEmpty &&
+        !students.any((s) => s.id == _studentId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _studentId = null);
+      });
+    }
+    if (_studentId != null && students.isEmpty && snap.hasData) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _studentId = null);
+      });
+    }
+    if (_studentId != null && students.isEmpty && waitingFirstStudents) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: ModernLoadingIndicator(size: 28),
+        ),
+      );
+    }
 
-              final dropdownValue =
-                  _studentId != null && students.any((s) => s.id == _studentId)
-                  ? _studentId
-                  : null;
+    final dropdownValue =
+        _studentId != null && students.any((s) => s.id == _studentId)
+        ? _studentId
+        : null;
 
     return PlanningFuturisticStudentSelector(
       key: ValueKey('aluno_${dropdownValue ?? 'none'}'),
@@ -387,9 +384,7 @@ class _RendimentoChart extends StatelessWidget {
       future: repo.last7DaysRendimentoDailySeries(studentId: studentId),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: ModernLoadingIndicator(size: 28),
-          );
+          return const Center(child: ModernLoadingIndicator(size: 28));
         }
         if (snap.hasError) {
           return Center(
@@ -564,9 +559,7 @@ class _StreakIncreasesChart extends StatelessWidget {
       ),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: ModernLoadingIndicator(size: 28),
-          );
+          return const Center(child: ModernLoadingIndicator(size: 28));
         }
         if (snap.hasError) {
           return Center(
@@ -739,9 +732,7 @@ class _WorkoutGroupsBest4WeeksChart extends StatelessWidget {
       future: repo.workoutGroupsBestRendimentoLast4Weeks(studentId: studentId),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: ModernLoadingIndicator(size: 28),
-          );
+          return const Center(child: ModernLoadingIndicator(size: 28));
         }
         if (snap.hasError) {
           return Center(
@@ -1368,8 +1359,10 @@ class AnamneseQuizDialog extends StatefulWidget {
   final String studentId;
   final String studentName;
   final Map<String, String> initialAnswers;
+
   /// Sem botão cancelar; uso no bloqueio de primeiro acesso.
   final bool mandatory;
+
   /// Layout em página cheia (sem [Dialog]).
   final bool embedded;
 
@@ -1648,8 +1641,9 @@ class AnamneseQuizDialogState extends State<AnamneseQuizDialog> {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                       leading: CircleAvatar(
                         radius: 16,
-                        backgroundColor:
-                            AppColors.accentPink.withValues(alpha: 0.35),
+                        backgroundColor: AppColors.accentPink.withValues(
+                          alpha: 0.35,
+                        ),
                         child: Text(
                           '${index + 1}',
                           style: const TextStyle(
@@ -1747,12 +1741,13 @@ class AnamneseQuizDialogState extends State<AnamneseQuizDialog> {
     }
 
     final mq = MediaQuery.of(context);
-    final maxDialogHeight = (mq.size.height -
-            mq.viewInsets.bottom -
-            mq.padding.top -
-            mq.padding.bottom -
-            24)
-        .clamp(280.0, 2000.0);
+    final maxDialogHeight =
+        (mq.size.height -
+                mq.viewInsets.bottom -
+                mq.padding.top -
+                mq.padding.bottom -
+                24)
+            .clamp(280.0, 2000.0);
 
     final panel = ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -1761,11 +1756,7 @@ class AnamneseQuizDialogState extends State<AnamneseQuizDialog> {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0D1328),
-              Color(0xFF1A1030),
-              Color(0xFF0B1C2E),
-            ],
+            colors: [Color(0xFF0D1328), Color(0xFF1A1030), Color(0xFF0B1C2E)],
           ),
           border: Border.all(
             color: AppColors.accentPink.withValues(alpha: 0.42),
@@ -1778,107 +1769,105 @@ class AnamneseQuizDialogState extends State<AnamneseQuizDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.fact_check_rounded,
-                        color: AppColors.splashMint,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Anamnese · ${widget.studentName}',
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ],
+              Row(
+                children: [
+                  const Icon(
+                    Icons.fact_check_rounded,
+                    color: AppColors.splashMint,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    q.section,
-                    style: TextStyle(
-                      color: AppColors.splashMint.withValues(alpha: 0.9),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Anamnese · ${widget.studentName}',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 4,
-                    backgroundColor: Colors.white.withValues(alpha: 0.12),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Pergunta ${_index + 1} de $total',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.58),
-                      fontSize: 11.5,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    q.prompt,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (q.kind == _AnamneseAnswerKind.orderedMulti)
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 400),
-                      child: SingleChildScrollView(
-                        primary: false,
-                        child: answerWidget(),
-                      ),
-                    )
-                  else
-                    answerWidget(),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      if (!widget.mandatory)
-                        TextButton(
-                          onPressed: _saving
-                              ? null
-                              : () => Navigator.of(context).pop(false),
-                          child: const Text('Cancelar quiz'),
-                        ),
-                      if (!widget.mandatory) const Spacer(),
-                      if (widget.mandatory) const Spacer(),
-                      if (_index > 0)
-                        OutlinedButton(
-                          onPressed: _saving
-                              ? null
-                              : () => setState(() => _index--),
-                          child: const Text('Voltar'),
-                        ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: _saving ? null : _next,
-                        icon: _saving
-                            ? ModernLoadingIndicator(size: 18)
-                            : Icon(
-                                _index == total - 1
-                                    ? Icons.check_rounded
-                                    : Icons.arrow_forward_rounded,
-                              ),
-                        label: Text(
-                          _index == total - 1 ? 'Finalizar' : 'Próxima',
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                q.section,
+                style: TextStyle(
+                  color: AppColors.splashMint.withValues(alpha: 0.9),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Pergunta ${_index + 1} de $total',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.58),
+                  fontSize: 11.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                q.prompt,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (q.kind == _AnamneseAnswerKind.orderedMulti)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 400),
+                  child: SingleChildScrollView(
+                    primary: false,
+                    child: answerWidget(),
+                  ),
+                )
+              else
+                answerWidget(),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  if (!widget.mandatory)
+                    TextButton(
+                      onPressed: _saving
+                          ? null
+                          : () => Navigator.of(context).pop(false),
+                      child: const Text('Cancelar quiz'),
+                    ),
+                  if (!widget.mandatory) const Spacer(),
+                  if (widget.mandatory) const Spacer(),
+                  if (_index > 0)
+                    OutlinedButton(
+                      onPressed: _saving
+                          ? null
+                          : () => setState(() => _index--),
+                      child: const Text('Voltar'),
+                    ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _saving ? null : _next,
+                    icon: _saving
+                        ? ModernLoadingIndicator(size: 18)
+                        : Icon(
+                            _index == total - 1
+                                ? Icons.check_rounded
+                                : Icons.arrow_forward_rounded,
+                          ),
+                    label: Text(_index == total - 1 ? 'Finalizar' : 'Próxima'),
+                  ),
+                ],
+              ),
+            ],
           ),
+        ),
+      ),
     );
 
     if (widget.embedded) {
@@ -2021,7 +2010,8 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
         final performedScore = DayWorkoutPerformedSetCodec.totalExerciseScore(
           performed,
         );
-        final score = line.exerciseScore ??
+        final score =
+            line.exerciseScore ??
             (performedScore > 0
                 ? performedScore
                 : scoring.prescribedExerciseLineScore(
@@ -2133,7 +2123,8 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
     String kgScore(double s) => s.toStringAsFixed(1);
     String kcal(double c) => c.toStringAsFixed(0);
 
-    final periodDays = _period.duration?.inDays ??
+    final periodDays =
+        _period.duration?.inDays ??
         (endDate.difference(startDate).inDays + 1).clamp(1, 100000);
     final periodWeeks = (periodDays / 7).clamp(0.5, 5200.0);
     final avgWorkoutsPerWeek = snapshots.length / periodWeeks;
@@ -2436,19 +2427,19 @@ class _PerformanceReportSheetState extends State<_PerformanceReportSheet> {
       appendLatestAnamneseFullInventoryForAi(
         doc,
         answers: latestAnamnese.answers,
-        questionPromptsInOrder: _kAnamneseQuestions.map((q) => q.prompt).toList(),
+        questionPromptsInOrder: _kAnamneseQuestions
+            .map((q) => q.prompt)
+            .toList(),
       );
 
-      final muscleNamesById = {
-        for (final m in muscles) m.id: m.name,
-      };
+      final muscleNamesById = {for (final m in muscles) m.id: m.name};
       final completedWorkoutLocalDays = <DateTime>{};
       for (final s in snapshots) {
         final d = s.workout.dayDate;
         completedWorkoutLocalDays.add(DateTime(d.year, d.month, d.day));
       }
-      final completedWorkoutLocalDaysSorted =
-          completedWorkoutLocalDays.toList()..sort();
+      final completedWorkoutLocalDaysSorted = completedWorkoutLocalDays.toList()
+        ..sort();
       appendTrainingVsAnamneseAnalysis(
         doc,
         latestAnswers: latestAnamnese.answers,
@@ -2660,9 +2651,7 @@ $baseReport
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: _loading
-                    ? Center(
-                        child: ModernLoadingIndicator(size: 56),
-                      )
+                    ? Center(child: ModernLoadingIndicator(size: 56))
                     : _error != null
                     ? Center(
                         child: Text(
@@ -2699,8 +2688,8 @@ $baseReport
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: (_reportDoc == null ||
-                              _reportDoc!.plainText.isEmpty)
+                      onPressed:
+                          (_reportDoc == null || _reportDoc!.plainText.isEmpty)
                           ? null
                           : () async {
                               await Clipboard.setData(
@@ -2720,8 +2709,8 @@ $baseReport
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: (_reportDoc == null ||
-                              _reportDoc!.plainText.isEmpty)
+                      onPressed:
+                          (_reportDoc == null || _reportDoc!.plainText.isEmpty)
                           ? null
                           : () => SharePlus.instance.share(
                               ShareParams(text: _reportDoc!.plainText),

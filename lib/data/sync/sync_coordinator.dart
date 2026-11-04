@@ -36,7 +36,9 @@ abstract final class SyncCoordinator {
       );
       return;
     }
-    await svc.pullIncrementalSince(wm ?? DateTime.fromMillisecondsSinceEpoch(0));
+    await svc.pullIncrementalSince(
+      wm ?? DateTime.fromMillisecondsSinceEpoch(0),
+    );
     await SyncWatermarkStore.setWatermark(
       table: '_global',
       at: DateTime.now().toUtc(),

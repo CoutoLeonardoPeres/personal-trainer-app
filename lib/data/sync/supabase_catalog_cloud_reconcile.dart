@@ -21,7 +21,11 @@ Future<void> reconcileLocalCatalogWithCloud(
     return;
   }
 
-  await reconcileLocalMuscleGroupsWithSupabase(db, client, minInterval: Duration.zero);
+  await reconcileLocalMuscleGroupsWithSupabase(
+    db,
+    client,
+    minInterval: Duration.zero,
+  );
   await reconcileLocalExercisesWithSupabase(db, client);
   _lastCatalogReconcileThrottle = DateTime.now();
 }

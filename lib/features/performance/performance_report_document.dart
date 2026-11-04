@@ -36,11 +36,7 @@ class PerformanceReportDocument {
 }
 
 TextStyle _reportStyleFor(PerformanceReportSpanStyle s) {
-  const base = TextStyle(
-    color: Color(0xFFE8EAF0),
-    fontSize: 13,
-    height: 1.38,
-  );
+  const base = TextStyle(color: Color(0xFFE8EAF0), fontSize: 13, height: 1.38);
   switch (s) {
     case PerformanceReportSpanStyle.title:
       return base.copyWith(
@@ -98,15 +94,8 @@ class PerformanceReportRichView extends StatelessWidget {
   Widget build(BuildContext context) {
     final children = <TextSpan>[];
     for (final seg in document.segments) {
-      children.add(
-        TextSpan(
-          text: seg.text,
-          style: _reportStyleFor(seg.style),
-        ),
-      );
+      children.add(TextSpan(text: seg.text, style: _reportStyleFor(seg.style)));
     }
-    return SelectableText.rich(
-      TextSpan(children: children),
-    );
+    return SelectableText.rich(TextSpan(children: children));
   }
 }

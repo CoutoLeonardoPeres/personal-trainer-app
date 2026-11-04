@@ -26,13 +26,18 @@ Future<SupabasePushDiff> estimatePushDiffByRevision({
   const chunk = 120;
   for (var i = 0; i < ids.length; i += chunk) {
     final part = ids.sublist(i, min(i + chunk, ids.length));
-    final res = await client.from(table).select('id, revision').inFilter('id', part);
+    final res = await client
+        .from(table)
+        .select('id, revision')
+        .inFilter('id', part);
     for (final e in res as List<dynamic>) {
       final m = Map<String, dynamic>.from(e as Map);
       final id = m['id'] as String?;
       if (id == null) continue;
       final rev = m['revision'];
-      remoteRevisions[id] = rev is num ? rev.toInt() : int.tryParse('$rev') ?? 0;
+      remoteRevisions[id] = rev is num
+          ? rev.toInt()
+          : int.tryParse('$rev') ?? 0;
     }
   }
   var stale = 0;
@@ -44,9 +49,15 @@ Future<SupabasePushDiff> estimatePushDiffByRevision({
       continue;
     }
     final localRev = row['revision'];
-    final lr = localRev is num ? localRev.toInt() : int.tryParse('$localRev') ?? 0;
+    final lr = localRev is num
+        ? localRev.toInt()
+        : int.tryParse('$localRev') ?? 0;
     final rr = remoteRevisions[id];
-    if (rr == null || ConflictResolver.isStaleWrite(expectedRevision: lr, serverRevision: rr)) {
+    if (rr == null ||
+        ConflictResolver.isStaleWrite(
+          expectedRevision: lr,
+          serverRevision: rr,
+        )) {
       stale++;
     } else {
       aligned++;
@@ -67,5 +78,5 @@ int revisionDiffCount({
       expectedRevision: localRevision,
       serverRevision: remoteRevision,
     )
-        ? 1
-        : 0;
+    ? 1
+    : 0;

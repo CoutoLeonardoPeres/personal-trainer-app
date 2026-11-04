@@ -421,7 +421,9 @@ Future<PlanningScheduleWorkoutRequest?> showPlanningScheduleWorkoutSheet({
                             }
                             final draft = await repo
                                 .buildWorkoutGroupPlanningDraftRows(g.id);
-                            if (!hostContext.mounted || !sheetCtx.mounted) return;
+                            if (!hostContext.mounted || !sheetCtx.mounted) {
+                              return;
+                            }
                             final editedRows =
                                 await showPlanningWorkoutDraftEditorSheet(
                                   context: sheetCtx,
@@ -430,12 +432,16 @@ Future<PlanningScheduleWorkoutRequest?> showPlanningScheduleWorkoutSheet({
                                   workoutGroupId: g.id,
                                   initialRows: draft,
                                 );
-                            if (editedRows == null || !hostContext.mounted) return;
+                            if (editedRows == null || !hostContext.mounted) {
+                              return;
+                            }
                             final weeks = await showPlanningWeekCountDialog(
                               hostContext,
                               groupName: g.name,
                             );
-                            if (weeks == null || !hostContext.mounted) return;
+                            if (weeks == null || !hostContext.mounted) {
+                              return;
+                            }
                             final request = PlanningScheduleWorkoutRequest(
                               workoutGroupId: g.id,
                               groupName: g.name,

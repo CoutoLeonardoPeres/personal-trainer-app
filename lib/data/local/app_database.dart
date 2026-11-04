@@ -394,8 +394,11 @@ class DayWorkoutExercises extends Table {
 @DataClassName('PerformedSetEventEntity')
 class PerformedSetEvents extends Table {
   TextColumn get id => text()();
-  TextColumn get lineId =>
-      text().references(DayWorkoutExercises, #id, onDelete: KeyAction.cascade)();
+  TextColumn get lineId => text().references(
+    DayWorkoutExercises,
+    #id,
+    onDelete: KeyAction.cascade,
+  )();
   RealColumn get loadKg => real().nullable()();
   IntColumn get reps => integer()();
   IntColumn get loggedAtMs => integer().nullable()();
@@ -731,9 +734,7 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           'ALTER TABLE personals DROP COLUMN password_hash',
         );
-        await customStatement(
-          'ALTER TABLE students DROP COLUMN password_hash',
-        );
+        await customStatement('ALTER TABLE students DROP COLUMN password_hash');
       }
       if (from < 37) {
         await m.createTable(performedSetEvents);
@@ -807,11 +808,7 @@ class AppDatabase extends _$AppDatabase {
       'last_modified_by_device_id',
       'last_modified_by_device_id TEXT NULL',
     );
-    await _addColumnIfMissing(
-      'audit_logs',
-      'device_id',
-      'device_id TEXT NULL',
-    );
+    await _addColumnIfMissing('audit_logs', 'device_id', 'device_id TEXT NULL');
     await _addColumnIfMissing(
       'audit_logs',
       'personal_id',
@@ -1271,14 +1268,14 @@ class AppDatabase extends _$AppDatabase {
 
   /// Recalcula [day_workouts.workout_score] de um treino concluído (fórmula atual).
   Future<double?> recomputeCompletedDayWorkoutScore(String dayWorkoutId) async {
-    final w = await (select(dayWorkouts)
-          ..where((x) => x.id.equals(dayWorkoutId)))
-        .getSingleOrNull();
+    final w = await (select(
+      dayWorkouts,
+    )..where((x) => x.id.equals(dayWorkoutId))).getSingleOrNull();
     if (w == null || w.status != 'completed') return null;
 
-    final lines = await (select(dayWorkoutExercises)
-          ..where((e) => e.dayWorkoutId.equals(dayWorkoutId)))
-        .get();
+    final lines = await (select(
+      dayWorkoutExercises,
+    )..where((e) => e.dayWorkoutId.equals(dayWorkoutId))).get();
     var sumDone = 0.0;
     var nDone = 0;
     for (final line in lines) {
@@ -1310,17 +1307,18 @@ class AppDatabase extends _$AppDatabase {
 
   /// Recalcula score de uma linha a partir dos eventos / cache JSON.
   Future<void> recomputeExerciseScoreForLine(String lineId) async {
-    final line = await (select(dayWorkoutExercises)
-          ..where((e) => e.id.equals(lineId)))
-        .getSingleOrNull();
+    final line = await (select(
+      dayWorkoutExercises,
+    )..where((e) => e.id.equals(lineId))).getSingleOrNull();
     if (line == null) return;
-    final performed = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+    final performed = DayWorkoutPerformedSetCodec.decode(
+      line.performedSetsJson,
+    );
     final score = performed.isNotEmpty
         ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
         : line.exerciseScore;
-    await (update(dayWorkoutExercises)..where((e) => e.id.equals(lineId))).write(
-      DayWorkoutExercisesCompanion(exerciseScore: Value(score)),
-    );
+    await (update(dayWorkoutExercises)..where((e) => e.id.equals(lineId)))
+        .write(DayWorkoutExercisesCompanion(exerciseScore: Value(score)));
   }
 
   /// Migração v37: JSON legado → eventos append-only locais.
@@ -1328,7 +1326,9 @@ class AppDatabase extends _$AppDatabase {
     const uuid = Uuid();
     final lines = await select(dayWorkoutExercises).get();
     for (final line in lines) {
-      final decoded = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
+      final decoded = DayWorkoutPerformedSetCodec.decode(
+        line.performedSetsJson,
+      );
       if (decoded.isEmpty) continue;
       final normalized = PerformedSetsMerge.normalizeLegacySets(
         decoded,
@@ -1352,17 +1352,20 @@ class AppDatabase extends _$AppDatabase {
       }
       final cache = PerformedSetsMerge.toCacheJson(normalized);
       if (cache != (line.performedSetsJson ?? '')) {
-        await (update(dayWorkoutExercises)..where((e) => e.id.equals(line.id)))
-            .write(DayWorkoutExercisesCompanion(performedSetsJson: Value(cache)));
+        await (update(
+          dayWorkoutExercises,
+        )..where((e) => e.id.equals(line.id))).write(
+          DayWorkoutExercisesCompanion(performedSetsJson: Value(cache)),
+        );
       }
     }
   }
 
   /// Recalcula [workout_score] de todos os treinos concluídos (pós-sync / migração).
   Future<void> recomputeAllCompletedWorkoutScores() async {
-    final completed = await (select(dayWorkouts)
-          ..where((w) => w.status.equals('completed')))
-        .get();
+    final completed = await (select(
+      dayWorkouts,
+    )..where((w) => w.status.equals('completed'))).get();
     for (final w in completed) {
       await recomputeCompletedDayWorkoutScore(w.id);
     }

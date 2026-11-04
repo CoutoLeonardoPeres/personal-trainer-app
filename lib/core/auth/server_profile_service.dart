@@ -33,7 +33,9 @@ class ServerProfileService {
   static SupabaseClient? get _client =>
       supabaseAppEnabled ? Supabase.instance.client : null;
 
-  static Future<ServerProfileSnapshot?> fetchForAuthUser(String authUserId) async {
+  static Future<ServerProfileSnapshot?> fetchForAuthUser(
+    String authUserId,
+  ) async {
     final c = _client;
     if (c == null || authUserId.trim().isEmpty) return null;
 

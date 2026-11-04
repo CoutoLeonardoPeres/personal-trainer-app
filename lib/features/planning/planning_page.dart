@@ -320,72 +320,72 @@ class _PlanningPageState extends State<PlanningPage> {
                                         ),
                                       );
                                     }
-                                  return StreamBuilder<
-                                    List<WorkoutGroupEntity>
-                                  >(
-                                    stream: repo
-                                        .watchWorkoutGroupsAlphabetical(),
-                                    builder: (context, gSnap) {
-                                      final groupById =
-                                          <String, WorkoutGroupEntity>{
-                                            for (final g
-                                                in gSnap.data ??
-                                                    <WorkoutGroupEntity>[])
-                                              g.id: g,
-                                          };
-                                      return StreamBuilder<
-                                        List<ExerciseEntity>
-                                      >(
-                                        stream: repo
-                                            .watchExercisesAlphabetical(),
-                                        builder: (context, exSnap) {
-                                          final idToExercise =
-                                              <String, ExerciseEntity>{
-                                                for (final e
-                                                    in exSnap.data ??
-                                                        <ExerciseEntity>[])
-                                                  e.id: e,
-                                              };
-                                          final grouped =
-                                              _partitionWeekRowsByGroup(rows);
-                                          final keys = grouped.keys.toList()
-                                            ..sort(
-                                              (a, b) => _compareGroupKeys(
-                                                a,
-                                                b,
-                                                groupById,
-                                              ),
-                                            );
-                                          if (keys.isEmpty) {
-                                            return _emptyHint(
-                                              'Nenhum exercício agendado nesta semana.\n'
-                                              'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
-                                            );
-                                          }
-                                          return Column(
-                                            children: [
-                                              for (final key in keys)
-                                                _weekGroupCard(
-                                                  context,
-                                                  repo,
-                                                  pageMonday,
-                                                  allWeekRows: rows,
-                                                  groupId: key,
-                                                  group: key == null
-                                                      ? null
-                                                      : groupById[key],
-                                                  rows: grouped[key]!,
-                                                  idToExercise: idToExercise,
+                                    return StreamBuilder<
+                                      List<WorkoutGroupEntity>
+                                    >(
+                                      stream: repo
+                                          .watchWorkoutGroupsAlphabetical(),
+                                      builder: (context, gSnap) {
+                                        final groupById =
+                                            <String, WorkoutGroupEntity>{
+                                              for (final g
+                                                  in gSnap.data ??
+                                                      <WorkoutGroupEntity>[])
+                                                g.id: g,
+                                            };
+                                        return StreamBuilder<
+                                          List<ExerciseEntity>
+                                        >(
+                                          stream: repo
+                                              .watchExercisesAlphabetical(),
+                                          builder: (context, exSnap) {
+                                            final idToExercise =
+                                                <String, ExerciseEntity>{
+                                                  for (final e
+                                                      in exSnap.data ??
+                                                          <ExerciseEntity>[])
+                                                    e.id: e,
+                                                };
+                                            final grouped =
+                                                _partitionWeekRowsByGroup(rows);
+                                            final keys = grouped.keys.toList()
+                                              ..sort(
+                                                (a, b) => _compareGroupKeys(
+                                                  a,
+                                                  b,
+                                                  groupById,
                                                 ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                    },
-                                  );
-                                },
+                                              );
+                                            if (keys.isEmpty) {
+                                              return _emptyHint(
+                                                'Nenhum exercício agendado nesta semana.\n'
+                                                'Use Agendar treino para montar a grade, ou Copiar treino para trazer a mesma semana de outro aluno.',
+                                              );
+                                            }
+                                            return Column(
+                                              children: [
+                                                for (final key in keys)
+                                                  _weekGroupCard(
+                                                    context,
+                                                    repo,
+                                                    pageMonday,
+                                                    allWeekRows: rows,
+                                                    groupId: key,
+                                                    group: key == null
+                                                        ? null
+                                                        : groupById[key],
+                                                    rows: grouped[key]!,
+                                                    idToExercise: idToExercise,
+                                                  ),
+                                              ],
+                                            );
+                                          },
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
                               const SizedBox(height: 20),
                               StreamBuilder<List<DayWorkoutEntity>>(
                                 key: ValueKey(
@@ -475,12 +475,12 @@ class _PlanningPageState extends State<PlanningPage> {
                       : () async {
                           final scheduleRequest =
                               await showPlanningScheduleWorkoutSheet(
-                            context: context,
-                            repo: repo,
-                            studentId: studentId,
-                            weekMonday: weekMonday,
-                            weekLabel: _weekLabel(weekMonday),
-                          );
+                                context: context,
+                                repo: repo,
+                                studentId: studentId,
+                                weekMonday: weekMonday,
+                                weekLabel: _weekLabel(weekMonday),
+                              );
                           if (!mounted || scheduleRequest == null) return;
 
                           final expKeyFull =

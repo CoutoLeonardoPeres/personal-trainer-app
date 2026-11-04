@@ -45,15 +45,9 @@ void main() {
     });
 
     test('scopeForSession distingue perfis', () {
+      expect(SyncWatermarkStore.scopeForSession(fullCloud: true), 'admin');
       expect(
-        SyncWatermarkStore.scopeForSession(fullCloud: true),
-        'admin',
-      );
-      expect(
-        SyncWatermarkStore.scopeForSession(
-          fullCloud: true,
-          studentId: 's1',
-        ),
+        SyncWatermarkStore.scopeForSession(fullCloud: true, studentId: 's1'),
         'student:s1',
       );
       expect(

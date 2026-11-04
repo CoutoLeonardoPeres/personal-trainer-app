@@ -4,8 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract final class SyncWatermarkStore {
   SyncWatermarkStore._();
 
-  static String _key(String table, String scope) =>
-      'sync_wm_${table}_$scope';
+  static String _key(String table, String scope) => 'sync_wm_${table}_$scope';
 
   static Future<DateTime?> getWatermark({
     required String table,

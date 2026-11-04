@@ -25,11 +25,7 @@ bool exerciseEntityHasAnyVideoUrl(ExerciseEntity? e) {
   return has(e.videoUrl) || has(e.alternativeVideoUrl);
 }
 
-void openExerciseVideoInApp(
-  BuildContext context,
-  String rawUrl,
-  String title,
-) {
+void openExerciseVideoInApp(BuildContext context, String rawUrl, String title) {
   ExerciseVideoWebPage.showInAppWindow(
     context,
     initialUrl: rawUrl,

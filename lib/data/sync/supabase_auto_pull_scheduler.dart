@@ -71,8 +71,7 @@ abstract final class SupabaseAutoPullScheduler {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now().millisecondsSinceEpoch;
     final last = prefs.getInt(_kLastPullMs) ?? 0;
-    if (!bypassMinInterval &&
-        now - last < _minGapBetweenPulls.inMilliseconds) {
+    if (!bypassMinInterval && now - last < _minGapBetweenPulls.inMilliseconds) {
       return;
     }
     await prefs.setInt(_kLastPullMs, now);
@@ -101,9 +100,9 @@ abstract final class SupabaseAutoPullScheduler {
   }) async {
     if (!supabaseAppEnabled) return;
     try {
-      final started = await (db.select(db.dayWorkouts)
-            ..where((w) => w.status.equals('started')))
-          .get();
+      final started = await (db.select(
+        db.dayWorkouts,
+      )..where((w) => w.status.equals('started'))).get();
       if (started.isEmpty) return;
       final pull = SupabasePullSyncService(db, sync, session: session);
       final maxHot = started.length > 12 ? 12 : started.length;

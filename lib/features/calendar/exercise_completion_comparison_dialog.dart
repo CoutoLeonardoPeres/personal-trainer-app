@@ -211,7 +211,9 @@ class _CompactSummary extends StatelessWidget {
             child: _SummaryCell(
               label: 'Tempo',
               value: _formatDurationPt(data.currentWallDuration),
-              hint: prevDur != null ? 'ant. ${_formatDurationPt(prevDur)}' : null,
+              hint: prevDur != null
+                  ? 'ant. ${_formatDurationPt(prevDur)}'
+                  : null,
             ),
           ),
           _summaryDivider(),
@@ -220,7 +222,9 @@ class _CompactSummary extends StatelessWidget {
               label: 'Score',
               value: _formatScore(data.currentTotalScore),
               valueColor: scoreColor,
-              hint: prevScore != null ? 'ant. ${_formatScore(prevScore)}' : null,
+              hint: prevScore != null
+                  ? 'ant. ${_formatScore(prevScore)}'
+                  : null,
             ),
           ),
           _summaryDivider(),
@@ -322,7 +326,9 @@ class _CompactSetRow extends StatelessWidget {
             current: row.currentSetScore,
             previous: row.previousSetScore,
           );
-    final rest = !isLastSet ? _formatRestShort(row.restAfterCurrentCountdownMs) : '';
+    final rest = !isLastSet
+        ? _formatRestShort(row.restAfterCurrentCountdownMs)
+        : '';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

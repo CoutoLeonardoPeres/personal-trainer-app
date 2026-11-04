@@ -30,10 +30,8 @@ Future<void> showWatchMetricsAfterWorkoutDialog({
     useRootNavigator: true,
     barrierDismissible: true,
     barrierColor: const Color(0xD9000000),
-    builder: (ctx) => _WatchMetricsAfterWorkoutDialog(
-      repo: repo,
-      dayWorkoutId: dayWorkoutId,
-    ),
+    builder: (ctx) =>
+        _WatchMetricsAfterWorkoutDialog(repo: repo, dayWorkoutId: dayWorkoutId),
   );
 }
 
@@ -78,9 +76,9 @@ class _WatchMetricsAfterWorkoutDialogState
 
     void snack(String msg) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(msg)));
     }
 
     if (kcalEmpty && bpmEmpty) {

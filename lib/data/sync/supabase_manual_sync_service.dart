@@ -40,8 +40,10 @@ class SupabaseTablePushResult {
   final int rowCount;
   final bool ok;
   final String? errorMessage;
+
   /// Estimativa antes do upsert: linhas que parecem novas ou com `updated_at` local mais recente que a nuvem.
   final int? pushLikelyChangedOnCloud;
+
   /// Estimativa: já alinhadas (mesmo ts ou par student_gyms existente).
   final int? pushLikelyAlreadyAligned;
 }
@@ -76,11 +78,15 @@ class SupabaseManualSyncReport {
     buf.writeln('Tabelas (${tables.length}):');
     for (final t in tables) {
       final status = t.ok ? 'OK' : 'ERRO';
-      buf.write('  [$status] ${t.tableName}: ${t.rowCount} linha(s) enviada(s) (upsert)');
+      buf.write(
+        '  [$status] ${t.tableName}: ${t.rowCount} linha(s) enviada(s) (upsert)',
+      );
       final ch = t.pushLikelyChangedOnCloud;
       final al = t.pushLikelyAlreadyAligned;
       if (ch != null && al != null) {
-        buf.write(' — ~$ch provável(is) alteração(ões) na nuvem, ~$al já alinhada(s)');
+        buf.write(
+          ' — ~$ch provável(is) alteração(ões) na nuvem, ~$al já alinhada(s)',
+        );
       }
       buf.writeln();
       if (t.errorMessage != null && t.errorMessage!.isNotEmpty) {
@@ -114,8 +120,9 @@ class SupabaseManualSyncService {
     if (s == null || !s.isStudent) return false;
     final sid = s.studentId;
     if (sid == null) return false;
-    final row = await (_db.select(_db.students)..where((x) => x.id.equals(sid)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.students,
+    )..where((x) => x.id.equals(sid))).getSingleOrNull();
     if (row == null) return false;
     final perms = PermissionService(session: s, student: row);
     return perms.studentCadastroMuscleExerciseGymGroup;
@@ -126,7 +133,8 @@ class SupabaseManualSyncService {
   /// Mensagem extra quando a API responde 401 / JWT inválido (chave ou URL erradas).
   static String explainHttpAuthFailure(String rawMessage) {
     final lower = rawMessage.toLowerCase();
-    final looks401 = lower.contains('401') ||
+    final looks401 =
+        lower.contains('401') ||
         lower.contains('unauthorized') ||
         lower.contains('pgrst301');
     if (!looks401) return rawMessage;
@@ -146,7 +154,8 @@ class SupabaseManualSyncService {
     if (!supabaseAppEnabled) {
       return SupabaseConnectionTestResult(
         ok: false,
-        message: 'Personal Gym sem Supabase ativo. Opções: (1) --dart-define=SUPABASE_ANON_KEY=<JWT eyJ…> '
+        message:
+            'Personal Gym sem Supabase ativo. Opções: (1) --dart-define=SUPABASE_ANON_KEY=<JWT eyJ…> '
             'e opcionalmente SUPABASE_URL; (2) Configurações → Nuvem → guardar anon JWT + URL e '
             'reiniciar o Personal Gym por completo. Não use sb_publishable_… como se fosse anon — use o JWT '
             'em Settings → API → Legacy API keys.',
@@ -154,7 +163,10 @@ class SupabaseManualSyncService {
     }
     final sw = Stopwatch()..start();
     try {
-      await Supabase.instance.client.from('muscle_groups').select('id').limit(1);
+      await Supabase.instance.client
+          .from('muscle_groups')
+          .select('id')
+          .limit(1);
       sw.stop();
       return SupabaseConnectionTestResult(
         ok: true,
@@ -231,31 +243,35 @@ class SupabaseManualSyncService {
       final muscleRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.muscleGroups).get())
-              .map(supabaseMuscleGroup)
-              .toList();
+                .map(supabaseMuscleGroup)
+                .toList();
       final exerciseRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
-          : (await _db.select(_db.exercises).get()).map(supabaseExercise).toList();
+          : (await _db.select(_db.exercises).get())
+                .map(supabaseExercise)
+                .toList();
       final gymRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.gyms).get()).map(supabaseGym).toList();
 
-      var personalRows =
-          (await _db.select(_db.personals).get()).map(supabasePersonal).toList();
+      var personalRows = (await _db.select(_db.personals).get())
+          .map(supabasePersonal)
+          .toList();
       if (!full) {
         final s = session!;
         if (s.isPersonalTrainer) {
           final pid = s.personalId;
-          personalRows =
-              pid == null ? [] : personalRows.where((m) => m['id'] == pid).toList();
+          personalRows = pid == null
+              ? []
+              : personalRows.where((m) => m['id'] == pid).toList();
         } else if (s.isStudent) {
           final sid = s.studentId;
           if (sid == null) {
             personalRows = [];
           } else {
-            final st = await (_db.select(_db.students)
-                  ..where((x) => x.id.equals(sid)))
-                .getSingleOrNull();
+            final st = await (_db.select(
+              _db.students,
+            )..where((x) => x.id.equals(sid))).getSingleOrNull();
             final tid = st?.createdByPersonalId;
             personalRows = tid == null
                 ? []
@@ -266,8 +282,9 @@ class SupabaseManualSyncService {
         }
       }
 
-      var studentRows =
-          (await _db.select(_db.students).get()).map(supabaseStudent).toList();
+      var studentRows = (await _db.select(_db.students).get())
+          .map(supabaseStudent)
+          .toList();
       if (!full) {
         studentRows = studentRows
             .where((m) => allowedStudents.contains(m['id'] as String))
@@ -286,19 +303,19 @@ class SupabaseManualSyncService {
       final methodRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.trainingMethods).get())
-              .map(supabaseTrainingMethod)
-              .toList();
+                .map(supabaseTrainingMethod)
+                .toList();
 
       var groupRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.workoutGroups).get())
-              .map(supabaseWorkoutGroup)
-              .toList();
+                .map(supabaseWorkoutGroup)
+                .toList();
       var groupExRows = restrictCatalogTables
           ? <Map<String, dynamic>>[]
           : (await _db.select(_db.workoutGroupExercises).get())
-              .map(supabaseWorkoutGroupExercise)
-              .toList();
+                .map(supabaseWorkoutGroupExercise)
+                .toList();
 
       var weekBlockRows = (await _db.select(_db.weekScheduleBlocks).get())
           .map(supabaseWeekBlock)
@@ -308,8 +325,7 @@ class SupabaseManualSyncService {
             .where((m) => allowedStudents.contains(m['student_id'] as String))
             .toList();
       }
-      final blockIds =
-          weekBlockRows.map((m) => m['id'] as String).toSet();
+      final blockIds = weekBlockRows.map((m) => m['id'] as String).toSet();
 
       var weekItemRows = (await _db.select(_db.weekScheduleItems).get())
           .map(supabaseWeekItem)
@@ -320,15 +336,17 @@ class SupabaseManualSyncService {
             .toList();
       }
 
-      var dayWorkoutRows =
-          (await _db.select(_db.dayWorkouts).get()).map(supabaseDayWorkout).toList();
+      var dayWorkoutRows = (await _db.select(_db.dayWorkouts).get())
+          .map(supabaseDayWorkout)
+          .toList();
       if (!full) {
         dayWorkoutRows = dayWorkoutRows
             .where((m) => allowedStudents.contains(m['student_id'] as String))
             .toList();
       }
-      final dayWorkoutIds =
-          dayWorkoutRows.map((m) => m['id'] as String).toSet();
+      final dayWorkoutIds = dayWorkoutRows
+          .map((m) => m['id'] as String)
+          .toSet();
 
       var dweRows = (await _db.select(_db.dayWorkoutExercises).get())
           .map(supabaseDayWorkoutExercise)
@@ -341,7 +359,9 @@ class SupabaseManualSyncService {
 
       final auditRows = asStudent
           ? <Map<String, dynamic>>[]
-          : (await _db.select(_db.auditLogs).get()).map(supabaseAuditLog).toList();
+          : (await _db.select(_db.auditLogs).get())
+                .map(supabaseAuditLog)
+                .toList();
 
       tables.add(await _pushMaps(client, 'muscle_groups', muscleRows));
       tables.add(await _pushMaps(client, 'exercises', exerciseRows));
@@ -351,8 +371,12 @@ class SupabaseManualSyncService {
       tables.add(await _pushMaps(client, 'student_gyms', studentGymRows));
       tables.add(await _pushMaps(client, 'training_methods', methodRows));
       tables.add(await _pushMaps(client, 'workout_groups', groupRows));
-      tables.add(await _pushMaps(client, 'workout_group_exercises', groupExRows));
-      tables.add(await _pushMaps(client, 'week_schedule_blocks', weekBlockRows));
+      tables.add(
+        await _pushMaps(client, 'workout_group_exercises', groupExRows),
+      );
+      tables.add(
+        await _pushMaps(client, 'week_schedule_blocks', weekBlockRows),
+      );
       tables.add(await _pushMaps(client, 'week_schedule_items', weekItemRows));
       tables.add(await _pushMaps(client, 'day_workouts', dayWorkoutRows));
       tables.add(await _pushMaps(client, 'day_workout_exercises', dweRows));
@@ -492,19 +516,20 @@ class SupabaseManualSyncService {
       );
     } catch (e) {
       var msg = e.toString();
-      final needsPlanningMigration = msg.contains('PGRST204') &&
+      final needsPlanningMigration =
+          msg.contains('PGRST204') &&
           msg.contains('schema cache') &&
           (msg.contains('combo_id') ||
               msg.contains('training_method_id') ||
               msg.contains('reps_text') ||
               msg.contains('last_reps_text'));
       if (needsPlanningMigration) {
-        msg += '\n\n—\n'
+        msg +=
+            '\n\n—\n'
             'Faltam colunas de planeamento/treino no Postgres (ou o cache da API está desatualizado).\n'
-            '1) SQL Editor: executar scripts/supabase_migrate_planning_tables.sql '
-            '(paridade com scripts/supabase.sql, ~migrações 280–302).\n'
+            '1) Aplique a migração versionada mais recente com o Supabase CLI.\n'
             '2) Supabase: Settings → Data API → «Reload schema» (ou espere ~1 min).\n'
-            '3) Voltar a sincronizar.';
+            '3) Volte a sincronizar.';
       }
       return SupabaseTablePushResult(
         tableName: tableName,

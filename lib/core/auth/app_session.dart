@@ -221,12 +221,11 @@ class AppSession extends ChangeNotifier {
     required SessionRole role,
     String? personalId,
     String? studentId,
-  }) =>
-      completeAuthLogin(
-        role: role,
-        personalId: personalId,
-        studentId: studentId,
-      );
+  }) => completeAuthLogin(
+    role: role,
+    personalId: personalId,
+    studentId: studentId,
+  );
 
   Future<void> setSession({
     required SessionRole role,

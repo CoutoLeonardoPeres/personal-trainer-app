@@ -77,8 +77,7 @@ class SupabaseSyncController extends ChangeNotifier {
     lastFidelityCheckAt = DateTime.now();
     lastFidelityCountsAligned = null;
     final msg = error.toString();
-    lastFidelityDetail =
-        msg.length > 220 ? '${msg.substring(0, 220)}…' : msg;
+    lastFidelityDetail = msg.length > 220 ? '${msg.substring(0, 220)}…' : msg;
     notifyListeners();
   }
 
@@ -183,7 +182,10 @@ class SupabaseSyncController extends ChangeNotifier {
   Future<void> _silentPing() async {
     if (!supabaseAppEnabled) return;
     try {
-      await Supabase.instance.client.from('muscle_groups').select('id').limit(1);
+      await Supabase.instance.client
+          .from('muscle_groups')
+          .select('id')
+          .limit(1);
       noteConnected();
     } catch (e) {
       noteDisconnected();

@@ -21,8 +21,9 @@ const _unknownMuscleId = '__unknown_muscle__';
 /// Mesma lógica de score por linha do relatório de performance.
 double _lineScore(DayWorkoutExerciseEntity line) {
   final performed = DayWorkoutPerformedSetCodec.decode(line.performedSetsJson);
-  final performedScore =
-      DayWorkoutPerformedSetCodec.totalExerciseScore(performed);
+  final performedScore = DayWorkoutPerformedSetCodec.totalExerciseScore(
+    performed,
+  );
   return line.exerciseScore ??
       (performedScore > 0
           ? performedScore
@@ -126,7 +127,9 @@ String formatPieSlicesForReport(
     final v = byVolume ? s.lineCount.toDouble() : s.scoreTotal;
     final pct = (v / total * 100).clamp(0, 100);
     if (byVolume) {
-      lines.add('- ${s.name}: ${s.lineCount} exercício(s) no período (${pct.toStringAsFixed(1)}%)');
+      lines.add(
+        '- ${s.name}: ${s.lineCount} exercício(s) no período (${pct.toStringAsFixed(1)}%)',
+      );
     } else {
       lines.add(
         '- ${s.name}: score acumulado ${s.scoreTotal.toStringAsFixed(1)} '

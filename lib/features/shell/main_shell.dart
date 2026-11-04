@@ -99,8 +99,7 @@ class _MainShellState extends State<MainShell> {
     });
     // [IndexedStack] mantém separadores montados off-screen: ao voltar ao separador,
     // força importação da nuvem (calendário + planejamento alinhados iPhone/tablet).
-    if (mounted &&
-        (tab == MainNavTab.calendar || tab == MainNavTab.planning)) {
+    if (mounted && (tab == MainNavTab.calendar || tab == MainNavTab.planning)) {
       final db = context.read<AppDatabase>();
       final sync = context.read<SupabaseSyncController>();
       final session = context.read<AppSession>();
@@ -214,9 +213,7 @@ class _MainShellState extends State<MainShell> {
             if (snap.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 backgroundColor: AppColors.background,
-                body: Center(
-                  child: FuturisticLoadingView(size: 56),
-                ),
+                body: Center(child: FuturisticLoadingView(size: 56)),
               );
             }
             return const Scaffold(

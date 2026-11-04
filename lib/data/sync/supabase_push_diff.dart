@@ -12,8 +12,10 @@ class SupabasePushDiff {
   });
 
   final int total;
+
   /// Local mais recente que o remoto, ou registo ainda inexistente na nuvem.
   final int cloudStaleOrNewCount;
+
   /// Mesmo `updated_at` (ou par já existente em student_gyms), dentro da resolução do relógio.
   final int likelyAlreadyAlignedCount;
 }
@@ -32,7 +34,9 @@ DateTime? _parseTs(dynamic v) {
 bool _localIsNewer(DateTime? local, DateTime? remote) {
   if (local == null) return false;
   if (remote == null) return true;
-  return local.toUtc().isAfter(remote.toUtc().subtract(const Duration(seconds: 1)));
+  return local.toUtc().isAfter(
+    remote.toUtc().subtract(const Duration(seconds: 1)),
+  );
 }
 
 Future<Map<String, DateTime?>> _fetchIdToRemoteTime(
@@ -46,7 +50,10 @@ Future<Map<String, DateTime?>> _fetchIdToRemoteTime(
   const chunk = 120;
   for (var i = 0; i < ids.length; i += chunk) {
     final part = ids.sublist(i, min(i + chunk, ids.length));
-    final res = await client.from(table).select('id, $timeColumn').inFilter('id', part);
+    final res = await client
+        .from(table)
+        .select('id, $timeColumn')
+        .inFilter('id', part);
     final list = res as List<dynamic>;
     for (final e in list) {
       final m = Map<String, dynamic>.from(e as Map);
@@ -118,7 +125,10 @@ Future<SupabasePushDiff> computeSupabasePushDiff(
   }
 
   if (tableName == 'audit_logs') {
-    final ids = rows.map((m) => m['id'] as String?).whereType<String>().toList();
+    final ids = rows
+        .map((m) => m['id'] as String?)
+        .whereType<String>()
+        .toList();
     final remote = await _fetchIdToRemoteTime(client, tableName, ids, 'at');
     var stale = 0;
     for (final m in rows) {
@@ -138,7 +148,12 @@ Future<SupabasePushDiff> computeSupabasePushDiff(
   }
 
   final ids = rows.map((m) => m['id'] as String?).whereType<String>().toList();
-  final remote = await _fetchIdToRemoteTime(client, tableName, ids, 'updated_at');
+  final remote = await _fetchIdToRemoteTime(
+    client,
+    tableName,
+    ids,
+    'updated_at',
+  );
   var stale = 0;
   for (final m in rows) {
     final id = m['id'] as String?;

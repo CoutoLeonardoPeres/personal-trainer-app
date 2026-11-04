@@ -38,10 +38,10 @@ void _writelnAnamnesePriority(
   final text = parts.length == 1
       ? parts.single
       : parts
-          .asMap()
-          .entries
-          .map((e) => '${e.key + 1}º ${e.value}')
-          .join(' · ');
+            .asMap()
+            .entries
+            .map((e) => '${e.key + 1}º ${e.value}')
+            .join(' · ');
   doc.writeln(PerformanceReportSpanStyle.anamneseAnswer, text);
 }
 
@@ -103,10 +103,9 @@ void appendTrainingVsAnamneseAnalysis(
     '7b. Objetivos (anamnese) × treino no período',
   );
 
-  final objetivo =
-      (latestAnswers['Principal objetivo'] ?? '').trim();
-  final motivaTreinar =
-      (latestAnswers['O que mais motiva a treinar?'] ?? '').trim();
+  final objetivo = (latestAnswers['Principal objetivo'] ?? '').trim();
+  final motivaTreinar = (latestAnswers['O que mais motiva a treinar?'] ?? '')
+      .trim();
   final resultadoLivre =
       (latestAnswers['Descreva o corpo/resultado que gostaria de atingir'] ??
               '')
@@ -135,7 +134,10 @@ void appendTrainingVsAnamneseAnalysis(
     doc.writeln(PerformanceReportSpanStyle.anamneseAnswer, resultadoLivre);
   }
   if (prazo.isNotEmpty) {
-    doc.write(PerformanceReportSpanStyle.anamneseMeta, 'Prazo de acompanhamento: ');
+    doc.write(
+      PerformanceReportSpanStyle.anamneseMeta,
+      'Prazo de acompanhamento: ',
+    );
     doc.writeln(PerformanceReportSpanStyle.anamneseAnswer, prazo);
   }
   doc.write(PerformanceReportSpanStyle.body, '\n');
@@ -220,7 +222,9 @@ void appendTrainingVsAnamneseAnalysis(
         'progressão de carga ou volume nesses movimentos e revisar técnica/amplitude.',
       );
     }
-    if (avgScorePerWorkout > 0 && avgScorePerWorkout < 12 && snapshotCount >= 4) {
+    if (avgScorePerWorkout > 0 &&
+        avgScorePerWorkout < 12 &&
+        snapshotCount >= 4) {
       insight(
         'Volume de estímulo (score médio por treino) está baixo; para ganho/definição, '
         'avaliar mais séries efetivas ou seleção de exercícios compostos.',
@@ -228,7 +232,8 @@ void appendTrainingVsAnamneseAnalysis(
     }
   }
 
-  if (_norm(condicionamento).contains('iniciante') && avgWorkoutsPerWeek >= 3.5) {
+  if (_norm(condicionamento).contains('iniciante') &&
+      avgWorkoutsPerWeek >= 3.5) {
     insight(
       'Condicionamento declarado como iniciante com frequência elevada: validar '
       'recuperação e progressão gradual para evitar sobrecarga.',
@@ -329,11 +334,12 @@ void appendLatestAnamneseFullInventoryForAi(
     );
   }
 
-  final extraKeys = answers.keys
-      .map((k) => k.trim())
-      .where((k) => k.isNotEmpty && !known.contains(k))
-      .toList()
-    ..sort();
+  final extraKeys =
+      answers.keys
+          .map((k) => k.trim())
+          .where((k) => k.isNotEmpty && !known.contains(k))
+          .toList()
+        ..sort();
   if (extraKeys.isEmpty) return;
 
   doc.writeln(

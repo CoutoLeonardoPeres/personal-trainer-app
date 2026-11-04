@@ -29,9 +29,9 @@ class EmailUniquenessGuard {
       }
     }
 
-    for (final s in await (db.select(db.students)
-          ..where((t) => t.isArchived.equals(false)))
-        .get()) {
+    for (final s in await (db.select(
+      db.students,
+    )..where((t) => t.isArchived.equals(false))).get()) {
       if (excludeStudentId != null && s.id == excludeStudentId) continue;
       final em = s.email?.trim();
       if (em == null || em.isEmpty) continue;
@@ -58,9 +58,9 @@ class EmailUniquenessGuard {
       if (excludePersonalId != null && p.id == excludePersonalId) continue;
       if (normalize(p.email) == norm) return 'personal';
     }
-    for (final s in await (db.select(db.students)
-          ..where((t) => t.isArchived.equals(false)))
-        .get()) {
+    for (final s in await (db.select(
+      db.students,
+    )..where((t) => t.isArchived.equals(false))).get()) {
       if (excludeStudentId != null && s.id == excludeStudentId) continue;
       final em = s.email?.trim();
       if (em != null && normalize(em) == norm) return 'student';

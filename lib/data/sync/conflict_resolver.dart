@@ -8,29 +8,25 @@ abstract final class ConflictResolver {
   static bool isStaleWrite({
     required int expectedRevision,
     required int serverRevision,
-  }) =>
-      expectedRevision < serverRevision;
+  }) => expectedRevision < serverRevision;
 
   /// Pull remoto deve substituir o estado local.
   static bool remoteWins({
     required int localRevision,
     required int remoteRevision,
-  }) =>
-      remoteRevision > localRevision;
+  }) => remoteRevision > localRevision;
 
   /// Local pode tentar push (mesma revision ou servidor desatualizado).
   static bool localMayPush({
     required int localRevision,
     required int serverRevision,
-  }) =>
-      localRevision >= serverRevision;
+  }) => localRevision >= serverRevision;
 
   /// Empate de revision: aceitar remoto (servidor é fonte da verdade).
   static bool acceptRemoteOnRevisionTie({
     required int localRevision,
     required int remoteRevision,
-  }) =>
-      remoteRevision >= localRevision;
+  }) => remoteRevision >= localRevision;
 }
 
 /// Resultado de um UPDATE otimista condicionado a `revision`.

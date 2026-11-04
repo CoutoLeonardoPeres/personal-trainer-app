@@ -22,11 +22,13 @@ class SupabaseTrafficIndicator extends StatelessWidget {
         final fid = sync.fidelitySummaryForTooltip;
         final trafficHint = sync.isTrafficActive && sync.supabaseConfigured
             ? (sync.trafficKind == SupabaseTrafficKind.uploading
-                ? '\nTráfego: enviando'
-                : '\nTráfego: recebendo')
+                  ? '\nTráfego: enviando'
+                  : '\nTráfego: recebendo')
             : '';
         return Tooltip(
-          message: fid == null ? '$base$trafficHint' : '$base$trafficHint\n$fid',
+          message: fid == null
+              ? '$base$trafficHint'
+              : '$base$trafficHint\n$fid',
           child: Padding(
             padding: const EdgeInsets.only(right: 2),
             child: _SupabaseLinkBadge(sync: sync),
@@ -74,9 +76,7 @@ class _UnconfiguredChip extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.12),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         color: Colors.black.withValues(alpha: 0.35),
       ),
       child: Icon(
@@ -227,10 +227,7 @@ class _CoreOrb extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: RadialGradient(
-            colors: [
-              color,
-              color.withValues(alpha: 0.65),
-            ],
+            colors: [color, color.withValues(alpha: 0.65)],
           ),
           boxShadow: [
             BoxShadow(
@@ -358,10 +355,7 @@ class _DataStreamPainter extends CustomPainter {
         ..shader = ui.Gradient.linear(
           Offset(x + dir * tailLen, y),
           Offset(x, y),
-          [
-            tint.withValues(alpha: 0),
-            tint.withValues(alpha: headAlpha * 0.85),
-          ],
+          [tint.withValues(alpha: 0), tint.withValues(alpha: headAlpha * 0.85)],
         )
         ..strokeWidth = 2.2
         ..strokeCap = StrokeCap.round
@@ -384,14 +378,10 @@ class _DataStreamPainter extends CustomPainter {
     // Dois tons apenas: `dart:ui` exige length 2 se `colorStops` for omitido.
     // Radial centrado em scanX dá o mesmo “reflexo” sem linear de 3 cores.
     final scan = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(scanX, scanCy),
-        10,
-        [
-          tint.withValues(alpha: 0.26),
-          Colors.transparent,
-        ],
-      );
+      ..shader = ui.Gradient.radial(Offset(scanX, scanCy), 10, [
+        tint.withValues(alpha: 0.26),
+        Colors.transparent,
+      ]);
     canvas.drawRect(Rect.fromLTWH(trackLeft, bandTop, trackW, bandH), scan);
   }
 

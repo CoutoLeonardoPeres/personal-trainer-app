@@ -8,8 +8,8 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/access/access_tiers.dart';
 import '../../core/auth/app_session.dart';
 import '../../core/net/supabase_dns_preflight_stub.dart'
-  if (dart.library.io) '../../core/net/supabase_dns_preflight_io.dart'
-  as supabase_dns_preflight;
+    if (dart.library.io) '../../core/net/supabase_dns_preflight_io.dart'
+    as supabase_dns_preflight;
 import '../../core/preferences/biometric_lock_prefs.dart';
 import '../../core/version/app_version_marker.dart';
 import '../../core/supabase/supabase_auth_service.dart';
@@ -235,9 +235,9 @@ class SettingsPage extends StatelessWidget {
                       );
                     } catch (e) {
                       if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
+                        ScaffoldMessenger.of(
+                          ctx,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                       }
                       return;
                     }
@@ -647,7 +647,10 @@ class _AppVersionSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final marker = appVersionMarkerLabel();
     return ListTile(
-      leading: const Icon(Icons.verified_outlined, color: AppColors.accentGreen),
+      leading: const Icon(
+        Icons.verified_outlined,
+        color: AppColors.accentGreen,
+      ),
       title: const Text(
         'Versão do app',
         style: TextStyle(color: AppColors.textPrimary),
@@ -661,9 +664,9 @@ class _AppVersionSection extends StatelessWidget {
         onPressed: () async {
           await Clipboard.setData(ClipboardData(text: marker));
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Versão copiada.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Versão copiada.')));
         },
         icon: const Icon(Icons.copy_rounded, color: AppColors.textMuted),
       ),
@@ -977,9 +980,7 @@ class _SupabaseLocalCredentialsCardState
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 12),
-        child: Center(
-          child: ModernLoadingIndicator(size: 28),
-        ),
+        child: Center(child: ModernLoadingIndicator(size: 28)),
       );
     }
 
@@ -1308,9 +1309,9 @@ class _AdminRbacSection extends StatelessWidget {
             Text(
               'Perfis de acesso (admin)',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -1423,7 +1424,10 @@ class _AdminRbacFormState extends State<_AdminRbacForm> {
       lastDate: now.add(const Duration(days: 365 * 5)),
     );
     if (d != null) {
-      setState(() => _studentPremiumUntil = DateTime(d.year, d.month, d.day, 23, 59, 59));
+      setState(
+        () =>
+            _studentPremiumUntil = DateTime(d.year, d.month, d.day, 23, 59, 59),
+      );
     }
   }
 
@@ -1444,7 +1448,9 @@ class _AdminRbacFormState extends State<_AdminRbacForm> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -1469,7 +1475,9 @@ class _AdminRbacFormState extends State<_AdminRbacForm> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -1501,9 +1509,7 @@ class _AdminRbacFormState extends State<_AdminRbacForm> {
             ),
             style: const TextStyle(color: AppColors.textPrimary),
             items: widget.students
-                .map(
-                  (s) => DropdownMenuItem(value: s.id, child: Text(s.name)),
-                )
+                .map((s) => DropdownMenuItem(value: s.id, child: Text(s.name)))
                 .toList(),
             onChanged: (v) {
               if (v == null) return;
@@ -1561,10 +1567,13 @@ class _AdminRbacFormState extends State<_AdminRbacForm> {
               subtitle: Text(
                 _studentPremiumUntil == null
                     ? '(não definido — não expira pelo relógio local)'
-                    : MaterialLocalizations.of(context).formatFullDate(
-                        _studentPremiumUntil!,
-                      ),
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    : MaterialLocalizations.of(
+                        context,
+                      ).formatFullDate(_studentPremiumUntil!),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                ),
               ),
               trailing: TextButton(
                 onPressed: _pickPremiumDate,
@@ -1600,9 +1609,7 @@ class _AdminRbacFormState extends State<_AdminRbacForm> {
             ),
             style: const TextStyle(color: AppColors.textPrimary),
             items: widget.personals
-                .map(
-                  (p) => DropdownMenuItem(value: p.id, child: Text(p.name)),
-                )
+                .map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))
                 .toList(),
             onChanged: (v) {
               if (v == null) return;
@@ -1682,14 +1689,14 @@ class _SupabaseAuthSection extends StatelessWidget {
             Text(
               'Conta Supabase (JWT)',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             const Text(
-              'Necessário para RLS com auth.uid() após aplicar '
-              'scripts/supabase_rls_strict_auth_uid.sql. Ligue auth_user_id nas tabelas personals/students.',
+              'Necessário para RLS com auth.uid(). Ligue auth_user_id nas '
+              'tabelas personals/students após aplicar as migrações versionadas.',
               style: TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 12),
@@ -1725,9 +1732,7 @@ class _SupabaseAuthFormState extends State<_SupabaseAuthForm> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          u == null
-              ? 'Estado: sem sessão Auth'
-              : 'Sessão: ${u.email ?? u.id}',
+          u == null ? 'Estado: sem sessão Auth' : 'Sessão: ${u.email ?? u.id}',
           style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
         ),
         if (u == null) ...[
@@ -1741,9 +1746,9 @@ class _SupabaseAuthFormState extends State<_SupabaseAuthForm> {
                       await SupabaseAuthService.signInWithGoogle();
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                       }
                     } finally {
                       if (mounted) setState(() => _busy = false);
@@ -1762,9 +1767,9 @@ class _SupabaseAuthFormState extends State<_SupabaseAuthForm> {
                       await SupabaseAuthService.signInWithGitHub();
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                       }
                     } finally {
                       if (mounted) setState(() => _busy = false);
@@ -1805,15 +1810,17 @@ class _SupabaseAuthFormState extends State<_SupabaseAuthForm> {
                       );
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Sessão Supabase iniciada.')),
+                          const SnackBar(
+                            content: Text('Sessão Supabase iniciada.'),
+                          ),
                         );
                         setState(() {});
                       }
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                       }
                     } finally {
                       if (mounted) setState(() => _busy = false);
@@ -1915,10 +1922,7 @@ class _RestTimerSoundTileState extends State<_RestTimerSoundTile> {
   Widget build(BuildContext context) {
     final loaded = _soundEnabled;
     return SwitchListTile(
-      secondary: const Icon(
-        Icons.timer_outlined,
-        color: AppColors.accentGreen,
-      ),
+      secondary: const Icon(Icons.timer_outlined, color: AppColors.accentGreen),
       title: const Text(
         'Som no timer de descanso',
         style: TextStyle(color: AppColors.textPrimary),
@@ -2002,10 +2006,7 @@ class _RestIntervalEnabledTileState extends State<_RestIntervalEnabledTile> {
     final v = _enabled;
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
-      secondary: const Icon(
-        Icons.timer_outlined,
-        color: AppColors.accentGreen,
-      ),
+      secondary: const Icon(Icons.timer_outlined, color: AppColors.accentGreen),
       title: const Text(
         'Timer de intervalo entre séries',
         style: TextStyle(color: AppColors.textPrimary),

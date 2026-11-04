@@ -50,8 +50,13 @@ class AcademiasPage extends StatelessWidget {
                   onCardTap: openForm,
                   showEditOnSwipe: false,
                   onDelete: () async {
-                    final ok = await confirmDeleteDialog(context, itemName: e.name);
-                    if (ok == true && context.mounted) await repo.deleteGym(e.id);
+                    final ok = await confirmDeleteDialog(
+                      context,
+                      itemName: e.name,
+                    );
+                    if (ok == true && context.mounted) {
+                      await repo.deleteGym(e.id);
+                    }
                   },
                 );
               },
@@ -91,7 +96,11 @@ class AcademiasPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: AppTextField(controller: num, label: 'Número', required: true),
+                  child: AppTextField(
+                    controller: num,
+                    label: 'Número',
+                    required: true,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -104,11 +113,19 @@ class AcademiasPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: AppTextField(controller: bairro, label: 'Bairro', required: true),
+                  child: AppTextField(
+                    controller: bairro,
+                    label: 'Bairro',
+                    required: true,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: AppTextField(controller: cidade, label: 'Cidade', required: true),
+                  child: AppTextField(
+                    controller: cidade,
+                    label: 'Cidade',
+                    required: true,
+                  ),
                 ),
               ],
             ),
@@ -125,7 +142,11 @@ class AcademiasPage extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: AppTextField(controller: cep, label: 'CEP', required: true),
+                  child: AppTextField(
+                    controller: cep,
+                    label: 'CEP',
+                    required: true,
+                  ),
                 ),
               ],
             ),
@@ -146,7 +167,9 @@ class AcademiasPage extends StatelessWidget {
                   cnpj: cnpj.text.trim(),
                   street: rua.text.trim(),
                   number: num.text.trim(),
-                  complement: comp.text.trim().isEmpty ? null : comp.text.trim(),
+                  complement: comp.text.trim().isEmpty
+                      ? null
+                      : comp.text.trim(),
                   district: bairro.text.trim(),
                   city: cidade.text.trim(),
                   stateUf: uf!,

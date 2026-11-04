@@ -31,7 +31,8 @@ class AlunosPage extends StatelessWidget {
   static String _studentSubtitle(StudentEntity e) {
     final parts = <String>[
       if ((e.email ?? '').trim().isNotEmpty) e.email!.trim(),
-      if ((e.phoneMobile ?? '').isNotEmpty) brFormatPhoneDisplay(e.phoneMobile!),
+      if ((e.phoneMobile ?? '').isNotEmpty)
+        brFormatPhoneDisplay(e.phoneMobile!),
       if ((e.city ?? '').trim().isNotEmpty) e.city!.trim(),
     ];
     return parts.isEmpty ? '—' : parts.join(' · ');
@@ -72,7 +73,10 @@ class AlunosPage extends StatelessWidget {
                   snap.connectionState == ConnectionState.waiting
                       ? 'Carregando…'
                       : 'Nenhum aluno inativo no seu escopo.',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                  ),
                 ),
               ],
             );
@@ -85,8 +89,7 @@ class AlunosPage extends StatelessWidget {
             itemBuilder: (_, i) {
               final e = list[i];
               final stripped = studentNameWithoutArchivePrefix(e.name);
-              final title =
-                  stripped.trim().isEmpty ? 'Aluno' : stripped.trim();
+              final title = stripped.trim().isEmpty ? 'Aluno' : stripped.trim();
               return Material(
                 color: Colors.transparent,
                 child: Container(
@@ -94,7 +97,9 @@ class AlunosPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                     color: AppColors.cadastroCardBorder.withValues(alpha: 0.08),
                     border: Border.all(
-                      color: AppColors.cadastroCardBorder.withValues(alpha: 0.4),
+                      color: AppColors.cadastroCardBorder.withValues(
+                        alpha: 0.4,
+                      ),
                     ),
                   ),
                   child: Padding(
@@ -104,7 +109,9 @@ class AlunosPage extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.person_off_rounded,
-                          color: AppColors.cadastroCardBorder.withValues(alpha: 0.85),
+                          color: AppColors.cadastroCardBorder.withValues(
+                            alpha: 0.85,
+                          ),
                           size: 28,
                         ),
                         const SizedBox(width: 12),
@@ -188,7 +195,8 @@ class AlunosPage extends StatelessWidget {
                                 ScaffoldMessenger.of(ctx).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      err.message ?? 'Não foi possível reativar.',
+                                      err.message ??
+                                          'Não foi possível reativar.',
                                     ),
                                   ),
                                 );
@@ -265,6 +273,7 @@ class AlunosPage extends StatelessWidget {
                   if (!context.mounted) return;
                   _form(context, repo, e, gList, sel.toSet());
                 }
+
                 return SwipeableRegistryCard(
                   slidableKey: e.id,
                   title: e.name,
@@ -273,8 +282,13 @@ class AlunosPage extends StatelessWidget {
                   onCardTap: () => openForm(),
                   showEditOnSwipe: false,
                   onDelete: () async {
-                    final ok = await confirmDeleteDialog(context, itemName: e.name);
-                    if (ok == true && context.mounted) await repo.deleteStudent(e.id);
+                    final ok = await confirmDeleteDialog(
+                      context,
+                      itemName: e.name,
+                    );
+                    if (ok == true && context.mounted) {
+                      await repo.deleteStudent(e.id);
+                    }
                   },
                 );
               },
@@ -295,9 +309,7 @@ class AlunosPage extends StatelessWidget {
     final name = TextEditingController(text: x?.name ?? '');
     final email = TextEditingController(text: x?.email ?? '');
     final goal = TextEditingController(text: x?.goal ?? '');
-    final cpf = TextEditingController(
-      text: brFormatCpfDisplay(x?.cpf ?? ''),
-    );
+    final cpf = TextEditingController(text: brFormatCpfDisplay(x?.cpf ?? ''));
     final rua = TextEditingController(text: x?.street ?? '');
     final num = TextEditingController(text: x?.number ?? '');
     final comp = TextEditingController(text: x?.complement ?? '');
@@ -324,11 +336,17 @@ class AlunosPage extends StatelessWidget {
           controller: scroll,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
           children: [
-            AppTextField(controller: name, label: 'Nome do aluno', required: true),
+            AppTextField(
+              controller: name,
+              label: 'Nome do aluno',
+              required: true,
+            ),
             const SizedBox(height: kCadastroFieldGap),
             AppTextField(
               controller: email,
-              label: x == null ? 'E-mail (obrigatório — é o login no app)' : 'E-mail',
+              label: x == null
+                  ? 'E-mail (obrigatório — é o login no app)'
+                  : 'E-mail',
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: kCadastroFieldGap),
@@ -413,16 +431,9 @@ class AlunosPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: AppTextField(controller: comp, label: 'Complemento')),
-              ],
-            ),
-            const SizedBox(height: kCadastroFieldGap),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: AppTextField(controller: bairro, label: 'Bairro')),
-                const SizedBox(width: 12),
-                Expanded(child: AppTextField(controller: cidade, label: 'Cidade')),
+                Expanded(
+                  child: AppTextField(controller: comp, label: 'Complemento'),
+                ),
               ],
             ),
             const SizedBox(height: kCadastroFieldGap),
@@ -430,16 +441,37 @@ class AlunosPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: BrazilStateDropdown(valueUf: uf, onChanged: (v) => setSt(() => uf = v)),
+                  child: AppTextField(controller: bairro, label: 'Bairro'),
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: AppTextField(controller: cep, label: 'CEP')),
+                Expanded(
+                  child: AppTextField(controller: cidade, label: 'Cidade'),
+                ),
+              ],
+            ),
+            const SizedBox(height: kCadastroFieldGap),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: BrazilStateDropdown(
+                    valueUf: uf,
+                    onChanged: (v) => setSt(() => uf = v),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppTextField(controller: cep, label: 'CEP'),
+                ),
               ],
             ),
             const SizedBox(height: kCadastroFieldGap),
             const Text(
               'Academias',
-              style: TextStyle(color: AppColors.splashMint, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppColors.splashMint,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -463,7 +495,10 @@ class AlunosPage extends StatelessWidget {
             const SizedBox(height: kCadastroFieldGap),
             Text(
               'Ao salvar um aluno novo, um link seguro de acesso pode ser enviado por e-mail.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 12,
+              ),
             ),
             if (x != null) ...[
               const SizedBox(height: kCadastroFieldGap),
@@ -475,7 +510,10 @@ class AlunosPage extends StatelessWidget {
                     side: BorderSide(
                       color: AppColors.splashMint.withValues(alpha: 0.65),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 14,
+                      horizontal: 16,
+                    ),
                   ),
                   onPressed: pwdBusy
                       ? null
@@ -512,7 +550,9 @@ class AlunosPage extends StatelessWidget {
                           if (go != true || !ctx.mounted) return;
                           setSt(() => pwdBusy = true);
                           try {
-                            final r = await repo.adminSendAccessLinkForStudent(x.id);
+                            final r = await repo.adminSendAccessLinkForStudent(
+                              x.id,
+                            );
                             mustChangeForSave = true;
                             if (!ctx.mounted) return;
                             if (r.emailSent) {
@@ -523,7 +563,8 @@ class AlunosPage extends StatelessWidget {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    e.message ?? 'Não foi possível enviar o link.',
+                                    e.message ??
+                                        'Não foi possível enviar o link.',
                                   ),
                                 ),
                               );
@@ -578,7 +619,11 @@ class AlunosPage extends StatelessWidget {
                 if (cpfDigits.isNotEmpty && cpfDigits.length != 11) {
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('CPF deve ter 11 dígitos ou ficar em branco.')),
+                      const SnackBar(
+                        content: Text(
+                          'CPF deve ter 11 dígitos ou ficar em branco.',
+                        ),
+                      ),
                     );
                   }
                   return;
@@ -595,8 +640,12 @@ class AlunosPage extends StatelessWidget {
                   birthDate: birth,
                   street: rua.text.trim().isEmpty ? null : rua.text.trim(),
                   number: num.text.trim().isEmpty ? null : num.text.trim(),
-                  complement: comp.text.trim().isEmpty ? null : comp.text.trim(),
-                  district: bairro.text.trim().isEmpty ? null : bairro.text.trim(),
+                  complement: comp.text.trim().isEmpty
+                      ? null
+                      : comp.text.trim(),
+                  district: bairro.text.trim().isEmpty
+                      ? null
+                      : bairro.text.trim(),
                   city: cidade.text.trim().isEmpty ? null : cidade.text.trim(),
                   stateUf: uf?.isEmpty ?? true ? null : uf,
                   cep: cep.text.trim().isEmpty ? null : cep.text.trim(),

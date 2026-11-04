@@ -112,11 +112,11 @@ class _SplashPageState extends State<SplashPage> {
       _buildLogCount++;
     }
     final titleStyle = Theme.of(context).textTheme.headlineLarge?.copyWith(
-          color: AppColors.splashMint,
-          fontWeight: FontWeight.bold,
-          fontSize: 32,
-          letterSpacing: 0.4,
-        );
+      color: AppColors.splashMint,
+      fontWeight: FontWeight.bold,
+      fontSize: 32,
+      letterSpacing: 0.4,
+    );
 
     // Foto de fundo com [FilterQuality.low] e overlays sem opacidade total para o 1º frame
     // não travar no decode e a imagem continuar visível (gradiente opaco cobria tudo).
@@ -165,9 +165,9 @@ class _SplashPageState extends State<SplashPage> {
                     'Powered by Leonardo Peres',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.92),
-                          fontWeight: FontWeight.w400,
-                        ),
+                      color: Colors.white.withValues(alpha: 0.92),
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                   const SizedBox(height: 36),
                   if (_bootError == null)
@@ -177,17 +177,17 @@ class _SplashPageState extends State<SplashPage> {
                       'Falha ao iniciar o Personal Gym',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
                       _bootError!,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.white70,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                     ),
                     const SizedBox(height: 20),
                     FilledButton(

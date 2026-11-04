@@ -194,22 +194,23 @@ class _TrainingMethodPickerSheetBodyState
                             children: [
                               ShaderMask(
                                 blendMode: BlendMode.srcIn,
-                                shaderCallback: (bounds) => LinearGradient(
-                                  colors: [
-                                    AppColors.splashMint,
-                                    AppColors.headerGradientMint,
-                                    AppColors.accentPink.withValues(
-                                      alpha: 0.92,
+                                shaderCallback: (bounds) =>
+                                    LinearGradient(
+                                      colors: [
+                                        AppColors.splashMint,
+                                        AppColors.headerGradientMint,
+                                        AppColors.accentPink.withValues(
+                                          alpha: 0.92,
+                                        ),
+                                      ],
+                                    ).createShader(
+                                      Rect.fromLTWH(
+                                        0,
+                                        0,
+                                        bounds.width,
+                                        bounds.height,
+                                      ),
                                     ),
-                                  ],
-                                ).createShader(
-                                  Rect.fromLTWH(
-                                    0,
-                                    0,
-                                    bounds.width,
-                                    bounds.height,
-                                  ),
-                                ),
                                 child: const Text(
                                   'Método de treino',
                                   style: TextStyle(
@@ -328,9 +329,9 @@ class _TrainingMethodPickerSheetBodyState
                     child: AppPrimaryButton(
                       label: 'OK',
                       icon: Icons.check_rounded,
-                      onPressed: () => Navigator.of(context).pop(
-                        TrainingMethodPickerChoice(methodId: _pendingId),
-                      ),
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).pop(TrainingMethodPickerChoice(methodId: _pendingId)),
                     ),
                   ),
                 ],
@@ -344,10 +345,7 @@ class _TrainingMethodPickerSheetBodyState
 }
 
 class _TrainingMethodNoneTile extends StatelessWidget {
-  const _TrainingMethodNoneTile({
-    required this.selected,
-    required this.onTap,
-  });
+  const _TrainingMethodNoneTile({required this.selected, required this.onTap});
 
   final bool selected;
   final VoidCallback onTap;
@@ -430,9 +428,7 @@ class _TrainingMethodTileShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = dangerAccent
-        ? AppColors.danger
-        : AppColors.splashMint;
+    final accent = dangerAccent ? AppColors.danger : AppColors.splashMint;
     final secondary = dangerAccent
         ? AppColors.danger.withValues(alpha: 0.75)
         : AppColors.registrySectionBlueLight.withValues(alpha: 0.65);
@@ -487,9 +483,7 @@ class _TrainingMethodTileShell extends StatelessWidget {
               Icon(
                 leadingIcon,
                 size: 22,
-                color: selected
-                    ? accent.withValues(alpha: 0.95)
-                    : secondary,
+                color: selected ? accent.withValues(alpha: 0.95) : secondary,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -502,8 +496,9 @@ class _TrainingMethodTileShell extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 15,
-                        fontWeight:
-                            selected ? FontWeight.w800 : FontWeight.w600,
+                        fontWeight: selected
+                            ? FontWeight.w800
+                            : FontWeight.w600,
                         color: selected
                             ? AppColors.textPrimary
                             : AppColors.textMuted,
@@ -668,9 +663,7 @@ class TrainingMethodPickerField extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 12,
                                   height: 1.25,
-                                  color: Colors.white.withValues(
-                                    alpha: 0.42,
-                                  ),
+                                  color: Colors.white.withValues(alpha: 0.42),
                                 ),
                               ),
                             ),

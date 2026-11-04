@@ -7,17 +7,11 @@ void main() {
   group('ConflictResolver', () {
     test('detecta escrita stale', () {
       expect(
-        ConflictResolver.isStaleWrite(
-          expectedRevision: 3,
-          serverRevision: 5,
-        ),
+        ConflictResolver.isStaleWrite(expectedRevision: 3, serverRevision: 5),
         isTrue,
       );
       expect(
-        ConflictResolver.isStaleWrite(
-          expectedRevision: 5,
-          serverRevision: 5,
-        ),
+        ConflictResolver.isStaleWrite(expectedRevision: 5, serverRevision: 5),
         isFalse,
       );
     });

@@ -52,7 +52,10 @@ class GruposMuscularesPage extends StatelessWidget {
                   onCardTap: openForm,
                   showEditOnSwipe: false,
                   onDelete: () async {
-                    final ok = await confirmDeleteDialog(context, itemName: e.name);
+                    final ok = await confirmDeleteDialog(
+                      context,
+                      itemName: e.name,
+                    );
                     if (ok == true && context.mounted) {
                       await repo.deleteMuscleGroup(e.id);
                     }
@@ -66,7 +69,11 @@ class GruposMuscularesPage extends StatelessWidget {
     );
   }
 
-  void _openForm(BuildContext context, AppDataRepository repo, MuscleGroupEntity? existing) {
+  void _openForm(
+    BuildContext context,
+    AppDataRepository repo,
+    MuscleGroupEntity? existing,
+  ) {
     final nameC = TextEditingController(text: existing?.name ?? '');
     showAppModalSheet<void>(
       context: context,
@@ -77,10 +84,16 @@ class GruposMuscularesPage extends StatelessWidget {
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
         children: [
-          AppTextField(controller: nameC, label: 'Nome do grupo muscular', required: true),
+          AppTextField(
+            controller: nameC,
+            label: 'Nome do grupo muscular',
+            required: true,
+          ),
           const SizedBox(height: kCadastroFieldGap),
           AppPrimaryButton(
-            label: existing == null ? 'Salvar grupo muscular' : 'Atualizar grupo muscular',
+            label: existing == null
+                ? 'Salvar grupo muscular'
+                : 'Atualizar grupo muscular',
             icon: Icons.check_rounded,
             onPressed: () async {
               final n = nameC.text.trim();

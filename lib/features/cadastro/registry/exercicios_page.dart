@@ -584,8 +584,10 @@ class _ExerciciosPageState extends State<ExerciciosPage> {
                             ),
                             itemBuilder: (context, index) {
                               final e = altMatches[index];
-                              final gName =
-                                  _muscleGroupName(groups, e.muscleGroupId);
+                              final gName = _muscleGroupName(
+                                groups,
+                                e.muscleGroupId,
+                              );
                               final hasVid = _hasVideoUrl(e.videoUrl);
                               return Material(
                                 color: Colors.transparent,
@@ -594,8 +596,7 @@ class _ExerciciosPageState extends State<ExerciciosPage> {
                                     setSt(() {
                                       altC.text = e.name;
                                       altVidC.text = e.videoUrl?.trim() ?? '';
-                                      altFromExerciseId =
-                                          hasVid ? e.id : null;
+                                      altFromExerciseId = hasVid ? e.id : null;
                                     });
                                   },
                                   child: Padding(
@@ -609,12 +610,12 @@ class _ExerciciosPageState extends State<ExerciciosPage> {
                                       children: [
                                         Icon(
                                           hasVid
-                                              ? Icons
-                                                  .play_circle_fill_rounded
+                                              ? Icons.play_circle_fill_rounded
                                               : Icons.videocam_off_outlined,
                                           color: hasVid
-                                              ? AppColors.splashMint
-                                                  .withValues(alpha: 0.88)
+                                              ? AppColors.splashMint.withValues(
+                                                  alpha: 0.88,
+                                                )
                                               : Colors.white.withValues(
                                                   alpha: 0.35,
                                                 ),
@@ -640,8 +641,8 @@ class _ExerciciosPageState extends State<ExerciciosPage> {
                                                   style: TextStyle(
                                                     color: Colors.white
                                                         .withValues(
-                                                      alpha: 0.45,
-                                                    ),
+                                                          alpha: 0.45,
+                                                        ),
                                                     fontSize: 11.5,
                                                   ),
                                                 ),

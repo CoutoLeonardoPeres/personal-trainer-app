@@ -29,7 +29,9 @@ Future<void> reconcileLocalExercisesWithSupabase(
   AppDatabase db,
   SupabaseClient client,
 ) async {
-  final raw = await client.from('exercises').select(
+  final raw = await client
+      .from('exercises')
+      .select(
         'id,name,muscle_group_id,video_url,alternative_note,alternative_video_url,created_at,updated_at',
       );
   final remoteList = (raw as List<dynamic>).cast<Map<String, dynamic>>();
@@ -58,23 +60,25 @@ Future<void> reconcileLocalExercisesWithSupabase(
       if (remoteId == E.id) continue;
 
       final mgId = remoteRow['muscle_group_id'] as String;
-      final mgLocal = await (db.select(db.muscleGroups)
-            ..where((t) => t.id.equals(mgId)))
-          .getSingleOrNull();
+      final mgLocal = await (db.select(
+        db.muscleGroups,
+      )..where((t) => t.id.equals(mgId))).getSingleOrNull();
       if (mgLocal == null) continue;
 
       await (db.update(db.exercises)..where((t) => t.id.equals(E.id))).write(
-            ExercisesCompanion(
-              name: Value('__sync_reconcile_ex_${E.id}'),
-              updatedAt: Value(DateTime.now()),
-            ),
-          );
+        ExercisesCompanion(
+          name: Value('__sync_reconcile_ex_${E.id}'),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
 
-      final existingRemoteLocally = await (db.select(db.exercises)
-            ..where((t) => t.id.equals(remoteId)))
-          .getSingleOrNull();
+      final existingRemoteLocally = await (db.select(
+        db.exercises,
+      )..where((t) => t.id.equals(remoteId))).getSingleOrNull();
       if (existingRemoteLocally == null) {
-        await db.into(db.exercises).insert(
+        await db
+            .into(db.exercises)
+            .insert(
               ExercisesCompanion.insert(
                 id: remoteId,
                 name: ((remoteRow['name'] as String?) ?? E.name).trim().isEmpty
@@ -82,9 +86,12 @@ Future<void> reconcileLocalExercisesWithSupabase(
                     : ((remoteRow['name'] as String?) ?? E.name).trim(),
                 muscleGroupId: mgId,
                 videoUrl: Value(remoteRow['video_url'] as String?),
-                alternativeNote: Value(remoteRow['alternative_note'] as String?),
-                alternativeVideoUrl:
-                    Value(remoteRow['alternative_video_url'] as String?),
+                alternativeNote: Value(
+                  remoteRow['alternative_note'] as String?,
+                ),
+                alternativeVideoUrl: Value(
+                  remoteRow['alternative_video_url'] as String?,
+                ),
                 createdAt: Value(_parseSupabaseTs(remoteRow['created_at'])),
                 updatedAt: Value(_parseSupabaseTs(remoteRow['updated_at'])),
               ),

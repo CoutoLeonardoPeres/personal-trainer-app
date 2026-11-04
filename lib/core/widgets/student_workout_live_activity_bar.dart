@@ -24,7 +24,8 @@ class StudentWorkoutLiveActivityLayer extends StatefulWidget {
 }
 
 class _StudentWorkoutLiveActivityLayerState
-    extends State<StudentWorkoutLiveActivityLayer> with WidgetsBindingObserver {
+    extends State<StudentWorkoutLiveActivityLayer>
+    with WidgetsBindingObserver {
   Timer? _workoutTick;
   var _iosLiveActivityFrameScheduled = false;
   var _iosLaSyncInFlight = false;
@@ -127,9 +128,7 @@ class _StudentWorkoutLiveActivityLayerState
       fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: [
-        Positioned.fill(
-          child: widget.child ?? const SizedBox.shrink(),
-        ),
+        Positioned.fill(child: widget.child ?? const SizedBox.shrink()),
         StreamBuilder<List<DayWorkoutEntity>>(
           stream: repo.watchAccessibleStartedDayWorkouts(),
           builder: (context, snap) {

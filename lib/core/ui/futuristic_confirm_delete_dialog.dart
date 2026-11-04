@@ -104,7 +104,9 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.danger.withValues(alpha: 0.22),
+                                  color: AppColors.danger.withValues(
+                                    alpha: 0.22,
+                                  ),
                                   blurRadius: 14,
                                 ),
                               ],
@@ -130,7 +132,9 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
                                       fontSize: 10,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: 1.35,
-                                      color: AppColors.accentGreen.withValues(alpha: 0.78),
+                                      color: AppColors.accentGreen.withValues(
+                                        alpha: 0.78,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 6),
@@ -155,7 +159,8 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
                         Text(
                           '"${itemName!}"',
                           style: TextStyle(
-                            color: AppColors.registrySectionBlueLight.withValues(alpha: 0.92),
+                            color: AppColors.registrySectionBlueLight
+                                .withValues(alpha: 0.92),
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             height: 1.3,

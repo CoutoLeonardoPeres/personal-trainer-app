@@ -80,8 +80,8 @@ class SupabaseCloudFidelityChecker {
       final detail = mismatches.isEmpty
           ? null
           : (mismatches.length > 6
-              ? '${mismatches.take(6).join('; ')}… (+${mismatches.length - 6})'
-              : mismatches.join('; '));
+                ? '${mismatches.take(6).join('; ')}… (+${mismatches.length - 6})'
+                : mismatches.join('; '));
 
       _sync.noteFidelityResult(
         at: DateTime.now(),

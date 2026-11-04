@@ -44,9 +44,7 @@ class FuturisticBackground extends StatelessWidget {
             ),
           ),
           Positioned.fill(
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.5),
-            ),
+            child: Container(color: Colors.black.withValues(alpha: 0.5)),
           ),
           child,
         ],
@@ -67,8 +65,10 @@ class FuturisticCard extends StatelessWidget {
 
   final Widget child;
   final VoidCallback? onTap;
+
   /// Se nulo, mantém a borda rosa (cadastro / padrão).
   final Color? borderColor;
+
   /// Se nulo, gradiente rosa suave + escuro (padrão).
   final List<Color>? backgroundGradient;
   final double borderWidth;
@@ -76,7 +76,8 @@ class FuturisticCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final border = borderColor ?? AppColors.accentPink.withValues(alpha: 0.55);
-    final colors = backgroundGradient ??
+    final colors =
+        backgroundGradient ??
         <Color>[
           AppColors.accentPink.withValues(alpha: 0.07),
           Colors.black.withValues(alpha: 0.2),

@@ -8,7 +8,12 @@ import 'package:flutter/scheduler.dart';
 ///
 /// **iOS:** no Mac, abra o app **Console.app** → dispositivo → filtre por
 /// `com.personaltrainer.app.Personal` (Swift) ou `app_personal` (Dart).
-void logLaunch(String message, {String phase = 'dart', Object? error, StackTrace? stackTrace}) {
+void logLaunch(
+  String message, {
+  String phase = 'dart',
+  Object? error,
+  StackTrace? stackTrace,
+}) {
   final ts = DateTime.now().toIso8601String();
   final line = '[$ts][$phase] $message';
   debugPrint(line);
@@ -32,7 +37,12 @@ void installGlobalErrorLogging() {
   };
 
   PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-    logLaunch('$error', phase: 'platform_error', error: error, stackTrace: stack);
+    logLaunch(
+      '$error',
+      phase: 'platform_error',
+      error: error,
+      stackTrace: stack,
+    );
     return true;
   };
 }
@@ -70,12 +80,18 @@ void installBootDiagnostics() {
       bootTrace('frame', '#$frameIndex');
       frameIndex++;
       if (frameIndex == 24) {
-        bootTrace('frame_logging', 'último log de frame (#23); callback mantém-se leve');
+        bootTrace(
+          'frame_logging',
+          'último log de frame (#23); callback mantém-se leve',
+        );
       }
     }
 
     SchedulerBinding.instance.addPersistentFrameCallback(frameLog);
-    bootTrace('installBootDiagnostics', 'ErrorWidget + log dos primeiros 24 frames (debug)');
+    bootTrace(
+      'installBootDiagnostics',
+      'ErrorWidget + log dos primeiros 24 frames (debug)',
+    );
   }
 }
 

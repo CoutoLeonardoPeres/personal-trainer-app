@@ -50,7 +50,10 @@ class MetodosTreinoPage extends StatelessWidget {
                   onCardTap: openForm,
                   showEditOnSwipe: false,
                   onDelete: () async {
-                    final ok = await confirmDeleteDialog(context, itemName: e.method);
+                    final ok = await confirmDeleteDialog(
+                      context,
+                      itemName: e.method,
+                    );
                     if (ok == true && context.mounted) {
                       await repo.deleteTrainingMethod(e.id);
                     }
@@ -64,7 +67,11 @@ class MetodosTreinoPage extends StatelessWidget {
     );
   }
 
-  void _form(BuildContext context, AppDataRepository repo, TrainingMethodEntity? x) {
+  void _form(
+    BuildContext context,
+    AppDataRepository repo,
+    TrainingMethodEntity? x,
+  ) {
     final method = TextEditingController(text: x?.method ?? '');
     final desc = TextEditingController(text: x?.description ?? '');
     showAppModalSheet<void>(
@@ -76,13 +83,20 @@ class MetodosTreinoPage extends StatelessWidget {
         children: [
           AppTextField(controller: method, label: 'Método', required: true),
           const SizedBox(height: kCadastroFieldGap),
-          AppTextField(controller: desc, label: 'Descrição do método', required: true, maxLines: 4),
+          AppTextField(
+            controller: desc,
+            label: 'Descrição do método',
+            required: true,
+            maxLines: 4,
+          ),
           const SizedBox(height: kCadastroFieldGap),
           AppPrimaryButton(
             label: x == null ? 'Salvar método' : 'Atualizar método',
             icon: Icons.check_rounded,
             onPressed: () async {
-              if (method.text.trim().isEmpty || desc.text.trim().isEmpty) return;
+              if (method.text.trim().isEmpty || desc.text.trim().isEmpty) {
+                return;
+              }
               await repo.upsertTrainingMethod(
                 id: x?.id,
                 method: method.text.trim(),

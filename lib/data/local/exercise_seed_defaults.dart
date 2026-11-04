@@ -23,84 +23,96 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     muscleGroupName: "Peitoral",
     alternativeName: "Supino Convergente",
     videoUrl: "https://youtube.com/shorts/wVilY6j8R90?si=jSQ_ZCZgPHILCrkB",
-    alternativeVideoUrl: "https://youtube.com/shorts/wVilY6j8R90?si=jSQ_ZCZgPHILCrkB",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/wVilY6j8R90?si=jSQ_ZCZgPHILCrkB",
   ),
   (
     name: "Desenvolvimento Convergente",
     muscleGroupName: "Ombros",
     alternativeName: "Desenvolvimento Convergente",
     videoUrl: "https://youtube.com/shorts/VFbijwqdsTU?si=QINUM9x5vBRJDUf0",
-    alternativeVideoUrl: "https://youtube.com/shorts/VFbijwqdsTU?si=QINUM9x5vBRJDUf0",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/VFbijwqdsTU?si=QINUM9x5vBRJDUf0",
   ),
   (
     name: "Tríceps Pulley",
     muscleGroupName: "Tríceps",
     alternativeName: "Tríceps Pulley",
     videoUrl: "https://youtube.com/shorts/5PPKThQuR3M?si=zsed4oD0s0hZy9iz",
-    alternativeVideoUrl: "https://youtube.com/shorts/5PPKThQuR3M?si=zsed4oD0s0hZy9iz",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/5PPKThQuR3M?si=zsed4oD0s0hZy9iz",
   ),
   (
     name: "Mesa Flexora",
     muscleGroupName: "Coxas Posterior",
     alternativeName: "Mesa Flexora",
     videoUrl: "https://youtube.com/shorts/IXg1PQ_5gmw?si=AVhnutfNZVJDLOu0",
-    alternativeVideoUrl: "https://youtube.com/shorts/IXg1PQ_5gmw?si=AVhnutfNZVJDLOu0",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/IXg1PQ_5gmw?si=AVhnutfNZVJDLOu0",
   ),
   (
     name: "Cadeira Flexora",
     muscleGroupName: "Coxas Posterior",
     alternativeName: "Cadeira Flexora",
     videoUrl: "https://youtube.com/shorts/T46yKiz8laY?si=5zxpvrd9qsNG7Ay_",
-    alternativeVideoUrl: "https://youtube.com/shorts/T46yKiz8laY?si=5zxpvrd9qsNG7Ay_",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/T46yKiz8laY?si=5zxpvrd9qsNG7Ay_",
   ),
   (
     name: "Panturrilhas no Leg Press Horizontal",
     muscleGroupName: "Panturrilhas",
     alternativeName: "Panturrilhas no Leg Press Horizontal",
     videoUrl: "https://youtube.com/shorts/83e3vyu0_XE?si=BsnF3ZZoBJiXKl91",
-    alternativeVideoUrl: "https://youtube.com/shorts/83e3vyu0_XE?si=BsnF3ZZoBJiXKl91",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/83e3vyu0_XE?si=BsnF3ZZoBJiXKl91",
   ),
   (
     name: "Cadeira Abdutora",
     muscleGroupName: "Glúteos",
     alternativeName: "Cadeira Abdutora",
     videoUrl: "https://youtube.com/shorts/nabhYLtz8Gg?si=nDg_kqeLeRMne320",
-    alternativeVideoUrl: "https://youtube.com/shorts/nabhYLtz8Gg?si=nDg_kqeLeRMne320",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/nabhYLtz8Gg?si=nDg_kqeLeRMne320",
   ),
   (
     name: "Abdominal Rolo",
     muscleGroupName: "Abdômen",
     alternativeName: "Abdominal Rolo",
     videoUrl: "https://youtube.com/shorts/DWFt7uGwJFQ?si=6esP9EvsbeUSCkBo",
-    alternativeVideoUrl: "https://youtube.com/shorts/DWFt7uGwJFQ?si=6esP9EvsbeUSCkBo",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/DWFt7uGwJFQ?si=6esP9EvsbeUSCkBo",
   ),
   (
     name: "Abdominal Reto Máquina",
     muscleGroupName: "Abdômen",
     alternativeName: "Abdominal Reto Máquina",
     videoUrl: "https://youtube.com/shorts/YSKWgY_47L4?si=9o_-Og3WuFx1QiDR",
-    alternativeVideoUrl: "https://youtube.com/shorts/YSKWgY_47L4?si=9o_-Og3WuFx1QiDR",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/YSKWgY_47L4?si=9o_-Og3WuFx1QiDR",
   ),
   (
     name: "Remada Cavalo Pronada",
     muscleGroupName: "Dorsal",
     alternativeName: "Remada Cavalo Pronada",
     videoUrl: "https://youtube.com/shorts/6NBBrNhX3kA?si=R7Wz4Ci-c8qzfLyp",
-    alternativeVideoUrl: "https://youtube.com/shorts/6NBBrNhX3kA?si=R7Wz4Ci-c8qzfLyp",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/6NBBrNhX3kA?si=R7Wz4Ci-c8qzfLyp",
   ),
   (
     name: "Remada Convergente Pronada",
     muscleGroupName: "Dorsal",
     alternativeName: "Remada Convergente Pronada",
     videoUrl: "https://youtube.com/shorts/WNNlh4-fnMg?si=HXTFfXmSaEoFR2V0",
-    alternativeVideoUrl: "https://youtube.com/shorts/WNNlh4-fnMg?si=HXTFfXmSaEoFR2V0",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/WNNlh4-fnMg?si=HXTFfXmSaEoFR2V0",
   ),
   (
     name: "Squad Machine Agachamento Máquina",
     muscleGroupName: "Coxas",
     alternativeName: "Squad Machine Agachamento Máquina",
     videoUrl: "https://youtube.com/shorts/tZ5rRI1mKts?si=eCvN57hRKbHMPvx4",
-    alternativeVideoUrl: "https://youtube.com/shorts/tZ5rRI1mKts?si=eCvN57hRKbHMPvx4",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/tZ5rRI1mKts?si=eCvN57hRKbHMPvx4",
   ),
   (
     name: "Agachamento Hack",
@@ -121,7 +133,8 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     muscleGroupName: "Peitoral",
     alternativeName: "Supino 45⁰ com Halter",
     videoUrl: "https://youtube.com/shorts/1lcMaxNgoec?si=lR-Qi5Q_7w1VbBAH",
-    alternativeVideoUrl: "https://youtube.com/shorts/1lcMaxNgoec?si=lR-Qi5Q_7w1VbBAH",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/1lcMaxNgoec?si=lR-Qi5Q_7w1VbBAH",
   ),
   (
     name: "Supino Reto com Halter",
@@ -135,140 +148,160 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     muscleGroupName: "Peitoral",
     alternativeName: "Voador",
     videoUrl: "https://youtube.com/shorts/MENdoLpyj7c?si=m8u-bWQVzV353660",
-    alternativeVideoUrl: "https://youtube.com/shorts/MENdoLpyj7c?si=m8u-bWQVzV353660",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/MENdoLpyj7c?si=m8u-bWQVzV353660",
   ),
   (
     name: "Desenvolvimento Máquina",
     muscleGroupName: "Peitoral",
     alternativeName: "Desenvolvimento Máquina",
     videoUrl: "https://youtube.com/shorts/uh0oZorifmM?si=R84lanmXTE11bMDM",
-    alternativeVideoUrl: "https://youtube.com/shorts/uh0oZorifmM?si=R84lanmXTE11bMDM",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/uh0oZorifmM?si=R84lanmXTE11bMDM",
   ),
   (
     name: "Elevação Frontal na Polia Baixa",
     muscleGroupName: "Ombros",
     alternativeName: "Elevação Frontal na Polia Baixa",
     videoUrl: "https://youtube.com/shorts/3BVXcDJlU0g?si=mx6zq9LtKixZwuQd",
-    alternativeVideoUrl: "https://youtube.com/shorts/3BVXcDJlU0g?si=mx6zq9LtKixZwuQd",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/3BVXcDJlU0g?si=mx6zq9LtKixZwuQd",
   ),
   (
     name: "Tríceps Mergulho Máquina",
     muscleGroupName: "Tríceps",
     alternativeName: "Tríceps Mergulho Máquina",
     videoUrl: "https://youtube.com/shorts/jmznZ45g8jc?si=D0X9QFaP9Egj4k_H",
-    alternativeVideoUrl: "https://youtube.com/shorts/jmznZ45g8jc?si=D0X9QFaP9Egj4k_H",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/jmznZ45g8jc?si=D0X9QFaP9Egj4k_H",
   ),
   (
     name: "Pulley Alto Aberto Pronado",
     muscleGroupName: "Dorsal",
     alternativeName: "Pulley Alto Aberto Pronado",
     videoUrl: "https://youtube.com/shorts/fDrY7ccdYRo?si=SOUm5QGQbH0Z1a7J",
-    alternativeVideoUrl: "https://youtube.com/shorts/fDrY7ccdYRo?si=SOUm5QGQbH0Z1a7J",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/fDrY7ccdYRo?si=SOUm5QGQbH0Z1a7J",
   ),
   (
     name: "Pulley Alto Articulado Pronado",
     muscleGroupName: "Dorsal",
     alternativeName: "Pulley Alto Articulado Pronado",
     videoUrl: "https://youtube.com/shorts/PmHjeQR0TX8?si=uXoAag_yaZtEQic4",
-    alternativeVideoUrl: "https://youtube.com/shorts/PmHjeQR0TX8?si=uXoAag_yaZtEQic4",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/PmHjeQR0TX8?si=uXoAag_yaZtEQic4",
   ),
   (
     name: "Remada Articulada Pronada",
     muscleGroupName: "Dorsal",
     alternativeName: "Remada Articulada Pronada",
     videoUrl: "https://youtube.com/shorts/oE2jSe_HM18?si=FLMWRebryGeft5cl",
-    alternativeVideoUrl: "https://youtube.com/shorts/oE2jSe_HM18?si=FLMWRebryGeft5cl",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/oE2jSe_HM18?si=FLMWRebryGeft5cl",
   ),
   (
     name: "Voador Invertido",
     muscleGroupName: "Ombros",
     alternativeName: "Voador Invertido",
     videoUrl: "https://youtube.com/shorts/7qWQ0RDsVEs?si=WyRGFbiIbGqatYDI",
-    alternativeVideoUrl: "https://youtube.com/shorts/7qWQ0RDsVEs?si=WyRGFbiIbGqatYDI",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/7qWQ0RDsVEs?si=WyRGFbiIbGqatYDI",
   ),
   (
     name: "Encolhimento de Ombros com Halteres",
     muscleGroupName: "Trapézio",
     alternativeName: "Encolhimento de Ombros com Halteres",
     videoUrl: "https://youtube.com/shorts/xYk3w0V3GWM?si=K_QDB3ZdgOxgesK7",
-    alternativeVideoUrl: "https://youtube.com/shorts/xYk3w0V3GWM?si=K_QDB3ZdgOxgesK7",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/xYk3w0V3GWM?si=K_QDB3ZdgOxgesK7",
   ),
   (
     name: "Rosca Direta com Barra W",
     muscleGroupName: "Bíceps",
     alternativeName: "Rosca Direta com Barra W",
     videoUrl: "https://youtube.com/shorts/ojlJslnaae4?si=uM_sV7XRqUTQ1kjc",
-    alternativeVideoUrl: "https://youtube.com/shorts/ojlJslnaae4?si=uM_sV7XRqUTQ1kjc",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/ojlJslnaae4?si=uM_sV7XRqUTQ1kjc",
   ),
   (
     name: "Rosca Direta com Halter",
     muscleGroupName: "Bíceps",
     alternativeName: "Rosca Direta com Halter",
     videoUrl: "https://youtube.com/shorts/hZrvPQz-0f8?si=FSscb_7QYtc_Lu_C",
-    alternativeVideoUrl: "https://youtube.com/shorts/hZrvPQz-0f8?si=FSscb_7QYtc_Lu_C",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/hZrvPQz-0f8?si=FSscb_7QYtc_Lu_C",
   ),
   (
     name: "Abdominal Infra Banco Declinado Pernas Flexionadas",
     muscleGroupName: "Abdômen",
     alternativeName: "Abdominal Infra Banco Declinado Pernas Flexionadas",
     videoUrl: "https://youtube.com/shorts/c54PpzF8iEU?si=nNw8z5U-jRNYZFsK",
-    alternativeVideoUrl: "https://youtube.com/shorts/c54PpzF8iEU?si=nNw8z5U-jRNYZFsK",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/c54PpzF8iEU?si=nNw8z5U-jRNYZFsK",
   ),
   (
     name: "Afundo Smith",
     muscleGroupName: "Coxas",
     alternativeName: "Afundo Smith",
     videoUrl: "https://youtube.com/shorts/DsveOsxNBYE?si=c6g_7e6HFBnktvo7",
-    alternativeVideoUrl: "https://youtube.com/shorts/DsveOsxNBYE?si=c6g_7e6HFBnktvo7",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/DsveOsxNBYE?si=c6g_7e6HFBnktvo7",
   ),
   (
     name: "Leg Press 45⁰ Pés Afastados",
     muscleGroupName: "Coxas",
     alternativeName: "Leg Press 45⁰ Pés Afastados",
     videoUrl: "https://youtube.com/shorts/QKOi1aGh9MA?si=nR6G9z2ZPj4Lqq_m",
-    alternativeVideoUrl: "https://youtube.com/shorts/QKOi1aGh9MA?si=nR6G9z2ZPj4Lqq_m",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/QKOi1aGh9MA?si=nR6G9z2ZPj4Lqq_m",
   ),
   (
     name: "Cadeira Extensora",
     muscleGroupName: "Coxas",
     alternativeName: "Cadeira Extensora",
     videoUrl: "https://youtube.com/shorts/u68RNdfZymA?si=U43QAzppAbi3-IDG",
-    alternativeVideoUrl: "https://youtube.com/shorts/u68RNdfZymA?si=U43QAzppAbi3-IDG",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/u68RNdfZymA?si=U43QAzppAbi3-IDG",
   ),
   (
     name: "Supino com Máquina sentado",
     muscleGroupName: "Peitoral",
     alternativeName: "Supino com Máquina sentado",
     videoUrl: "https://youtube.com/shorts/2awX3rTGa1k?si=mu8WQ-Y3uynXEPH5",
-    alternativeVideoUrl: "https://youtube.com/shorts/2awX3rTGa1k?si=mu8WQ-Y3uynXEPH5",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/2awX3rTGa1k?si=mu8WQ-Y3uynXEPH5",
   ),
   (
     name: "Tríceps Testa Polia",
     muscleGroupName: "Tríceps",
     alternativeName: "Tríceps Testa Polia",
     videoUrl: "https://youtube.com/shorts/sb7dx0Ob9Ig?si=Y2DUIdkQY_wLhyjD",
-    alternativeVideoUrl: "https://youtube.com/shorts/sb7dx0Ob9Ig?si=Y2DUIdkQY_wLhyjD",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/sb7dx0Ob9Ig?si=Y2DUIdkQY_wLhyjD",
   ),
   (
     name: "Elevacao Lateral Polia Baixa",
     muscleGroupName: "Ombros",
     alternativeName: "Elevacao Lateral Polia Baixa",
     videoUrl: "https://youtube.com/shorts/08F4SWOlR38?si=_SxuE06d0OYpD_xM",
-    alternativeVideoUrl: "https://youtube.com/shorts/08F4SWOlR38?si=_SxuE06d0OYpD_xM",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/08F4SWOlR38?si=_SxuE06d0OYpD_xM",
   ),
   (
     name: "Elevação Lateral com Halteres",
     muscleGroupName: "Ombros",
     alternativeName: "Elevação Lateral com Halteres",
     videoUrl: "https://youtube.com/shorts/yURmeIEl1Fg?si=QouojRNNV-e0eGta",
-    alternativeVideoUrl: "https://youtube.com/shorts/yURmeIEl1Fg?si=QouojRNNV-e0eGta",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/yURmeIEl1Fg?si=QouojRNNV-e0eGta",
   ),
   (
     name: "Crucifixo com Halteres - Banco declinado",
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo com Halteres - Banco declinado",
     videoUrl: "https://youtube.com/shorts/V1qKLrizG24?si=S40IUJJqAoHcOG1Z",
-    alternativeVideoUrl: "https://youtube.com/shorts/V1qKLrizG24?si=S40IUJJqAoHcOG1Z",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/V1qKLrizG24?si=S40IUJJqAoHcOG1Z",
   ),
   (
     name: "Crucifixo em Pé com Elástico",
@@ -282,49 +315,56 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo em Pe no Cross Over",
     videoUrl: "https://youtube.com/shorts/mYNg8lt53RI?si=OV4KMhQdyN12P4Xp",
-    alternativeVideoUrl: "https://youtube.com/shorts/mYNg8lt53RI?si=OV4KMhQdyN12P4Xp",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/mYNg8lt53RI?si=OV4KMhQdyN12P4Xp",
   ),
   (
     name: "Crucifixo com Halter",
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo com Halter",
     videoUrl: "https://youtube.com/shorts/NdPsC7tjGao?si=4H9e1Xzhalzufvto",
-    alternativeVideoUrl: "https://youtube.com/shorts/NdPsC7tjGao?si=4H9e1Xzhalzufvto",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/NdPsC7tjGao?si=4H9e1Xzhalzufvto",
   ),
   (
     name: "Crucifixo Inclinado C/ Halteres no Banco",
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo Inclinado C/ Halteres no Banco",
     videoUrl: "https://youtube.com/shorts/wkUemXl4vFI?si=lMfoGXhFZrXH3Xlb",
-    alternativeVideoUrl: "https://youtube.com/shorts/wkUemXl4vFI?si=lMfoGXhFZrXH3Xlb",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/wkUemXl4vFI?si=lMfoGXhFZrXH3Xlb",
   ),
   (
     name: "Crucifixo Inclinado com Banco no Cross Over",
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo Inclinado com Banco no Cross Over",
     videoUrl: "https://youtube.com/shorts/SNocSqyJYm8?si=2RUsLulQmd8d8lQm",
-    alternativeVideoUrl: "https://youtube.com/shorts/SNocSqyJYm8?si=2RUsLulQmd8d8lQm",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/SNocSqyJYm8?si=2RUsLulQmd8d8lQm",
   ),
   (
     name: "Crucifixo na Polia Alta",
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo na Polia Alta",
     videoUrl: "https://youtube.com/shorts/_hdQD_E3deE?si=37D6J2-Hkg2qz9lR",
-    alternativeVideoUrl: "https://youtube.com/shorts/_hdQD_E3deE?si=37D6J2-Hkg2qz9lR",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/_hdQD_E3deE?si=37D6J2-Hkg2qz9lR",
   ),
   (
     name: "Crucifixo Reto com Banco Cross over",
     muscleGroupName: "Peitoral",
     alternativeName: "Crucifixo Reto com Banco Cross over",
     videoUrl: "https://youtube.com/shorts/oGtTNkHoiR8?si=nX16A_-hnzLJRohf",
-    alternativeVideoUrl: "https://youtube.com/shorts/oGtTNkHoiR8?si=nX16A_-hnzLJRohf",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/oGtTNkHoiR8?si=nX16A_-hnzLJRohf",
   ),
   (
     name: "Flexão de Braços",
     muscleGroupName: "Peitoral",
     alternativeName: "Flexão de Braços",
     videoUrl: "https://youtube.com/shorts/IfZ0N3KeZuc?si=IKn3zMDsmH_25j4m",
-    alternativeVideoUrl: "https://youtube.com/shorts/IfZ0N3KeZuc?si=IKn3zMDsmH_25j4m",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/IfZ0N3KeZuc?si=IKn3zMDsmH_25j4m",
   ),
   (
     name: "Abdução de Quadril Unilateral",
@@ -1202,7 +1242,8 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     alternativeVideoUrl: null,
   ),
   (
-    name: "abdução de quadril com joelho dobrado deitado de lado (cachorrinho deitado)",
+    name:
+        "abdução de quadril com joelho dobrado deitado de lado (cachorrinho deitado)",
     muscleGroupName: "Glúteos",
     alternativeName: null,
     videoUrl: null,
@@ -1360,7 +1401,8 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     muscleGroupName: "Coxas",
     alternativeName: "AGACHAMENTO BÚLGARO COM HALTER",
     videoUrl: "https://youtube.com/shorts/dcaQAVRtRk8?si=P90XZP44IDK5Q9-M",
-    alternativeVideoUrl: "https://youtube.com/shorts/dcaQAVRtRk8?si=P90XZP44IDK5Q9-M",
+    alternativeVideoUrl:
+        "https://youtube.com/shorts/dcaQAVRtRk8?si=P90XZP44IDK5Q9-M",
   ),
   (
     name: "Agachamento nos Discos de Equilíbrio",
@@ -1930,7 +1972,8 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     alternativeVideoUrl: null,
   ),
   (
-    name: "Elevação Frontal Isometria alternada com Halteres (Pegada Pronada)...",
+    name:
+        "Elevação Frontal Isometria alternada com Halteres (Pegada Pronada)...",
     muscleGroupName: "Glúteos",
     alternativeName: null,
     videoUrl: null,
@@ -2077,7 +2120,8 @@ const kDefaultExerciseSeeds = <DefaultExerciseSeed>[
     alternativeVideoUrl: null,
   ),
   (
-    name: "Escápular no Rolo Flexão/Extensão de Ombro c/ Cotovelos Estendidos Alternado",
+    name:
+        "Escápular no Rolo Flexão/Extensão de Ombro c/ Cotovelos Estendidos Alternado",
     muscleGroupName: "Glúteos",
     alternativeName: null,
     videoUrl: null,

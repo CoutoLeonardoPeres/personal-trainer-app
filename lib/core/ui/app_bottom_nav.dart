@@ -16,25 +16,41 @@ class AppBottomNav extends StatelessWidget {
 
   final MainNavTab selected;
   final ValueChanged<MainNavTab> onSelect;
+
   /// Abas visíveis (ordem na barra). Null = todas.
   final List<MainNavTab>? tabsInOrder;
 
   static const double barHeight = 39.0 * 1.15 * 1.15;
 
   static const _items = <({MainNavTab tab, IconData icon, String label})>[
-    (tab: MainNavTab.performance, icon: Icons.show_chart_rounded, label: 'Performance'),
-    (tab: MainNavTab.calendar, icon: Icons.calendar_today_rounded, label: 'Calendário'),
-    (tab: MainNavTab.planning, icon: Icons.fitness_center_rounded, label: 'Planejamento'),
-    (tab: MainNavTab.cadastro, icon: Icons.app_registration_rounded, label: 'Cadastro'),
+    (
+      tab: MainNavTab.performance,
+      icon: Icons.show_chart_rounded,
+      label: 'Performance',
+    ),
+    (
+      tab: MainNavTab.calendar,
+      icon: Icons.calendar_today_rounded,
+      label: 'Calendário',
+    ),
+    (
+      tab: MainNavTab.planning,
+      icon: Icons.fitness_center_rounded,
+      label: 'Planejamento',
+    ),
+    (
+      tab: MainNavTab.cadastro,
+      icon: Icons.app_registration_rounded,
+      label: 'Cadastro',
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final order = tabsInOrder ??
-        MainNavTab.values
-            .where((t) => _items.any((i) => i.tab == t))
-            .toList();
+    final order =
+        tabsInOrder ??
+        MainNavTab.values.where((t) => _items.any((i) => i.tab == t)).toList();
     final visible = <({MainNavTab tab, IconData icon, String label})>[];
     for (final t in order) {
       for (final item in _items) {

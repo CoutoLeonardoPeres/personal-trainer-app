@@ -43,10 +43,8 @@ class PlanningFuturisticStudentSelector extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => _StudentPickerSheet(
-        students: students,
-        selectedId: selectedId,
-      ),
+      builder: (ctx) =>
+          _StudentPickerSheet(students: students, selectedId: selectedId),
     );
     if (!context.mounted) return;
     if (result is _PickStudent) {
@@ -170,10 +168,7 @@ class PlanningFuturisticStudentSelector extends StatelessWidget {
 }
 
 class _StudentPickerSheet extends StatelessWidget {
-  const _StudentPickerSheet({
-    required this.students,
-    required this.selectedId,
-  });
+  const _StudentPickerSheet({required this.students, required this.selectedId});
 
   final List<StudentEntity> students;
   final String? selectedId;
@@ -200,7 +195,9 @@ class _StudentPickerSheet extends StatelessWidget {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(22),
+                ),
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -224,93 +221,93 @@ class _StudentPickerSheet extends StatelessWidget {
               ),
               child: Column(
                 children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(2),
-                  color: Colors.white.withValues(alpha: 0.25),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.groups_rounded,
-                      color: AppColors.accentGreen.withValues(alpha: 0.9),
-                      size: 22,
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(2),
+                      color: Colors.white.withValues(alpha: 0.25),
                     ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Escolher aluno',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () =>
-                          Navigator.pop(context, _PickDismiss()),
-                      icon: Icon(
-                        Icons.close_rounded,
-                        color: Colors.white.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      AppColors.accentGreen.withValues(alpha: 0.35),
-                      AppColors.cadastroCardBorder.withValues(alpha: 0.5),
-                      AppColors.accentGreen.withValues(alpha: 0.35),
-                      Colors.transparent,
-                    ],
                   ),
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: EdgeInsets.fromLTRB(12, 12, 12, 16 + bottom),
-                  children: [
-                    _SheetTile(
-                      title: 'Selecione o aluno',
-                      subtitle: 'Limpar seleção atual',
-                      icon: Icons.person_off_outlined,
-                      isSelected: selectedId == null,
-                      dimmed: true,
-                      onTap: () => Navigator.pop(context, _PickClear()),
-                    ),
-                    const SizedBox(height: 6),
-                    ...students.map(
-                      (s) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: _SheetTile(
-                          title: s.name,
-                          subtitle: 'Planejamento semanal',
-                          leadingInitial: _initial(s.name),
-                          isSelected: s.id == selectedId,
-                          onTap: () =>
-                              Navigator.pop(context, _PickStudent(s.id)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.groups_rounded,
+                          color: AppColors.accentGreen.withValues(alpha: 0.9),
+                          size: 22,
                         ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Escolher aluno',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              Navigator.pop(context, _PickDismiss()),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    height: 1,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          AppColors.accentGreen.withValues(alpha: 0.35),
+                          AppColors.cadastroCardBorder.withValues(alpha: 0.5),
+                          AppColors.accentGreen.withValues(alpha: 0.35),
+                          Colors.transparent,
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: EdgeInsets.fromLTRB(12, 12, 12, 16 + bottom),
+                      children: [
+                        _SheetTile(
+                          title: 'Selecione o aluno',
+                          subtitle: 'Limpar seleção atual',
+                          icon: Icons.person_off_outlined,
+                          isSelected: selectedId == null,
+                          dimmed: true,
+                          onTap: () => Navigator.pop(context, _PickClear()),
+                        ),
+                        const SizedBox(height: 6),
+                        ...students.map(
+                          (s) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _SheetTile(
+                              title: s.name,
+                              subtitle: 'Planejamento semanal',
+                              leadingInitial: _initial(s.name),
+                              isSelected: s.id == selectedId,
+                              onTap: () =>
+                                  Navigator.pop(context, _PickStudent(s.id)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           );

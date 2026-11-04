@@ -207,35 +207,34 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
         creationParams = const PlatformWebViewControllerCreationParams();
       }
 
-      final controller = WebViewController.fromPlatformCreationParams(
-        creationParams,
-      )
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setBackgroundColor(AppColors.background)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageStarted: (_) {
-              if (!mounted || _disposed) return;
-              setState(() {
-                _loading = true;
-                _error = null;
-              });
-            },
-            onPageFinished: (_) {
-              if (!mounted || _disposed) return;
-              setState(() => _loading = false);
-            },
-            onWebResourceError: (err) {
-              if (!mounted || _disposed) return;
-              setState(() {
-                _loading = false;
-                _error = err.description.isNotEmpty
-                    ? err.description
-                    : 'Erro ao carregar a página.';
-              });
-            },
-          ),
-        );
+      final controller =
+          WebViewController.fromPlatformCreationParams(creationParams)
+            ..setJavaScriptMode(JavaScriptMode.unrestricted)
+            ..setBackgroundColor(AppColors.background)
+            ..setNavigationDelegate(
+              NavigationDelegate(
+                onPageStarted: (_) {
+                  if (!mounted || _disposed) return;
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                },
+                onPageFinished: (_) {
+                  if (!mounted || _disposed) return;
+                  setState(() => _loading = false);
+                },
+                onWebResourceError: (err) {
+                  if (!mounted || _disposed) return;
+                  setState(() {
+                    _loading = false;
+                    _error = err.description.isNotEmpty
+                        ? err.description
+                        : 'Erro ao carregar a página.';
+                  });
+                },
+              ),
+            );
 
       if (controller.platform is AndroidWebViewController) {
         (controller.platform as AndroidWebViewController)
@@ -297,9 +296,7 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
             ),
           )
         else if (_controller != null)
-          ClipRect(
-            child: WebViewWidget(controller: _controller!),
-          ),
+          ClipRect(child: WebViewWidget(controller: _controller!)),
         if (_loading && _error == null && _controller != null)
           const Align(
             alignment: Alignment.topCenter,
@@ -417,8 +414,7 @@ class _ExerciseVideoWebPageState extends State<ExerciseVideoWebPage> {
         automaticallyImplyLeading: false,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () =>
-              Navigator.of(context, rootNavigator: true).pop(),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
         ),
       ),
       body: _buildBody(),

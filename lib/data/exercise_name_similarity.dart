@@ -16,7 +16,9 @@ int _levenshtein(String a, String b) {
       final ins = row1[j] + 1;
       final del = row0[j + 1] + 1;
       final sub = row0[j] + cost;
-      row1[j + 1] = ins < del ? (ins < sub ? ins : sub) : (del < sub ? del : sub);
+      row1[j + 1] = ins < del
+          ? (ins < sub ? ins : sub)
+          : (del < sub ? del : sub);
     }
     final tmp = row0;
     row0 = row1;
@@ -41,7 +43,8 @@ List<ExerciseEntity> exercisesNameContains(
     }
   }
   out.sort(
-    (a, b) => normalizeExerciseName(a.name).compareTo(normalizeExerciseName(b.name)),
+    (a, b) =>
+        normalizeExerciseName(a.name).compareTo(normalizeExerciseName(b.name)),
   );
   return out;
 }
@@ -53,12 +56,13 @@ List<ExerciseEntity> filterExercisesByNameQuery(
 ) {
   final q = normalizeExerciseName(query);
   if (q.isEmpty) return List<ExerciseEntity>.from(items);
-  final out = items
-      .where((e) => normalizeExerciseName(e.name).contains(q))
-      .toList()
-    ..sort(
-      (a, b) => normalizeExerciseName(a.name).compareTo(normalizeExerciseName(b.name)),
-    );
+  final out =
+      items.where((e) => normalizeExerciseName(e.name).contains(q)).toList()
+        ..sort(
+          (a, b) => normalizeExerciseName(
+            a.name,
+          ).compareTo(normalizeExerciseName(b.name)),
+        );
   return out;
 }
 

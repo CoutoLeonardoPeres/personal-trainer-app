@@ -187,25 +187,25 @@ Map<String, dynamic> supabaseDayWorkoutExercise(DayWorkoutExerciseEntity e) {
       ? DayWorkoutPerformedSetCodec.totalExerciseScore(performed)
       : e.exerciseScore;
   return {
-  'id': e.id,
-  'day_workout_id': e.dayWorkoutId,
-  'exercise_id': e.exerciseId,
-  'sort_order': e.sortOrder,
-  'sets': e.sets,
-  'reps': e.reps,
-  'reps_text': e.repsText,
-  'load_kg': e.loadKg,
-  'exercise_score': score,
-  'performed_sets_json': e.performedSetsJson,
-  'rest_between_sets_sec': e.restBetweenSetsSec,
-  'training_method_id': e.trainingMethodId,
-  'combo_id': e.comboId,
-  'updated_at': supabaseTs(e.updatedAt),
-  'revision': e.revision,
-  'last_modified_by_device_id': e.lastModifiedByDeviceId,
-  'sync_status': e.syncStatus,
-  'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
-};
+    'id': e.id,
+    'day_workout_id': e.dayWorkoutId,
+    'exercise_id': e.exerciseId,
+    'sort_order': e.sortOrder,
+    'sets': e.sets,
+    'reps': e.reps,
+    'reps_text': e.repsText,
+    'load_kg': e.loadKg,
+    'exercise_score': score,
+    'performed_sets_json': e.performedSetsJson,
+    'rest_between_sets_sec': e.restBetweenSetsSec,
+    'training_method_id': e.trainingMethodId,
+    'combo_id': e.comboId,
+    'updated_at': supabaseTs(e.updatedAt),
+    'revision': e.revision,
+    'last_modified_by_device_id': e.lastModifiedByDeviceId,
+    'sync_status': e.syncStatus,
+    'deleted_at': e.deletedAt != null ? supabaseTs(e.deletedAt!) : null,
+  };
 }
 
 Map<String, dynamic> supabaseAuditLog(AuditLogEntity e) => {

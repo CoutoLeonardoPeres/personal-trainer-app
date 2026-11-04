@@ -30,7 +30,8 @@ class PersonaisPage extends StatelessWidget {
   static String _personalSubtitle(PersonalEntity e) {
     final parts = <String>[
       if (e.email.isNotEmpty) e.email,
-      if ((e.phoneMobile ?? '').isNotEmpty) brFormatPhoneDisplay(e.phoneMobile!),
+      if ((e.phoneMobile ?? '').isNotEmpty)
+        brFormatPhoneDisplay(e.phoneMobile!),
     ];
     return parts.isEmpty ? '—' : parts.join(' · ');
   }
@@ -72,8 +73,13 @@ class PersonaisPage extends StatelessWidget {
                   onCardTap: openForm,
                   showEditOnSwipe: false,
                   onDelete: () async {
-                    final ok = await confirmDeleteDialog(context, itemName: e.name);
-                    if (ok == true && context.mounted) await repo.deletePersonal(e.id);
+                    final ok = await confirmDeleteDialog(
+                      context,
+                      itemName: e.name,
+                    );
+                    if (ok == true && context.mounted) {
+                      await repo.deletePersonal(e.id);
+                    }
                   },
                 );
               },
@@ -86,17 +92,13 @@ class PersonaisPage extends StatelessWidget {
 
   void _form(BuildContext context, AppDataRepository repo, PersonalEntity? x) {
     final name = TextEditingController(text: x?.name ?? '');
-    final cpf = TextEditingController(
-      text: brFormatCpfDisplay(x?.cpf ?? ''),
-    );
+    final cpf = TextEditingController(text: brFormatCpfDisplay(x?.cpf ?? ''));
     final reg = TextEditingController(text: x?.professionalRegistry ?? '');
     final rua = TextEditingController(text: x?.street ?? '');
     final num = TextEditingController(text: x?.number ?? '');
     final comp = TextEditingController(text: x?.complement ?? '');
     final cidade = TextEditingController(text: x?.city ?? '');
-    final cep = TextEditingController(
-      text: brFormatCepDisplay(x?.cep ?? ''),
-    );
+    final cep = TextEditingController(text: brFormatCepDisplay(x?.cep ?? ''));
     final email = TextEditingController(text: x?.email ?? '');
     final phoneCommercialC = TextEditingController(
       text: brFormatPhoneDisplay(x?.phoneCommercial ?? ''),
@@ -127,7 +129,11 @@ class PersonaisPage extends StatelessWidget {
               inputFormatters: [BrCpfInputFormatter()],
             ),
             const SizedBox(height: kCadastroFieldGap),
-            AppTextField(controller: reg, label: 'Registro profissional', required: true),
+            AppTextField(
+              controller: reg,
+              label: 'Registro profissional',
+              required: true,
+            ),
             const SizedBox(height: kCadastroFieldGap),
             AppTextField(controller: rua, label: 'Logradouro', required: true),
             const SizedBox(height: kCadastroFieldGap),
@@ -192,7 +198,10 @@ class PersonaisPage extends StatelessWidget {
             const SizedBox(height: kCadastroFieldGap),
             Text(
               'Link seguro de acesso é enviado por e-mail quando solicitado.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 12,
+              ),
             ),
             if (x != null) ...[
               const SizedBox(height: kCadastroFieldGap),
@@ -204,7 +213,10 @@ class PersonaisPage extends StatelessWidget {
                     side: BorderSide(
                       color: AppColors.splashMint.withValues(alpha: 0.65),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 14,
+                      horizontal: 16,
+                    ),
                   ),
                   onPressed: pwdBusy
                       ? null
@@ -241,7 +253,9 @@ class PersonaisPage extends StatelessWidget {
                           if (go != true || !ctx.mounted) return;
                           setSt(() => pwdBusy = true);
                           try {
-                            final r = await repo.adminSendAccessLinkForPersonal(x.id);
+                            final r = await repo.adminSendAccessLinkForPersonal(
+                              x.id,
+                            );
                             mustChangeForSave = true;
                             if (!ctx.mounted) return;
                             if (r.emailSent) {
@@ -252,7 +266,8 @@ class PersonaisPage extends StatelessWidget {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    e.message ?? 'Não foi possível enviar o link.',
+                                    e.message ??
+                                        'Não foi possível enviar o link.',
                                   ),
                                 ),
                               );
@@ -303,7 +318,9 @@ class PersonaisPage extends StatelessWidget {
               label: x == null ? 'Salvar personal' : 'Atualizar personal',
               icon: Icons.check_rounded,
               onPressed: () async {
-                if (name.text.trim().isEmpty || cpf.text.trim().isEmpty || uf == null) {
+                if (name.text.trim().isEmpty ||
+                    cpf.text.trim().isEmpty ||
+                    uf == null) {
                   return;
                 }
                 final cpfDigits = brDigitsOnly(cpf.text);
@@ -333,7 +350,9 @@ class PersonaisPage extends StatelessWidget {
                   professionalRegistry: reg.text.trim(),
                   street: rua.text.trim(),
                   number: num.text.trim(),
-                  complement: comp.text.trim().isEmpty ? null : comp.text.trim(),
+                  complement: comp.text.trim().isEmpty
+                      ? null
+                      : comp.text.trim(),
                   city: cidade.text.trim(),
                   stateUf: uf!,
                   cep: cepDigits,

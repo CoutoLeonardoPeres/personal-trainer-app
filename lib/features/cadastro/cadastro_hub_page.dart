@@ -47,9 +47,7 @@ class CadastroHubPage extends StatelessWidget {
       );
     }
 
-    return _CadastroList(
-      permissions: PermissionService(session: session),
-    );
+    return _CadastroList(permissions: PermissionService(session: session));
   }
 }
 
@@ -60,7 +58,8 @@ class _CadastroList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <({String title, String subtitle, IconData icon, Widget page})>[];
+    final items =
+        <({String title, String subtitle, IconData icon, Widget page})>[];
 
     void add(
       String title,
@@ -78,21 +77,24 @@ class _CadastroList extends StatelessWidget {
       'Base para classificar exercícios',
       Icons.accessibility_new_rounded,
       const GruposMuscularesPage(),
-      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+      !permissions.session.isStudent ||
+          permissions.studentCadastroMuscleExerciseGymGroup,
     );
     add(
       'Exercícios',
       'Nome, grupo, vídeos e alternativas',
       Icons.sports_gymnastics_rounded,
       const ExerciciosPage(),
-      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+      !permissions.session.isStudent ||
+          permissions.studentCadastroMuscleExerciseGymGroup,
     );
     add(
       'Academias',
       'Endereço completo e CNPJ',
       Icons.apartment_rounded,
       const AcademiasPage(),
-      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+      !permissions.session.isStudent ||
+          permissions.studentCadastroMuscleExerciseGymGroup,
     );
     add(
       'Alunos',
@@ -120,7 +122,8 @@ class _CadastroList extends StatelessWidget {
       'Composição com exercícios cadastrados',
       Icons.layers_rounded,
       const GruposTreinosPage(),
-      !permissions.session.isStudent || permissions.studentCadastroMuscleExerciseGymGroup,
+      !permissions.session.isStudent ||
+          permissions.studentCadastroMuscleExerciseGymGroup,
     );
 
     if (items.isEmpty) {
@@ -145,9 +148,9 @@ class _CadastroList extends StatelessWidget {
         return FuturisticCard(
           borderColor: AppColors.cadastroCardBorder.withValues(alpha: 0.65),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => it.page),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => it.page));
           },
           child: Row(
             children: [
@@ -176,7 +179,10 @@ class _CadastroList extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.4)),
+              Icon(
+                Icons.chevron_right,
+                color: Colors.white.withValues(alpha: 0.4),
+              ),
             ],
           ),
         );

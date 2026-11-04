@@ -149,7 +149,12 @@ class _FuturisticOrbitalPainter extends CustomPainter {
           r * 0.12,
           [
             Colors.white.withValues(alpha: 0.95),
-            (k == 0 ? _mint : k == 1 ? _cyan : _pink).withValues(alpha: 0.35),
+            (k == 0
+                    ? _mint
+                    : k == 1
+                    ? _cyan
+                    : _pink)
+                .withValues(alpha: 0.35),
             Colors.transparent,
           ],
           [0.0, 0.55, 1.0],
@@ -192,10 +197,7 @@ class FuturisticLoadingView extends StatelessWidget {
 
 /// Overlay escuro com blur leve + [FuturisticLoadingView] — troca de abas, sync, etc.
 class FuturisticLoadingOverlay extends StatelessWidget {
-  const FuturisticLoadingOverlay({
-    super.key,
-    this.indicatorSize = 72,
-  });
+  const FuturisticLoadingOverlay({super.key, this.indicatorSize = 72});
 
   final double indicatorSize;
 
