@@ -20,10 +20,28 @@ jobs:
           flutter-version: 3.38.3
           channel: stable
           cache: true
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test --coverage
+
+  backend:
+    name: Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+      - name: Start minimal local stack
+        run: >-
+          supabase start --exclude
+          gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - run: supabase db reset --local
+      - name: Stop local stack
+        if: always()
+        run: supabase stop --no-backup
 
   security:
     name: Secrets and SQL
@@ -38,5 +56,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
       - run: bash tool/ci/test_checks.sh
-      - run: bash tool/ci/check_false_defines.sh dart_defines.example.json
-      - run: bash tool/ci/check_unsafe_sql.sh supabase
+      - run: bash tool/ci/check_false_defines.sh
+      - run: bash tool/ci/check_unsafe_sql.sh .

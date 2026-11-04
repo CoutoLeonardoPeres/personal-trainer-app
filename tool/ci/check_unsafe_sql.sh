@@ -21,11 +21,21 @@ if [[ ${#sql_files[@]} -eq 0 ]]; then
   exit 0
 fi
 
-unsafe_pattern='using[[:space:]]*\([[:space:]]*true[[:space:]]*\)|with[[:space:]]+check[[:space:]]*\([[:space:]]*true[[:space:]]*\)|(^|[[:space:]])to[[:space:]]+(public|anon)([[:space:];,]|$)|grant[[:space:]].*[[:space:]]to[[:space:]]+(public|anon)([[:space:];,]|$)'
-
-if grep -Ein "$unsafe_pattern" "${sql_files[@]}"; then
-  echo "Unsafe SQL detected. Open policies and grants to public/anon are forbidden." >&2
-  exit 1
-fi
+for sql_file in "${sql_files[@]}"; do
+  if perl -0777 -e '
+    my $sql = do { local $/; <> };
+    $sql =~ s{/\*.*?\*/}{}gs;
+    $sql =~ s{--[^\r\n]*}{}g;
+    $sql =~ s{\x27(?:\x27\x27|[^\x27])*\x27}{\x27\x27}gs;
+    exit 0 if $sql =~ /\busing\s*\(\s*true\s*\)/i;
+    exit 0 if $sql =~ /\bwith\s+check\s*\(\s*true\s*\)/i;
+    exit 0 if $sql =~ /\bto\s+"?(?:public|anon)"?\b/i;
+    exit 1;
+  ' "$sql_file"; then
+    echo "Unsafe SQL detected in $sql_file." >&2
+    echo "Open policies and grants to public/anon are forbidden." >&2
+    exit 1
+  fi
+done
 
 echo "SQL safety scan passed (${#sql_files[@]} files)."
