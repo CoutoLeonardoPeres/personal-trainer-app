@@ -14,7 +14,7 @@ class _PickStudent extends _StudentPickResult {
   final String id;
 }
 
-/// Seletor de aluno com visual futurista (campo + lista em bottom sheet).
+/// Seletor de aluno com campo compacto e lista em bottom sheet.
 class PlanningFuturisticStudentSelector extends StatelessWidget {
   const PlanningFuturisticStudentSelector({
     super.key,
@@ -63,35 +63,17 @@ class PlanningFuturisticStudentSelector extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: canOpen ? () => _openSheet(context) : null,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         child: Ink(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.cadastroCardBorder.withValues(alpha: 0.12),
-                Colors.black.withValues(alpha: 0.45),
-                AppColors.accentGreen.withValues(alpha: 0.06),
-              ],
-            ),
+            borderRadius: BorderRadius.circular(12),
+            color: AppColors.barBackground,
             border: Border.all(
               color: canOpen
-                  ? AppColors.cadastroCardBorder.withValues(alpha: 0.65)
+                  ? AppColors.cadastroCardBorder
                   : Colors.white.withValues(alpha: 0.12),
-              width: 1.25,
+              width: 1,
             ),
-            boxShadow: canOpen
-                ? [
-                    BoxShadow(
-                      color: AppColors.accentGreen.withValues(alpha: 0.12),
-                      blurRadius: 18,
-                      spreadRadius: 0,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : null,
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
@@ -101,15 +83,8 @@ class PlanningFuturisticStudentSelector extends StatelessWidget {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.accentGreen.withValues(alpha: 0.35),
-                    ),
-                    gradient: RadialGradient(
-                      colors: [
-                        AppColors.accentGreen.withValues(alpha: 0.18),
-                        Colors.transparent,
-                      ],
-                    ),
+                    color: AppColors.backgroundDeep,
+                    border: Border.all(color: AppColors.cadastroCardBorder),
                   ),
                   child: Icon(
                     Icons.person_search_rounded,
@@ -198,26 +173,8 @@ class _StudentPickerSheet extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(22),
                 ),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppColors.barBackground,
-                    AppColors.backgroundDeep,
-                    Colors.black,
-                  ],
-                ),
-                border: Border.all(
-                  color: AppColors.cadastroCardBorder.withValues(alpha: 0.5),
-                  width: 1.2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.accentGreen.withValues(alpha: 0.15),
-                    blurRadius: 24,
-                    offset: const Offset(0, -6),
-                  ),
-                ],
+                color: AppColors.barBackground,
+                border: Border.all(color: const Color(0xFF38383A), width: 1),
               ),
               child: Column(
                 children: [
@@ -262,21 +219,7 @@ class _StudentPickerSheet extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    height: 1,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          AppColors.accentGreen.withValues(alpha: 0.35),
-                          AppColors.cadastroCardBorder.withValues(alpha: 0.5),
-                          AppColors.accentGreen.withValues(alpha: 0.35),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
                   Expanded(
                     child: ListView(
                       controller: scrollController,
@@ -346,13 +289,13 @@ class _SheetTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         child: Ink(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(10),
             color: isSelected
                 ? AppColors.accentGreen.withValues(alpha: 0.1)
-                : Colors.white.withValues(alpha: 0.04),
+                : AppColors.backgroundDeep,
             border: Border.all(color: border, width: isSelected ? 1.4 : 1),
           ),
           child: Padding(
