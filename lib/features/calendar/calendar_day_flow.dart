@@ -1255,32 +1255,14 @@ class _DayModalStudentCard extends StatelessWidget {
         : blueSoft.withValues(alpha: 0.95);
     return FuturisticCard(
       onTap: onTap,
-      borderColor: blue.withValues(alpha: 0.88),
-      borderWidth: 1.15,
-      backgroundGradient: [
-        blueSoft.withValues(alpha: 0.22),
-        blue.withValues(alpha: 0.12),
-        Colors.black.withValues(alpha: 0.26),
-      ],
+      borderColor: blue,
       child: Row(
         children: [
           DecoratedBox(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  avatarMuted,
-                  blue.withValues(alpha: isInactiveStudent ? 0.1 : 0.16),
-                ],
-              ),
+              color: avatarMuted,
               border: Border.all(color: avatarBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: (isInactiveStudent ? _inactiveTint : blueSoft)
-                      .withValues(alpha: 0.2),
-                  blurRadius: 10,
-                ),
-              ],
             ),
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -1364,24 +1346,13 @@ class _DayModalBundleCard extends StatelessWidget {
     final blueSoft = AppColors.calendarFutureProgrammed;
     return FuturisticCard(
       onTap: onTap,
-      borderColor: blue.withValues(alpha: 0.88),
-      borderWidth: 1.15,
-      backgroundGradient: [
-        blueSoft.withValues(alpha: 0.22),
-        blue.withValues(alpha: 0.12),
-        Colors.black.withValues(alpha: 0.26),
-      ],
+      borderColor: blue,
       child: Row(
         children: [
           DecoratedBox(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  blueSoft.withValues(alpha: 0.28),
-                  blue.withValues(alpha: 0.16),
-                ],
-              ),
+              color: AppColors.backgroundDeep,
               border: Border.all(color: blue.withValues(alpha: 0.55)),
             ),
             child: Padding(
