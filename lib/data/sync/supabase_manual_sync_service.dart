@@ -8,6 +8,7 @@ import '../../core/auth/app_session.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
+import 'modern_remote_sync_service.dart';
 import 'supabase_catalog_cloud_reconcile.dart';
 import 'supabase_push_diff.dart';
 import 'supabase_table_mappers.dart';
@@ -229,6 +230,38 @@ class SupabaseManualSyncService {
       );
     }
 
+    // Compatibilidade para chamadas antigas: a escrita manual agora passa
+    // sempre pelo outbox RPC, sem upsert direto de tabelas.
+    try {
+      await ModernRemoteSyncService(_db, _sync).recoverPendingWork();
+      tables.add(
+        SupabaseTablePushResult(
+          tableName: 'rpc_outbox',
+          rowCount: 0,
+          ok: true,
+          pushLikelyChangedOnCloud: 0,
+          pushLikelyAlreadyAligned: 0,
+        ),
+      );
+    } catch (error, stack) {
+      debugPrint('SupabaseManualSyncService RPC: $error\n$stack');
+      tables.add(
+        SupabaseTablePushResult(
+          tableName: 'rpc_outbox',
+          rowCount: 0,
+          ok: false,
+          errorMessage: error.toString(),
+        ),
+      );
+    }
+    return SupabaseManualSyncReport(
+      connectionTest: ping,
+      tables: tables,
+      startedAt: startedAt,
+      finishedAt: DateTime.now(),
+    );
+
+    // ignore: dead_code
     final client = Supabase.instance.client;
     _sync.beginUpload();
     try {
