@@ -7,7 +7,7 @@ import '../../core/auth/app_session.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
-import 'supabase_pull_sync_service.dart';
+import 'modern_remote_sync_service.dart';
 import 'sync_coordinator.dart';
 
 /// Baixa alterações do Supabase para o SQLite após o app voltar ao primeiro plano.
@@ -92,7 +92,9 @@ abstract final class SupabaseAutoPullScheduler {
     }
   }
 
-  /// Pull pontual de treinos em execução (fallback de confiabilidade).
+  /// Recupera o estado dos treinos em execução pelo mesmo cursor RPC.
+  /// O protocolo não faz pull direto por tabela, evitando duas fontes de
+  /// verdade e atualizações que reaparecem depois de concluídas.
   static Future<void> pullHotStartedWorkoutsById({
     required AppDatabase db,
     required SupabaseSyncController sync,
@@ -100,15 +102,7 @@ abstract final class SupabaseAutoPullScheduler {
   }) async {
     if (!supabaseAppEnabled) return;
     try {
-      final started = await (db.select(
-        db.dayWorkouts,
-      )..where((w) => w.status.equals('started'))).get();
-      if (started.isEmpty) return;
-      final pull = SupabasePullSyncService(db, sync, session: session);
-      final maxHot = started.length > 12 ? 12 : started.length;
-      for (var i = 0; i < maxHot; i++) {
-        await pull.pullDayWorkoutById(started[i].id);
-      }
+      await ModernRemoteSyncService(db, sync).recoverPendingWork();
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('SupabaseAutoPullScheduler hotPull: $e\n$st');
