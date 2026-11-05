@@ -27,6 +27,7 @@ import '../../core/widgets/gradient_app_bar.dart';
 import '../../core/ui/futuristic_background.dart';
 import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
+import '../../data/sync/modern_remote_sync_service.dart';
 import '../../data/sync/supabase_manual_sync_service.dart';
 import '../../data/sync/supabase_pull_sync_service.dart';
 
@@ -419,6 +420,20 @@ class SettingsPage extends StatelessWidget {
       );
       return;
     }
+    final modernDb = context.read<AppDatabase>();
+    final modernSync = context.read<SupabaseSyncController>();
+    final modernText = await _runModernSync(
+      modernDb,
+      modernSync,
+      label:
+          'Sincronização RPC concluída.\n'
+          'As operações pendentes foram enviadas e o cursor remoto foi aplicado.',
+    );
+    if (context.mounted) {
+      await _showSyncReport(context, 'Relatório Supabase', modernText);
+    }
+    return;
+
     final db = context.read<AppDatabase>();
     final sync = context.read<SupabaseSyncController>();
     final session = context.read<AppSession>();
@@ -524,6 +539,20 @@ class SettingsPage extends StatelessWidget {
       );
       return;
     }
+    final modernDb = context.read<AppDatabase>();
+    final modernSync = context.read<SupabaseSyncController>();
+    final modernText = await _runModernSync(
+      modernDb,
+      modernSync,
+      label:
+          'Importação RPC concluída.\n'
+          'O snapshot/pull foi aplicado localmente sem duplicar registros.',
+    );
+    if (context.mounted) {
+      await _showSyncReport(context, 'Importação da nuvem', modernText);
+    }
+    return;
+
     final db = context.read<AppDatabase>();
     final sync = context.read<SupabaseSyncController>();
     final session = context.read<AppSession>();
@@ -630,6 +659,56 @@ class SettingsPage extends StatelessWidget {
             },
             child: const Text('Copiar'),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<String> _runModernSync(
+    AppDatabase db,
+    SupabaseSyncController sync, {
+    required String label,
+  }) async {
+    sync.beginDownload();
+    try {
+      await ModernRemoteSyncService(
+        db,
+        sync,
+      ).recoverPendingWork().timeout(const Duration(minutes: 5));
+      return label;
+    } catch (error) {
+      return '$label\nErro: $error';
+    } finally {
+      sync.endDownload();
+    }
+  }
+
+  static Future<void> _showSyncReport(
+    BuildContext context,
+    String title,
+    String text,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.barBackground,
+        title: Text(
+          title,
+          style: const TextStyle(color: AppColors.textPrimary),
+        ),
+        content: SelectableText(
+          text,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 12,
+            height: 1.35,
+          ),
+        ),
+        actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Fechar'),
