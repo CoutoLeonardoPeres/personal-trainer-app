@@ -7,9 +7,6 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/access/access_tiers.dart';
 import '../../core/auth/app_session.dart';
-import '../../core/net/supabase_dns_preflight_stub.dart'
-    if (dart.library.io) '../../core/net/supabase_dns_preflight_io.dart'
-    as supabase_dns_preflight;
 import '../../core/preferences/biometric_lock_prefs.dart';
 import '../../core/version/app_version_marker.dart';
 import '../../core/supabase/supabase_auth_service.dart';
@@ -29,7 +26,6 @@ import '../../data/local/app_database.dart';
 import '../../data/repositories/app_data_repository.dart';
 import '../../data/sync/modern_remote_sync_service.dart';
 import '../../data/sync/supabase_manual_sync_service.dart';
-import '../../data/sync/supabase_pull_sync_service.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -433,99 +429,6 @@ class SettingsPage extends StatelessWidget {
       await _showSyncReport(context, 'Relatório Supabase', modernText);
     }
     return;
-
-    final db = context.read<AppDatabase>();
-    final sync = context.read<SupabaseSyncController>();
-    final session = context.read<AppSession>();
-
-    if (!context.mounted) return;
-    // Não use await em showDialog aqui: o Future só completa quando o diálogo
-    // some — o sync ficaria eternamente depois do await e o loading nunca fecharia.
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (ctx) => const PopScope(
-        canPop: false,
-        child: AlertDialog(
-          backgroundColor: AppColors.barBackground,
-          content: Row(
-            children: [
-              ModernLoadingIndicator(size: 40),
-              SizedBox(width: 20),
-              Expanded(
-                child: Text(
-                  'Testando conexão e enviando dados (perfil atual)…',
-                  style: TextStyle(color: AppColors.textPrimary),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    final SupabaseManualSyncReport report;
-    try {
-      final svc = SupabaseManualSyncService(db, sync);
-      report = await svc.testConnectionAndPushAll(session: session);
-    } finally {
-      if (context.mounted) {
-        final nav = Navigator.of(context, rootNavigator: true);
-        if (nav.canPop()) nav.pop();
-      }
-    }
-
-    if (!context.mounted) return;
-
-    final text = report.toReportText();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: const Text(
-          'Relatório Supabase',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 360,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              text,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 11,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: text));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Relatório copiado')),
-                );
-              }
-            },
-            child: const Text('Copiar'),
-          ),
-          TextButton(
-            onPressed: () {
-              SharePlus.instance.share(ShareParams(text: text));
-            },
-            child: const Text('Compartilhar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar'),
-          ),
-        ],
-      ),
-    );
   }
 
   static Future<void> _runImportFromCloudAndReport(BuildContext context) async {
@@ -552,120 +455,6 @@ class SettingsPage extends StatelessWidget {
       await _showSyncReport(context, 'Importação da nuvem', modernText);
     }
     return;
-
-    final db = context.read<AppDatabase>();
-    final sync = context.read<SupabaseSyncController>();
-    final session = context.read<AppSession>();
-
-    final netOk = await supabase_dns_preflight.preflightSupabaseDnsLookup();
-    if (!netOk) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Sem ligação de rede ou DNS não respondeu (supabase.co). '
-              'Verifique Wi‑Fi ou dados móveis e tente de novo.',
-            ),
-          ),
-        );
-      }
-      return;
-    }
-
-    if (!context.mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (ctx) => const PopScope(
-        canPop: false,
-        child: AlertDialog(
-          backgroundColor: AppColors.barBackground,
-          content: Row(
-            children: [
-              ModernLoadingIndicator(size: 40),
-              SizedBox(width: 20),
-              Expanded(
-                child: Text(
-                  'Baixando da nuvem (escopo do perfil atual)…',
-                  style: TextStyle(color: AppColors.textPrimary),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    final SupabasePullReport report;
-    try {
-      final svc = SupabasePullSyncService(db, sync, session: session);
-      report = await svc.pullAllFromRemote().timeout(
-        const Duration(minutes: 15),
-        onTimeout: () => SupabasePullReport(
-          connectionOk: false,
-          connectionMessage:
-              'Tempo limite (15 min). Dados grandes ou rede lenta — tente Wi‑Fi '
-              'e volte a usar Importar da nuvem.',
-          tables: const [],
-          startedAt: DateTime.now(),
-          finishedAt: DateTime.now(),
-        ),
-      );
-    } finally {
-      if (context.mounted) {
-        try {
-          Navigator.of(context, rootNavigator: true).pop();
-        } catch (_) {}
-      }
-    }
-
-    if (!context.mounted) return;
-    await context.read<AppDataRepository>().refreshSessionPersonalAdminFlag();
-    if (!context.mounted) return;
-    final text = report.toReportText();
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.barBackground,
-        title: const Text(
-          'Importação da nuvem',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 360,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              text,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 11,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: text));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Relatório copiado')),
-                );
-              }
-            },
-            child: const Text('Copiar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar'),
-          ),
-        ],
-      ),
-    );
   }
 
   static Future<String> _runModernSync(
