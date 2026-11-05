@@ -301,13 +301,13 @@ class _SeriePrescribedRow extends StatelessWidget {
     final fsIdx = 13 * _kSerieScale;
 
     final borderColor = onTap != null
-        ? const Color(0xFF42A5F5).withValues(alpha: 0.75)
-        : const Color(0xFF2A5080).withValues(alpha: 0.55);
+        ? AppColors.accentGreen
+        : const Color(0xFF636366);
 
     final body = Container(
       padding: EdgeInsets.symmetric(horizontal: padH, vertical: padV),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A2744),
+        color: AppColors.backgroundDeep,
         borderRadius: BorderRadius.circular(r),
         border: Border.all(color: borderColor),
       ),
@@ -315,7 +315,7 @@ class _SeriePrescribedRow extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: avatarR,
-            backgroundColor: const Color(0xFF1976D2),
+            backgroundColor: AppColors.cadastroCardBorder,
             child: Text(
               '$index',
               style: TextStyle(
@@ -328,7 +328,7 @@ class _SeriePrescribedRow extends StatelessWidget {
           SizedBox(width: gap),
           Icon(
             Icons.swap_horiz_rounded,
-            color: AppColors.accentPink,
+            color: AppColors.accentGreen,
             size: iconSwap,
           ),
           SizedBox(width: smallGap),
@@ -419,7 +419,7 @@ class _SerieLoggedRow extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: padH, vertical: padV),
       decoration: BoxDecoration(
-        color: const Color(0xFF0E0E16),
+        color: AppColors.barBackground,
         borderRadius: BorderRadius.circular(r),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -440,7 +440,7 @@ class _SerieLoggedRow extends StatelessWidget {
           SizedBox(width: gap),
           Icon(
             Icons.fitness_center_rounded,
-            color: const Color(0xFF42A5F5),
+            color: AppColors.accentGreen,
             size: iconSz,
           ),
           SizedBox(width: smallGap),
@@ -992,14 +992,6 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
         color: fillColor,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: borderColor.withValues(alpha: 0.9), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: borderColor.withValues(alpha: 0.22),
-            blurRadius: 8,
-            spreadRadius: 0,
-            offset: const Offset(0, 1),
-          ),
-        ],
       ),
       clipBehavior: Clip.antiAlias,
       // Altura finita para o Row com stretch dentro do ListView (evita card invisível).
@@ -1108,32 +1100,7 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
                                               decoration: BoxDecoration(
                                                 borderRadius:
                                                     BorderRadius.circular(999),
-                                                gradient: LinearGradient(
-                                                  colors: [
-                                                    const Color(
-                                                      0xFF26C6DA,
-                                                    ).withValues(alpha: 0.95),
-                                                    AppColors.splashMint
-                                                        .withValues(alpha: 0.9),
-                                                  ],
-                                                ),
-                                                boxShadow:
-                                                    _canMutatePerformedSets
-                                                    ? [
-                                                        BoxShadow(
-                                                          color: AppColors
-                                                              .splashMint
-                                                              .withValues(
-                                                                alpha: 0.25,
-                                                              ),
-                                                          blurRadius: 7,
-                                                          offset: const Offset(
-                                                            0,
-                                                            1,
-                                                          ),
-                                                        ),
-                                                      ]
-                                                    : null,
+                                                color: AppColors.accentGreen,
                                               ),
                                               child: Text(
                                                 'Adicionar',
@@ -1348,16 +1315,7 @@ class _CalendarExerciseLineCardState extends State<CalendarExerciseLineCard> {
             ),
             Container(
               width: 10,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    borderColor.withValues(alpha: 0.95),
-                    borderColor.withValues(alpha: 0.45),
-                  ],
-                ),
-              ),
+              decoration: BoxDecoration(color: borderColor),
               alignment: Alignment.center,
               child: Icon(
                 Icons.chevron_left_rounded,
