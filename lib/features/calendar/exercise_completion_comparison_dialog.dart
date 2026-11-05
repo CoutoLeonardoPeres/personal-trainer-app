@@ -67,7 +67,7 @@ class _ExerciseCompletionComparisonBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = AppColors.splashMint;
+    final accent = AppColors.accentGreen;
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -76,15 +76,9 @@ class _ExerciseCompletionComparisonBody extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 400, maxHeight: 520),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF101828), Color(0xFF0A0E14), Color(0xFF050508)],
-            ),
-            border: Border.all(
-              color: AppColors.cadastroCardBorder.withValues(alpha: 0.5),
-            ),
+            color: AppColors.barBackground,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF38383A)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -201,9 +195,9 @@ class _CompactSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF161E2C),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        color: AppColors.backgroundDeep,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF38383A)),
       ),
       child: Row(
         children: [
@@ -333,8 +327,9 @@ class _CompactSetRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF121A26),
+        color: AppColors.backgroundDeep,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF38383A)),
       ),
       child: Row(
         children: [

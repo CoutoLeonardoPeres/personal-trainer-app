@@ -991,7 +991,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   }
 }
 
-/// Shell visual compartilhado (gradiente, borda neon, faixa superior).
+/// Shell visual compartilhado para registro e edição de séries.
 class _FuturisticSetMetricDialogChrome extends StatelessWidget {
   const _FuturisticSetMetricDialogChrome({
     required this.title,
@@ -1014,76 +1014,32 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(16),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.barBackground,
-              AppColors.backgroundDeep,
-              const Color(0xFF050508),
-            ],
-          ),
-          border: Border.all(
-            color: AppColors.cadastroCardBorder.withValues(alpha: 0.55),
-            width: 1.25,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.accentGreen.withValues(alpha: 0.14),
-              blurRadius: 28,
-              spreadRadius: -2,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          color: AppColors.barBackground,
+          border: Border.all(color: const Color(0xFF38383A)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              height: 3,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.headerGradientPink.withValues(alpha: 0.95),
-                    AppColors.cadastroCardBorder.withValues(alpha: 0.9),
-                    AppColors.headerGradientMint.withValues(alpha: 0.85),
-                  ],
-                ),
-              ),
-            ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 8, 8),
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppColors.accentGreen.withValues(alpha: 0.45),
-                      ),
-                      gradient: RadialGradient(
-                        colors: [
-                          AppColors.accentGreen.withValues(alpha: 0.22),
-                          Colors.transparent,
-                        ],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.accentGreen.withValues(alpha: 0.15),
-                          blurRadius: 14,
-                        ),
-                      ],
+                      color: AppColors.backgroundDeep,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF48484A)),
                     ),
                     child: const Padding(
-                      padding: EdgeInsets.all(12),
+                      padding: EdgeInsets.all(10),
                       child: Icon(
                         Icons.fitness_center_rounded,
                         color: AppColors.accentGreen,
-                        size: 26,
+                        size: 22,
                       ),
                     ),
                   ),
@@ -1095,12 +1051,10 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                         Text(
                           title.toUpperCase(),
                           style: TextStyle(
-                            color: AppColors.accentGreen.withValues(
-                              alpha: 0.92,
-                            ),
+                            color: AppColors.accentGreen,
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 1.5,
+                            letterSpacing: 1.1,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1118,7 +1072,7 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                           Text(
                             subtitle!,
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.42),
+                              color: AppColors.textMuted,
                               fontSize: 13,
                               height: 1.35,
                             ),
@@ -1139,7 +1093,7 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
             ),
             if (seriesBadge != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
@@ -1148,13 +1102,9 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                       vertical: 7,
                     ),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.cadastroCardBorder.withValues(
-                          alpha: 0.5,
-                        ),
-                      ),
-                      color: AppColors.accentGreen.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF48484A)),
+                      color: AppColors.backgroundDeep,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1162,13 +1112,13 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                         Icon(
                           Icons.layers_rounded,
                           size: 17,
-                          color: AppColors.cadastroCardBorder,
+                          color: AppColors.accentGreen,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           seriesBadge!,
                           style: const TextStyle(
-                            color: AppColors.accentGreen,
+                            color: AppColors.textPrimary,
                             fontWeight: FontWeight.w800,
                             fontSize: 13,
                             letterSpacing: 0.3,
@@ -1184,7 +1134,7 @@ class _FuturisticSetMetricDialogChrome extends StatelessWidget {
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 physics: const ClampingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                 child: scrollableChild,
               ),
             ),
@@ -1225,16 +1175,12 @@ class _FuturisticMetricField extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: AppColors.cadastroCardBorder.withValues(alpha: 0.85),
-            ),
+            Icon(icon, size: 18, color: AppColors.accentGreen),
             const SizedBox(width: 8),
             Text(
               label.toUpperCase(),
               style: TextStyle(
-                color: AppColors.accentGreen.withValues(alpha: 0.8),
+                color: AppColors.textMuted,
                 fontWeight: FontWeight.w800,
                 fontSize: 11,
                 letterSpacing: 1.2,
@@ -1246,7 +1192,7 @@ class _FuturisticMetricField extends StatelessWidget {
                 hint,
                 textAlign: TextAlign.end,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.28),
+                  color: AppColors.textMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1255,60 +1201,49 @@ class _FuturisticMetricField extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
+        DecoratedBox(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.cadastroCardBorder.withValues(alpha: 0.75),
-                AppColors.accentGreen.withValues(alpha: 0.45),
-                AppColors.headerGradientMint.withValues(alpha: 0.35),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.accentGreen.withValues(alpha: 0.08),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            color: const Color(0xFF48484A),
+            borderRadius: BorderRadius.circular(12),
           ),
-          padding: const EdgeInsets.all(1.35),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16.8),
-              color: const Color(0xFF0C0C12),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              keyboardType: keyboardType,
-              textInputAction: textInputAction,
-              onSubmitted: onSubmitted,
-              inputFormatters: inputFormatters,
-              textAlign: TextAlign.center,
-              scrollPadding: const EdgeInsets.only(bottom: 220, top: 24),
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 30,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
+          child: Padding(
+            padding: const EdgeInsets.all(1),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(11),
+                color: AppColors.backgroundDeep,
               ),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 14,
-                ),
-                hintText: '0',
-                hintStyle: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  fontSize: 30,
-                  fontWeight: FontWeight.w600,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  keyboardType: keyboardType,
+                  textInputAction: textInputAction,
+                  onSubmitted: onSubmitted,
+                  inputFormatters: inputFormatters,
+                  textAlign: TextAlign.center,
+                  scrollPadding: const EdgeInsets.only(bottom: 220, top: 24),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 14,
+                    ),
+                    hintText: '0',
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      fontSize: 30,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1335,82 +1270,53 @@ class _FuturisticPrimaryCta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: enabled
-            ? [
-                BoxShadow(
-                  color: AppColors.headerGradientMint.withValues(alpha: 0.35),
-                  blurRadius: 22,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(18),
-          child: Ink(
-            height: 54,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: enabled
-                    ? [
-                        AppColors.headerGradientMint,
-                        AppColors.accentGreen.withValues(alpha: 0.88),
-                        AppColors.headerGradientPink.withValues(alpha: 0.75),
-                      ]
-                    : [
-                        Colors.white.withValues(alpha: 0.12),
-                        Colors.white.withValues(alpha: 0.08),
-                      ],
-              ),
-              border: Border.all(
-                color: enabled
-                    ? Colors.white.withValues(alpha: 0.35)
-                    : Colors.white.withValues(alpha: 0.08),
-                width: 1,
-              ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          height: 50,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: enabled ? AppColors.accentGreen : Colors.white12,
+            border: Border.all(
+              color: enabled ? AppColors.accentGreen : const Color(0xFF38383A),
+              width: 1,
             ),
-            child: Center(
-              child: busy
-                  ? const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: ModernLoadingIndicator(size: 28),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          icon,
+          ),
+          child: Center(
+            child: busy
+                ? const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: ModernLoadingIndicator(size: 28),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        color: enabled
+                            ? const Color(0xFF0A0A12)
+                            : Colors.white38,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        label,
+                        style: TextStyle(
                           color: enabled
                               ? const Color(0xFF0A0A12)
                               : Colors.white38,
-                          size: 22,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          letterSpacing: 0.2,
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            color: enabled
-                                ? const Color(0xFF0A0A12)
-                                : Colors.white38,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ),
