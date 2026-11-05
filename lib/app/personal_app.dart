@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -25,11 +24,8 @@ import '../core/widgets/student_workout_live_activity_bar.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/app_data_repository.dart';
 import '../data/sync/remote_sync_service.dart';
-import '../data/sync/supabase_auto_pull_scheduler.dart';
-import '../data/sync/supabase_auto_push_scheduler.dart';
 import '../data/sync/supabase_cloud_fidelity_checker.dart';
-import '../data/sync/supabase_realtime_sync_service.dart';
-import '../data/sync/supabase_remote_sync_service.dart';
+import '../data/sync/modern_remote_sync_service.dart';
 import '../features/auth/local_login_page.dart';
 import '../features/auth/password_recovery_page.dart';
 import '../features/shell/main_shell.dart';
@@ -76,8 +72,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   bool _loadStarted = false;
   String? _lastBootBuildMode;
   StreamSubscription<Uri>? _appLinkSubscription;
-  SupabaseRealtimeSyncService? _realtimeSync;
-  final Map<String, DateTime> _lastActivityToastByKey = <String, DateTime>{};
+  ModernRemoteSyncService? _modernSync;
   bool _keepScreenOnApplied = false;
 
   Future<void> _setKeepScreenOn(bool enabled) async {
@@ -192,7 +187,8 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       final session = AppSession();
       final sync = SupabaseSyncController();
       final fidelity = SupabaseCloudFidelityChecker(db, sync);
-      final remoteSync = SupabaseRemoteSyncService(db, sync);
+      final remoteSync = ModernRemoteSyncService(db, sync);
+      _modernSync = remoteSync;
       final repo = AppDataRepository(
         db,
         session,
@@ -254,172 +250,12 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       logLaunch('initializeSupabaseApp erro', error: e, stackTrace: st);
     }
     if (!mounted) return;
-    bootTrace('cloud', 'recover queue + startHeartbeat + fidelity');
+    bootTrace('cloud', 'recover queue + startHeartbeat + RPC sync');
     await s.remoteSync.recoverPendingWork();
     s.sync.startHeartbeat();
-    s.fidelity.start();
-    SupabaseAutoPushScheduler.scheduleAfterResume(
-      db: s.db,
-      sync: s.sync,
-      session: s.session,
-    );
-    SupabaseAutoPullScheduler.scheduleAfterResume(
-      db: s.db,
-      sync: s.sync,
-      session: s.session,
-      delay: const Duration(seconds: 4),
-      bypassMinInterval: true,
-    );
-    SupabaseAutoPullScheduler.startForegroundPolling(
-      db: s.db,
-      sync: s.sync,
-      session: s.session,
-    );
-    await _realtimeSync?.dispose();
-    final realtime = SupabaseRealtimeSyncService(
-      db: s.db,
-      sync: s.sync,
-      session: s.session,
-      onWorkoutActivity: _onWorkoutActivityEvent,
-    );
-    _realtimeSync = realtime;
-    await realtime.start();
+    _modernSync?.startPolling();
     unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
     unawaited(RestTimerSound.preload());
-  }
-
-  bool _allowActivityToast(
-    String key, {
-    Duration minGap = const Duration(seconds: 3),
-  }) {
-    final now = DateTime.now();
-    final last = _lastActivityToastByKey[key];
-    if (last != null && now.difference(last) < minGap) return false;
-    _lastActivityToastByKey[key] = now;
-    return true;
-  }
-
-  Future<void> _onWorkoutActivityEvent(WorkoutActivityEvent event) async {
-    final s = _services;
-    if (!mounted || s == null) return;
-    if (s.session.isStudent) return;
-
-    String? studentId = event.studentId;
-    if (studentId == null || studentId.isEmpty) {
-      final w = await (s.db.select(
-        s.db.dayWorkouts,
-      )..where((x) => x.id.equals(event.dayWorkoutId))).getSingleOrNull();
-      studentId = w?.studentId;
-    }
-    if (studentId == null || studentId.isEmpty) return;
-    final sid = studentId;
-
-    final student = await (s.db.select(
-      s.db.students,
-    )..where((x) => x.id.equals(sid))).getSingleOrNull();
-    if (student == null || !s.session.canAccessStudent(student)) return;
-
-    final key = '${student.id}:${event.kind.name}:${event.dayWorkoutId}';
-    if (!_allowActivityToast(key)) return;
-
-    final msg = switch (event.kind) {
-      WorkoutActivityKind.started => '${student.name} iniciou o treino.',
-      WorkoutActivityKind.exerciseLogged =>
-        '${student.name} registrou um exercício.',
-      WorkoutActivityKind.completed => '${student.name} concluiu o treino.',
-    };
-
-    final life = WidgetsBinding.instance.lifecycleState;
-    final inForeground = life == null || life == AppLifecycleState.resumed;
-    if (!inForeground) {
-      unawaited(
-        WorkoutActivityLocalNotifier.instance.showUpdate(
-          title: 'Treino atualizado',
-          body: msg,
-        ),
-      );
-      return;
-    }
-
-    final messenger = _scaffoldMessengerKey.currentState;
-    if (messenger == null) return;
-
-    IconData icon;
-    Color accent;
-    switch (event.kind) {
-      case WorkoutActivityKind.started:
-        icon = Icons.play_circle_filled_rounded;
-        accent = AppColors.splashMint;
-      case WorkoutActivityKind.exerciseLogged:
-        icon = Icons.fitness_center_rounded;
-        accent = AppColors.accentGreen;
-      case WorkoutActivityKind.completed:
-        icon = Icons.verified_rounded;
-        accent = AppColors.accentPink;
-    }
-
-    messenger.showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 22),
-        elevation: 10,
-        backgroundColor: const Color(0xFF0E1524).withValues(alpha: 0.97),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(
-            color: AppColors.accentPink.withValues(alpha: 0.45),
-            width: 1,
-          ),
-        ),
-        content: Row(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: accent.withValues(alpha: 0.55),
-                  width: 1,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Icon(icon, color: accent, size: 22),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Atualização em tempo real',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    msg,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w600,
-                      height: 1.25,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   void _retryLoad() {
@@ -431,8 +267,8 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       _loadStarted = false;
     });
     if (old != null) {
-      unawaited(_realtimeSync?.dispose());
-      _realtimeSync = null;
+      _modernSync?.dispose();
+      _modernSync = null;
       old.repo.dispose();
       old.fidelity.dispose();
       old.sync.dispose();
@@ -453,8 +289,8 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     WidgetsBinding.instance.removeObserver(this);
     final s = _services;
     if (s != null) {
-      unawaited(_realtimeSync?.dispose());
-      _realtimeSync = null;
+      _modernSync?.dispose();
+      _modernSync = null;
       s.repo.dispose();
       s.fidelity.dispose();
       s.sync.dispose();
@@ -504,51 +340,16 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       if (s == null) return;
       if (state == AppLifecycleState.resumed) {
         unawaited(_setKeepScreenOn(true));
-        if (_realtimeSync == null) {
-          final realtime = SupabaseRealtimeSyncService(
-            db: s.db,
-            sync: s.sync,
-            session: s.session,
-            onWorkoutActivity: _onWorkoutActivityEvent,
-          );
-          _realtimeSync = realtime;
-          unawaited(realtime.start());
-        } else {
-          unawaited(_realtimeSync!.reconnectAfterResume());
-        }
+        _modernSync?.startPolling();
         unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
         unawaited(RestTimerSound.preload());
         unawaited(s.repo.applyPremiumTierExpiryDowngrades());
-        SchedulerBinding.instance.scheduleTask(
-          () {
-            SupabaseAutoPushScheduler.scheduleAfterResume(
-              db: s.db,
-              sync: s.sync,
-              session: s.session,
-            );
-            SupabaseAutoPullScheduler.scheduleAfterResume(
-              db: s.db,
-              sync: s.sync,
-              session: s.session,
-              bypassMinInterval: true,
-            );
-            SupabaseAutoPullScheduler.startForegroundPolling(
-              db: s.db,
-              sync: s.sync,
-              session: s.session,
-            );
-          },
-          Priority.idle,
-          debugLabel: 'personalApp.supabaseAutoSyncAfterResume',
-        );
       } else if (state == AppLifecycleState.inactive ||
           state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
         unawaited(_setKeepScreenOn(false));
-        SupabaseAutoPushScheduler.cancelScheduledWork();
-        SupabaseAutoPullScheduler.cancelScheduledWork();
-        SupabaseAutoPullScheduler.stopForegroundPolling();
+        _modernSync?.stopPolling();
         // Mantém o Realtime ligado em pausa para o aluno continuar a “empurrar”
         // atualizações para personal/admin (SnackBar / notificação). O SO pode
         // suspender o socket; ao [resumed] fazemos [reconnectAfterResume].
