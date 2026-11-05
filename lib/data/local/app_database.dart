@@ -434,6 +434,9 @@ class AuditLogs extends Table {
 @DataClassName('SyncQueueItemEntity')
 class SyncQueue extends Table {
   TextColumn get id => text()();
+  TextColumn get opId => text().nullable()();
+  IntColumn get deviceSeq => integer().nullable()();
+  TextColumn get hlc => text().nullable()();
   TextColumn get entityType => text()();
   TextColumn get entityId => text()();
   TextColumn get operation => text()();
@@ -444,7 +447,27 @@ class SyncQueue extends Table {
   DateTimeColumn get nextRetryAt => dateTime().nullable()();
   TextColumn get dedupeKey => text().nullable()();
   TextColumn get auditLogId => text().nullable()();
+  TextColumn get errorCode => text().nullable()();
+  DateTimeColumn get quarantinedAt => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Estado durável do protocolo de sincronização por dispositivo.
+///
+/// Mantém a sequência local e o cursor do servidor fora de preferências, para
+/// que outbox, HLC e cursor avancem na mesma transação SQLite.
+@DataClassName('SyncStateEntity')
+class SyncStates extends Table {
+  TextColumn get id => text()();
+  TextColumn get deviceId => text()();
+  IntColumn get nextDeviceSeq => integer().withDefault(const Constant(1))();
+  IntColumn get serverCursor => integer().withDefault(const Constant(0))();
+  IntColumn get hlcWallMs => integer().withDefault(const Constant(0))();
+  IntColumn get hlcLogical => integer().withDefault(const Constant(0))();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
@@ -469,13 +492,14 @@ class SyncQueue extends Table {
     PerformedSetEvents,
     AuditLogs,
     SyncQueue,
+    SyncStates,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 37;
+  int get schemaVersion => 39;
 
   /// Migrações **incrementais** apenas (`addColumn`, `create`, etc.).
   /// Nunca usar recriação destrutiva do banco: os dados do usuário devem persistir
@@ -739,6 +763,20 @@ class AppDatabase extends _$AppDatabase {
       if (from < 37) {
         await m.createTable(performedSetEvents);
         await _backfillPerformedSetEventsFromJson();
+      }
+      if (from < 38) {
+        await m.createTable(syncStates);
+      }
+      if (from < 39) {
+        await m.addColumn(syncQueue, syncQueue.opId);
+        await m.addColumn(syncQueue, syncQueue.deviceSeq);
+        await m.addColumn(syncQueue, syncQueue.hlc);
+        await m.addColumn(syncQueue, syncQueue.errorCode);
+        await m.addColumn(syncQueue, syncQueue.quarantinedAt);
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_op_id_uidx '
+          'ON sync_queue(op_id) WHERE op_id IS NOT NULL',
+        );
       }
     },
     beforeOpen: (details) async {

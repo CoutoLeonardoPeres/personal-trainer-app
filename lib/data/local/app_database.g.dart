@@ -10754,6 +10754,35 @@ class $SyncQueueTable extends SyncQueue
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _opIdMeta = const VerificationMeta('opId');
+  @override
+  late final GeneratedColumn<String> opId = GeneratedColumn<String>(
+    'op_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deviceSeqMeta = const VerificationMeta(
+    'deviceSeq',
+  );
+  @override
+  late final GeneratedColumn<int> deviceSeq = GeneratedColumn<int>(
+    'device_seq',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _hlcMeta = const VerificationMeta('hlc');
+  @override
+  late final GeneratedColumn<String> hlc = GeneratedColumn<String>(
+    'hlc',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _entityTypeMeta = const VerificationMeta(
     'entityType',
   );
@@ -10865,6 +10894,29 @@ class $SyncQueueTable extends SyncQueue
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _errorCodeMeta = const VerificationMeta(
+    'errorCode',
+  );
+  @override
+  late final GeneratedColumn<String> errorCode = GeneratedColumn<String>(
+    'error_code',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _quarantinedAtMeta = const VerificationMeta(
+    'quarantinedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> quarantinedAt =
+      GeneratedColumn<DateTime>(
+        'quarantined_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -10892,6 +10944,9 @@ class $SyncQueueTable extends SyncQueue
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    opId,
+    deviceSeq,
+    hlc,
     entityType,
     entityId,
     operation,
@@ -10902,6 +10957,8 @@ class $SyncQueueTable extends SyncQueue
     nextRetryAt,
     dedupeKey,
     auditLogId,
+    errorCode,
+    quarantinedAt,
     createdAt,
     updatedAt,
   ];
@@ -10921,6 +10978,24 @@ class $SyncQueueTable extends SyncQueue
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('op_id')) {
+      context.handle(
+        _opIdMeta,
+        opId.isAcceptableOrUnknown(data['op_id']!, _opIdMeta),
+      );
+    }
+    if (data.containsKey('device_seq')) {
+      context.handle(
+        _deviceSeqMeta,
+        deviceSeq.isAcceptableOrUnknown(data['device_seq']!, _deviceSeqMeta),
+      );
+    }
+    if (data.containsKey('hlc')) {
+      context.handle(
+        _hlcMeta,
+        hlc.isAcceptableOrUnknown(data['hlc']!, _hlcMeta),
+      );
     }
     if (data.containsKey('entity_type')) {
       context.handle(
@@ -10997,6 +11072,21 @@ class $SyncQueueTable extends SyncQueue
         ),
       );
     }
+    if (data.containsKey('error_code')) {
+      context.handle(
+        _errorCodeMeta,
+        errorCode.isAcceptableOrUnknown(data['error_code']!, _errorCodeMeta),
+      );
+    }
+    if (data.containsKey('quarantined_at')) {
+      context.handle(
+        _quarantinedAtMeta,
+        quarantinedAt.isAcceptableOrUnknown(
+          data['quarantined_at']!,
+          _quarantinedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -11022,6 +11112,18 @@ class $SyncQueueTable extends SyncQueue
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      opId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}op_id'],
+      ),
+      deviceSeq: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}device_seq'],
+      ),
+      hlc: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}hlc'],
+      ),
       entityType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}entity_type'],
@@ -11062,6 +11164,14 @@ class $SyncQueueTable extends SyncQueue
         DriftSqlType.string,
         data['${effectivePrefix}audit_log_id'],
       ),
+      errorCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error_code'],
+      ),
+      quarantinedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}quarantined_at'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -11082,6 +11192,9 @@ class $SyncQueueTable extends SyncQueue
 class SyncQueueItemEntity extends DataClass
     implements Insertable<SyncQueueItemEntity> {
   final String id;
+  final String? opId;
+  final int? deviceSeq;
+  final String? hlc;
   final String entityType;
   final String entityId;
   final String operation;
@@ -11092,10 +11205,15 @@ class SyncQueueItemEntity extends DataClass
   final DateTime? nextRetryAt;
   final String? dedupeKey;
   final String? auditLogId;
+  final String? errorCode;
+  final DateTime? quarantinedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
   const SyncQueueItemEntity({
     required this.id,
+    this.opId,
+    this.deviceSeq,
+    this.hlc,
     required this.entityType,
     required this.entityId,
     required this.operation,
@@ -11106,6 +11224,8 @@ class SyncQueueItemEntity extends DataClass
     this.nextRetryAt,
     this.dedupeKey,
     this.auditLogId,
+    this.errorCode,
+    this.quarantinedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -11113,6 +11233,15 @@ class SyncQueueItemEntity extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    if (!nullToAbsent || opId != null) {
+      map['op_id'] = Variable<String>(opId);
+    }
+    if (!nullToAbsent || deviceSeq != null) {
+      map['device_seq'] = Variable<int>(deviceSeq);
+    }
+    if (!nullToAbsent || hlc != null) {
+      map['hlc'] = Variable<String>(hlc);
+    }
     map['entity_type'] = Variable<String>(entityType);
     map['entity_id'] = Variable<String>(entityId);
     map['operation'] = Variable<String>(operation);
@@ -11131,6 +11260,12 @@ class SyncQueueItemEntity extends DataClass
     if (!nullToAbsent || auditLogId != null) {
       map['audit_log_id'] = Variable<String>(auditLogId);
     }
+    if (!nullToAbsent || errorCode != null) {
+      map['error_code'] = Variable<String>(errorCode);
+    }
+    if (!nullToAbsent || quarantinedAt != null) {
+      map['quarantined_at'] = Variable<DateTime>(quarantinedAt);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -11139,6 +11274,11 @@ class SyncQueueItemEntity extends DataClass
   SyncQueueCompanion toCompanion(bool nullToAbsent) {
     return SyncQueueCompanion(
       id: Value(id),
+      opId: opId == null && nullToAbsent ? const Value.absent() : Value(opId),
+      deviceSeq: deviceSeq == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deviceSeq),
+      hlc: hlc == null && nullToAbsent ? const Value.absent() : Value(hlc),
       entityType: Value(entityType),
       entityId: Value(entityId),
       operation: Value(operation),
@@ -11157,6 +11297,12 @@ class SyncQueueItemEntity extends DataClass
       auditLogId: auditLogId == null && nullToAbsent
           ? const Value.absent()
           : Value(auditLogId),
+      errorCode: errorCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(errorCode),
+      quarantinedAt: quarantinedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(quarantinedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -11169,6 +11315,9 @@ class SyncQueueItemEntity extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SyncQueueItemEntity(
       id: serializer.fromJson<String>(json['id']),
+      opId: serializer.fromJson<String?>(json['opId']),
+      deviceSeq: serializer.fromJson<int?>(json['deviceSeq']),
+      hlc: serializer.fromJson<String?>(json['hlc']),
       entityType: serializer.fromJson<String>(json['entityType']),
       entityId: serializer.fromJson<String>(json['entityId']),
       operation: serializer.fromJson<String>(json['operation']),
@@ -11179,6 +11328,8 @@ class SyncQueueItemEntity extends DataClass
       nextRetryAt: serializer.fromJson<DateTime?>(json['nextRetryAt']),
       dedupeKey: serializer.fromJson<String?>(json['dedupeKey']),
       auditLogId: serializer.fromJson<String?>(json['auditLogId']),
+      errorCode: serializer.fromJson<String?>(json['errorCode']),
+      quarantinedAt: serializer.fromJson<DateTime?>(json['quarantinedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -11188,6 +11339,9 @@ class SyncQueueItemEntity extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'opId': serializer.toJson<String?>(opId),
+      'deviceSeq': serializer.toJson<int?>(deviceSeq),
+      'hlc': serializer.toJson<String?>(hlc),
       'entityType': serializer.toJson<String>(entityType),
       'entityId': serializer.toJson<String>(entityId),
       'operation': serializer.toJson<String>(operation),
@@ -11198,6 +11352,8 @@ class SyncQueueItemEntity extends DataClass
       'nextRetryAt': serializer.toJson<DateTime?>(nextRetryAt),
       'dedupeKey': serializer.toJson<String?>(dedupeKey),
       'auditLogId': serializer.toJson<String?>(auditLogId),
+      'errorCode': serializer.toJson<String?>(errorCode),
+      'quarantinedAt': serializer.toJson<DateTime?>(quarantinedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -11205,6 +11361,9 @@ class SyncQueueItemEntity extends DataClass
 
   SyncQueueItemEntity copyWith({
     String? id,
+    Value<String?> opId = const Value.absent(),
+    Value<int?> deviceSeq = const Value.absent(),
+    Value<String?> hlc = const Value.absent(),
     String? entityType,
     String? entityId,
     String? operation,
@@ -11215,10 +11374,15 @@ class SyncQueueItemEntity extends DataClass
     Value<DateTime?> nextRetryAt = const Value.absent(),
     Value<String?> dedupeKey = const Value.absent(),
     Value<String?> auditLogId = const Value.absent(),
+    Value<String?> errorCode = const Value.absent(),
+    Value<DateTime?> quarantinedAt = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => SyncQueueItemEntity(
     id: id ?? this.id,
+    opId: opId.present ? opId.value : this.opId,
+    deviceSeq: deviceSeq.present ? deviceSeq.value : this.deviceSeq,
+    hlc: hlc.present ? hlc.value : this.hlc,
     entityType: entityType ?? this.entityType,
     entityId: entityId ?? this.entityId,
     operation: operation ?? this.operation,
@@ -11229,12 +11393,19 @@ class SyncQueueItemEntity extends DataClass
     nextRetryAt: nextRetryAt.present ? nextRetryAt.value : this.nextRetryAt,
     dedupeKey: dedupeKey.present ? dedupeKey.value : this.dedupeKey,
     auditLogId: auditLogId.present ? auditLogId.value : this.auditLogId,
+    errorCode: errorCode.present ? errorCode.value : this.errorCode,
+    quarantinedAt: quarantinedAt.present
+        ? quarantinedAt.value
+        : this.quarantinedAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   SyncQueueItemEntity copyWithCompanion(SyncQueueCompanion data) {
     return SyncQueueItemEntity(
       id: data.id.present ? data.id.value : this.id,
+      opId: data.opId.present ? data.opId.value : this.opId,
+      deviceSeq: data.deviceSeq.present ? data.deviceSeq.value : this.deviceSeq,
+      hlc: data.hlc.present ? data.hlc.value : this.hlc,
       entityType: data.entityType.present
           ? data.entityType.value
           : this.entityType,
@@ -11255,6 +11426,10 @@ class SyncQueueItemEntity extends DataClass
       auditLogId: data.auditLogId.present
           ? data.auditLogId.value
           : this.auditLogId,
+      errorCode: data.errorCode.present ? data.errorCode.value : this.errorCode,
+      quarantinedAt: data.quarantinedAt.present
+          ? data.quarantinedAt.value
+          : this.quarantinedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -11264,6 +11439,9 @@ class SyncQueueItemEntity extends DataClass
   String toString() {
     return (StringBuffer('SyncQueueItemEntity(')
           ..write('id: $id, ')
+          ..write('opId: $opId, ')
+          ..write('deviceSeq: $deviceSeq, ')
+          ..write('hlc: $hlc, ')
           ..write('entityType: $entityType, ')
           ..write('entityId: $entityId, ')
           ..write('operation: $operation, ')
@@ -11274,6 +11452,8 @@ class SyncQueueItemEntity extends DataClass
           ..write('nextRetryAt: $nextRetryAt, ')
           ..write('dedupeKey: $dedupeKey, ')
           ..write('auditLogId: $auditLogId, ')
+          ..write('errorCode: $errorCode, ')
+          ..write('quarantinedAt: $quarantinedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -11283,6 +11463,9 @@ class SyncQueueItemEntity extends DataClass
   @override
   int get hashCode => Object.hash(
     id,
+    opId,
+    deviceSeq,
+    hlc,
     entityType,
     entityId,
     operation,
@@ -11293,6 +11476,8 @@ class SyncQueueItemEntity extends DataClass
     nextRetryAt,
     dedupeKey,
     auditLogId,
+    errorCode,
+    quarantinedAt,
     createdAt,
     updatedAt,
   );
@@ -11301,6 +11486,9 @@ class SyncQueueItemEntity extends DataClass
       identical(this, other) ||
       (other is SyncQueueItemEntity &&
           other.id == this.id &&
+          other.opId == this.opId &&
+          other.deviceSeq == this.deviceSeq &&
+          other.hlc == this.hlc &&
           other.entityType == this.entityType &&
           other.entityId == this.entityId &&
           other.operation == this.operation &&
@@ -11311,12 +11499,17 @@ class SyncQueueItemEntity extends DataClass
           other.nextRetryAt == this.nextRetryAt &&
           other.dedupeKey == this.dedupeKey &&
           other.auditLogId == this.auditLogId &&
+          other.errorCode == this.errorCode &&
+          other.quarantinedAt == this.quarantinedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
 
 class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
   final Value<String> id;
+  final Value<String?> opId;
+  final Value<int?> deviceSeq;
+  final Value<String?> hlc;
   final Value<String> entityType;
   final Value<String> entityId;
   final Value<String> operation;
@@ -11327,11 +11520,16 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
   final Value<DateTime?> nextRetryAt;
   final Value<String?> dedupeKey;
   final Value<String?> auditLogId;
+  final Value<String?> errorCode;
+  final Value<DateTime?> quarantinedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const SyncQueueCompanion({
     this.id = const Value.absent(),
+    this.opId = const Value.absent(),
+    this.deviceSeq = const Value.absent(),
+    this.hlc = const Value.absent(),
     this.entityType = const Value.absent(),
     this.entityId = const Value.absent(),
     this.operation = const Value.absent(),
@@ -11342,12 +11540,17 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
     this.nextRetryAt = const Value.absent(),
     this.dedupeKey = const Value.absent(),
     this.auditLogId = const Value.absent(),
+    this.errorCode = const Value.absent(),
+    this.quarantinedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SyncQueueCompanion.insert({
     required String id,
+    this.opId = const Value.absent(),
+    this.deviceSeq = const Value.absent(),
+    this.hlc = const Value.absent(),
     required String entityType,
     required String entityId,
     required String operation,
@@ -11358,6 +11561,8 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
     this.nextRetryAt = const Value.absent(),
     this.dedupeKey = const Value.absent(),
     this.auditLogId = const Value.absent(),
+    this.errorCode = const Value.absent(),
+    this.quarantinedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -11367,6 +11572,9 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
        operation = Value(operation);
   static Insertable<SyncQueueItemEntity> custom({
     Expression<String>? id,
+    Expression<String>? opId,
+    Expression<int>? deviceSeq,
+    Expression<String>? hlc,
     Expression<String>? entityType,
     Expression<String>? entityId,
     Expression<String>? operation,
@@ -11377,12 +11585,17 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
     Expression<DateTime>? nextRetryAt,
     Expression<String>? dedupeKey,
     Expression<String>? auditLogId,
+    Expression<String>? errorCode,
+    Expression<DateTime>? quarantinedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (opId != null) 'op_id': opId,
+      if (deviceSeq != null) 'device_seq': deviceSeq,
+      if (hlc != null) 'hlc': hlc,
       if (entityType != null) 'entity_type': entityType,
       if (entityId != null) 'entity_id': entityId,
       if (operation != null) 'operation': operation,
@@ -11393,6 +11606,8 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
       if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
       if (dedupeKey != null) 'dedupe_key': dedupeKey,
       if (auditLogId != null) 'audit_log_id': auditLogId,
+      if (errorCode != null) 'error_code': errorCode,
+      if (quarantinedAt != null) 'quarantined_at': quarantinedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -11401,6 +11616,9 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
 
   SyncQueueCompanion copyWith({
     Value<String>? id,
+    Value<String?>? opId,
+    Value<int?>? deviceSeq,
+    Value<String?>? hlc,
     Value<String>? entityType,
     Value<String>? entityId,
     Value<String>? operation,
@@ -11411,12 +11629,17 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
     Value<DateTime?>? nextRetryAt,
     Value<String?>? dedupeKey,
     Value<String?>? auditLogId,
+    Value<String?>? errorCode,
+    Value<DateTime?>? quarantinedAt,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
   }) {
     return SyncQueueCompanion(
       id: id ?? this.id,
+      opId: opId ?? this.opId,
+      deviceSeq: deviceSeq ?? this.deviceSeq,
+      hlc: hlc ?? this.hlc,
       entityType: entityType ?? this.entityType,
       entityId: entityId ?? this.entityId,
       operation: operation ?? this.operation,
@@ -11427,6 +11650,8 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
       nextRetryAt: nextRetryAt ?? this.nextRetryAt,
       dedupeKey: dedupeKey ?? this.dedupeKey,
       auditLogId: auditLogId ?? this.auditLogId,
+      errorCode: errorCode ?? this.errorCode,
+      quarantinedAt: quarantinedAt ?? this.quarantinedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -11438,6 +11663,15 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (opId.present) {
+      map['op_id'] = Variable<String>(opId.value);
+    }
+    if (deviceSeq.present) {
+      map['device_seq'] = Variable<int>(deviceSeq.value);
+    }
+    if (hlc.present) {
+      map['hlc'] = Variable<String>(hlc.value);
     }
     if (entityType.present) {
       map['entity_type'] = Variable<String>(entityType.value);
@@ -11469,6 +11703,12 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
     if (auditLogId.present) {
       map['audit_log_id'] = Variable<String>(auditLogId.value);
     }
+    if (errorCode.present) {
+      map['error_code'] = Variable<String>(errorCode.value);
+    }
+    if (quarantinedAt.present) {
+      map['quarantined_at'] = Variable<DateTime>(quarantinedAt.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -11485,6 +11725,9 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
   String toString() {
     return (StringBuffer('SyncQueueCompanion(')
           ..write('id: $id, ')
+          ..write('opId: $opId, ')
+          ..write('deviceSeq: $deviceSeq, ')
+          ..write('hlc: $hlc, ')
           ..write('entityType: $entityType, ')
           ..write('entityId: $entityId, ')
           ..write('operation: $operation, ')
@@ -11495,7 +11738,475 @@ class SyncQueueCompanion extends UpdateCompanion<SyncQueueItemEntity> {
           ..write('nextRetryAt: $nextRetryAt, ')
           ..write('dedupeKey: $dedupeKey, ')
           ..write('auditLogId: $auditLogId, ')
+          ..write('errorCode: $errorCode, ')
+          ..write('quarantinedAt: $quarantinedAt, ')
           ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncStatesTable extends SyncStates
+    with TableInfo<$SyncStatesTable, SyncStateEntity> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncStatesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nextDeviceSeqMeta = const VerificationMeta(
+    'nextDeviceSeq',
+  );
+  @override
+  late final GeneratedColumn<int> nextDeviceSeq = GeneratedColumn<int>(
+    'next_device_seq',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _serverCursorMeta = const VerificationMeta(
+    'serverCursor',
+  );
+  @override
+  late final GeneratedColumn<int> serverCursor = GeneratedColumn<int>(
+    'server_cursor',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _hlcWallMsMeta = const VerificationMeta(
+    'hlcWallMs',
+  );
+  @override
+  late final GeneratedColumn<int> hlcWallMs = GeneratedColumn<int>(
+    'hlc_wall_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _hlcLogicalMeta = const VerificationMeta(
+    'hlcLogical',
+  );
+  @override
+  late final GeneratedColumn<int> hlcLogical = GeneratedColumn<int>(
+    'hlc_logical',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    deviceId,
+    nextDeviceSeq,
+    serverCursor,
+    hlcWallMs,
+    hlcLogical,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_states';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncStateEntity> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    if (data.containsKey('next_device_seq')) {
+      context.handle(
+        _nextDeviceSeqMeta,
+        nextDeviceSeq.isAcceptableOrUnknown(
+          data['next_device_seq']!,
+          _nextDeviceSeqMeta,
+        ),
+      );
+    }
+    if (data.containsKey('server_cursor')) {
+      context.handle(
+        _serverCursorMeta,
+        serverCursor.isAcceptableOrUnknown(
+          data['server_cursor']!,
+          _serverCursorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('hlc_wall_ms')) {
+      context.handle(
+        _hlcWallMsMeta,
+        hlcWallMs.isAcceptableOrUnknown(data['hlc_wall_ms']!, _hlcWallMsMeta),
+      );
+    }
+    if (data.containsKey('hlc_logical')) {
+      context.handle(
+        _hlcLogicalMeta,
+        hlcLogical.isAcceptableOrUnknown(data['hlc_logical']!, _hlcLogicalMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncStateEntity map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncStateEntity(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+      nextDeviceSeq: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}next_device_seq'],
+      )!,
+      serverCursor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_cursor'],
+      )!,
+      hlcWallMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}hlc_wall_ms'],
+      )!,
+      hlcLogical: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}hlc_logical'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SyncStatesTable createAlias(String alias) {
+    return $SyncStatesTable(attachedDatabase, alias);
+  }
+}
+
+class SyncStateEntity extends DataClass implements Insertable<SyncStateEntity> {
+  final String id;
+  final String deviceId;
+  final int nextDeviceSeq;
+  final int serverCursor;
+  final int hlcWallMs;
+  final int hlcLogical;
+  final DateTime updatedAt;
+  const SyncStateEntity({
+    required this.id,
+    required this.deviceId,
+    required this.nextDeviceSeq,
+    required this.serverCursor,
+    required this.hlcWallMs,
+    required this.hlcLogical,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['device_id'] = Variable<String>(deviceId);
+    map['next_device_seq'] = Variable<int>(nextDeviceSeq);
+    map['server_cursor'] = Variable<int>(serverCursor);
+    map['hlc_wall_ms'] = Variable<int>(hlcWallMs);
+    map['hlc_logical'] = Variable<int>(hlcLogical);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  SyncStatesCompanion toCompanion(bool nullToAbsent) {
+    return SyncStatesCompanion(
+      id: Value(id),
+      deviceId: Value(deviceId),
+      nextDeviceSeq: Value(nextDeviceSeq),
+      serverCursor: Value(serverCursor),
+      hlcWallMs: Value(hlcWallMs),
+      hlcLogical: Value(hlcLogical),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SyncStateEntity.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncStateEntity(
+      id: serializer.fromJson<String>(json['id']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+      nextDeviceSeq: serializer.fromJson<int>(json['nextDeviceSeq']),
+      serverCursor: serializer.fromJson<int>(json['serverCursor']),
+      hlcWallMs: serializer.fromJson<int>(json['hlcWallMs']),
+      hlcLogical: serializer.fromJson<int>(json['hlcLogical']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'deviceId': serializer.toJson<String>(deviceId),
+      'nextDeviceSeq': serializer.toJson<int>(nextDeviceSeq),
+      'serverCursor': serializer.toJson<int>(serverCursor),
+      'hlcWallMs': serializer.toJson<int>(hlcWallMs),
+      'hlcLogical': serializer.toJson<int>(hlcLogical),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  SyncStateEntity copyWith({
+    String? id,
+    String? deviceId,
+    int? nextDeviceSeq,
+    int? serverCursor,
+    int? hlcWallMs,
+    int? hlcLogical,
+    DateTime? updatedAt,
+  }) => SyncStateEntity(
+    id: id ?? this.id,
+    deviceId: deviceId ?? this.deviceId,
+    nextDeviceSeq: nextDeviceSeq ?? this.nextDeviceSeq,
+    serverCursor: serverCursor ?? this.serverCursor,
+    hlcWallMs: hlcWallMs ?? this.hlcWallMs,
+    hlcLogical: hlcLogical ?? this.hlcLogical,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  SyncStateEntity copyWithCompanion(SyncStatesCompanion data) {
+    return SyncStateEntity(
+      id: data.id.present ? data.id.value : this.id,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      nextDeviceSeq: data.nextDeviceSeq.present
+          ? data.nextDeviceSeq.value
+          : this.nextDeviceSeq,
+      serverCursor: data.serverCursor.present
+          ? data.serverCursor.value
+          : this.serverCursor,
+      hlcWallMs: data.hlcWallMs.present ? data.hlcWallMs.value : this.hlcWallMs,
+      hlcLogical: data.hlcLogical.present
+          ? data.hlcLogical.value
+          : this.hlcLogical,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncStateEntity(')
+          ..write('id: $id, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('nextDeviceSeq: $nextDeviceSeq, ')
+          ..write('serverCursor: $serverCursor, ')
+          ..write('hlcWallMs: $hlcWallMs, ')
+          ..write('hlcLogical: $hlcLogical, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    deviceId,
+    nextDeviceSeq,
+    serverCursor,
+    hlcWallMs,
+    hlcLogical,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncStateEntity &&
+          other.id == this.id &&
+          other.deviceId == this.deviceId &&
+          other.nextDeviceSeq == this.nextDeviceSeq &&
+          other.serverCursor == this.serverCursor &&
+          other.hlcWallMs == this.hlcWallMs &&
+          other.hlcLogical == this.hlcLogical &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SyncStatesCompanion extends UpdateCompanion<SyncStateEntity> {
+  final Value<String> id;
+  final Value<String> deviceId;
+  final Value<int> nextDeviceSeq;
+  final Value<int> serverCursor;
+  final Value<int> hlcWallMs;
+  final Value<int> hlcLogical;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const SyncStatesCompanion({
+    this.id = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.nextDeviceSeq = const Value.absent(),
+    this.serverCursor = const Value.absent(),
+    this.hlcWallMs = const Value.absent(),
+    this.hlcLogical = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncStatesCompanion.insert({
+    required String id,
+    required String deviceId,
+    this.nextDeviceSeq = const Value.absent(),
+    this.serverCursor = const Value.absent(),
+    this.hlcWallMs = const Value.absent(),
+    this.hlcLogical = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       deviceId = Value(deviceId);
+  static Insertable<SyncStateEntity> custom({
+    Expression<String>? id,
+    Expression<String>? deviceId,
+    Expression<int>? nextDeviceSeq,
+    Expression<int>? serverCursor,
+    Expression<int>? hlcWallMs,
+    Expression<int>? hlcLogical,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (deviceId != null) 'device_id': deviceId,
+      if (nextDeviceSeq != null) 'next_device_seq': nextDeviceSeq,
+      if (serverCursor != null) 'server_cursor': serverCursor,
+      if (hlcWallMs != null) 'hlc_wall_ms': hlcWallMs,
+      if (hlcLogical != null) 'hlc_logical': hlcLogical,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncStatesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? deviceId,
+    Value<int>? nextDeviceSeq,
+    Value<int>? serverCursor,
+    Value<int>? hlcWallMs,
+    Value<int>? hlcLogical,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return SyncStatesCompanion(
+      id: id ?? this.id,
+      deviceId: deviceId ?? this.deviceId,
+      nextDeviceSeq: nextDeviceSeq ?? this.nextDeviceSeq,
+      serverCursor: serverCursor ?? this.serverCursor,
+      hlcWallMs: hlcWallMs ?? this.hlcWallMs,
+      hlcLogical: hlcLogical ?? this.hlcLogical,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (nextDeviceSeq.present) {
+      map['next_device_seq'] = Variable<int>(nextDeviceSeq.value);
+    }
+    if (serverCursor.present) {
+      map['server_cursor'] = Variable<int>(serverCursor.value);
+    }
+    if (hlcWallMs.present) {
+      map['hlc_wall_ms'] = Variable<int>(hlcWallMs.value);
+    }
+    if (hlcLogical.present) {
+      map['hlc_logical'] = Variable<int>(hlcLogical.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncStatesCompanion(')
+          ..write('id: $id, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('nextDeviceSeq: $nextDeviceSeq, ')
+          ..write('serverCursor: $serverCursor, ')
+          ..write('hlcWallMs: $hlcWallMs, ')
+          ..write('hlcLogical: $hlcLogical, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -11529,6 +12240,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $PerformedSetEventsTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
   late final $SyncQueueTable syncQueue = $SyncQueueTable(this);
+  late final $SyncStatesTable syncStates = $SyncStatesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -11550,6 +12262,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     performedSetEvents,
     auditLogs,
     syncQueue,
+    syncStates,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -20735,6 +21448,9 @@ typedef $$AuditLogsTableProcessedTableManager =
 typedef $$SyncQueueTableCreateCompanionBuilder =
     SyncQueueCompanion Function({
       required String id,
+      Value<String?> opId,
+      Value<int?> deviceSeq,
+      Value<String?> hlc,
       required String entityType,
       required String entityId,
       required String operation,
@@ -20745,6 +21461,8 @@ typedef $$SyncQueueTableCreateCompanionBuilder =
       Value<DateTime?> nextRetryAt,
       Value<String?> dedupeKey,
       Value<String?> auditLogId,
+      Value<String?> errorCode,
+      Value<DateTime?> quarantinedAt,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -20752,6 +21470,9 @@ typedef $$SyncQueueTableCreateCompanionBuilder =
 typedef $$SyncQueueTableUpdateCompanionBuilder =
     SyncQueueCompanion Function({
       Value<String> id,
+      Value<String?> opId,
+      Value<int?> deviceSeq,
+      Value<String?> hlc,
       Value<String> entityType,
       Value<String> entityId,
       Value<String> operation,
@@ -20762,6 +21483,8 @@ typedef $$SyncQueueTableUpdateCompanionBuilder =
       Value<DateTime?> nextRetryAt,
       Value<String?> dedupeKey,
       Value<String?> auditLogId,
+      Value<String?> errorCode,
+      Value<DateTime?> quarantinedAt,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -20778,6 +21501,21 @@ class $$SyncQueueTableFilterComposer
   });
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get opId => $composableBuilder(
+    column: $table.opId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deviceSeq => $composableBuilder(
+    column: $table.deviceSeq,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get hlc => $composableBuilder(
+    column: $table.hlc,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -20831,6 +21569,16 @@ class $$SyncQueueTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get errorCode => $composableBuilder(
+    column: $table.errorCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get quarantinedAt => $composableBuilder(
+    column: $table.quarantinedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -20853,6 +21601,21 @@ class $$SyncQueueTableOrderingComposer
   });
   ColumnOrderings<String> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get opId => $composableBuilder(
+    column: $table.opId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deviceSeq => $composableBuilder(
+    column: $table.deviceSeq,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get hlc => $composableBuilder(
+    column: $table.hlc,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -20906,6 +21669,16 @@ class $$SyncQueueTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get errorCode => $composableBuilder(
+    column: $table.errorCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get quarantinedAt => $composableBuilder(
+    column: $table.quarantinedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -20928,6 +21701,15 @@ class $$SyncQueueTableAnnotationComposer
   });
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get opId =>
+      $composableBuilder(column: $table.opId, builder: (column) => column);
+
+  GeneratedColumn<int> get deviceSeq =>
+      $composableBuilder(column: $table.deviceSeq, builder: (column) => column);
+
+  GeneratedColumn<String> get hlc =>
+      $composableBuilder(column: $table.hlc, builder: (column) => column);
 
   GeneratedColumn<String> get entityType => $composableBuilder(
     column: $table.entityType,
@@ -20966,6 +21748,14 @@ class $$SyncQueueTableAnnotationComposer
 
   GeneratedColumn<String> get auditLogId => $composableBuilder(
     column: $table.auditLogId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get errorCode =>
+      $composableBuilder(column: $table.errorCode, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get quarantinedAt => $composableBuilder(
+    column: $table.quarantinedAt,
     builder: (column) => column,
   );
 
@@ -21008,6 +21798,9 @@ class $$SyncQueueTableTableManager
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
+                Value<String?> opId = const Value.absent(),
+                Value<int?> deviceSeq = const Value.absent(),
+                Value<String?> hlc = const Value.absent(),
                 Value<String> entityType = const Value.absent(),
                 Value<String> entityId = const Value.absent(),
                 Value<String> operation = const Value.absent(),
@@ -21018,11 +21811,16 @@ class $$SyncQueueTableTableManager
                 Value<DateTime?> nextRetryAt = const Value.absent(),
                 Value<String?> dedupeKey = const Value.absent(),
                 Value<String?> auditLogId = const Value.absent(),
+                Value<String?> errorCode = const Value.absent(),
+                Value<DateTime?> quarantinedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncQueueCompanion(
                 id: id,
+                opId: opId,
+                deviceSeq: deviceSeq,
+                hlc: hlc,
                 entityType: entityType,
                 entityId: entityId,
                 operation: operation,
@@ -21033,6 +21831,8 @@ class $$SyncQueueTableTableManager
                 nextRetryAt: nextRetryAt,
                 dedupeKey: dedupeKey,
                 auditLogId: auditLogId,
+                errorCode: errorCode,
+                quarantinedAt: quarantinedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -21040,6 +21840,9 @@ class $$SyncQueueTableTableManager
           createCompanionCallback:
               ({
                 required String id,
+                Value<String?> opId = const Value.absent(),
+                Value<int?> deviceSeq = const Value.absent(),
+                Value<String?> hlc = const Value.absent(),
                 required String entityType,
                 required String entityId,
                 required String operation,
@@ -21050,11 +21853,16 @@ class $$SyncQueueTableTableManager
                 Value<DateTime?> nextRetryAt = const Value.absent(),
                 Value<String?> dedupeKey = const Value.absent(),
                 Value<String?> auditLogId = const Value.absent(),
+                Value<String?> errorCode = const Value.absent(),
+                Value<DateTime?> quarantinedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncQueueCompanion.insert(
                 id: id,
+                opId: opId,
+                deviceSeq: deviceSeq,
+                hlc: hlc,
                 entityType: entityType,
                 entityId: entityId,
                 operation: operation,
@@ -21065,6 +21873,8 @@ class $$SyncQueueTableTableManager
                 nextRetryAt: nextRetryAt,
                 dedupeKey: dedupeKey,
                 auditLogId: auditLogId,
+                errorCode: errorCode,
+                quarantinedAt: quarantinedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -21092,6 +21902,250 @@ typedef $$SyncQueueTableProcessedTableManager =
         BaseReferences<_$AppDatabase, $SyncQueueTable, SyncQueueItemEntity>,
       ),
       SyncQueueItemEntity,
+      PrefetchHooks Function()
+    >;
+typedef $$SyncStatesTableCreateCompanionBuilder =
+    SyncStatesCompanion Function({
+      required String id,
+      required String deviceId,
+      Value<int> nextDeviceSeq,
+      Value<int> serverCursor,
+      Value<int> hlcWallMs,
+      Value<int> hlcLogical,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$SyncStatesTableUpdateCompanionBuilder =
+    SyncStatesCompanion Function({
+      Value<String> id,
+      Value<String> deviceId,
+      Value<int> nextDeviceSeq,
+      Value<int> serverCursor,
+      Value<int> hlcWallMs,
+      Value<int> hlcLogical,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$SyncStatesTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncStatesTable> {
+  $$SyncStatesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get nextDeviceSeq => $composableBuilder(
+    column: $table.nextDeviceSeq,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverCursor => $composableBuilder(
+    column: $table.serverCursor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get hlcWallMs => $composableBuilder(
+    column: $table.hlcWallMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get hlcLogical => $composableBuilder(
+    column: $table.hlcLogical,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SyncStatesTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncStatesTable> {
+  $$SyncStatesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get nextDeviceSeq => $composableBuilder(
+    column: $table.nextDeviceSeq,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverCursor => $composableBuilder(
+    column: $table.serverCursor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get hlcWallMs => $composableBuilder(
+    column: $table.hlcWallMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get hlcLogical => $composableBuilder(
+    column: $table.hlcLogical,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncStatesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncStatesTable> {
+  $$SyncStatesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<int> get nextDeviceSeq => $composableBuilder(
+    column: $table.nextDeviceSeq,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get serverCursor => $composableBuilder(
+    column: $table.serverCursor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get hlcWallMs =>
+      $composableBuilder(column: $table.hlcWallMs, builder: (column) => column);
+
+  GeneratedColumn<int> get hlcLogical => $composableBuilder(
+    column: $table.hlcLogical,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$SyncStatesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncStatesTable,
+          SyncStateEntity,
+          $$SyncStatesTableFilterComposer,
+          $$SyncStatesTableOrderingComposer,
+          $$SyncStatesTableAnnotationComposer,
+          $$SyncStatesTableCreateCompanionBuilder,
+          $$SyncStatesTableUpdateCompanionBuilder,
+          (
+            SyncStateEntity,
+            BaseReferences<_$AppDatabase, $SyncStatesTable, SyncStateEntity>,
+          ),
+          SyncStateEntity,
+          PrefetchHooks Function()
+        > {
+  $$SyncStatesTableTableManager(_$AppDatabase db, $SyncStatesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncStatesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncStatesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncStatesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> nextDeviceSeq = const Value.absent(),
+                Value<int> serverCursor = const Value.absent(),
+                Value<int> hlcWallMs = const Value.absent(),
+                Value<int> hlcLogical = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncStatesCompanion(
+                id: id,
+                deviceId: deviceId,
+                nextDeviceSeq: nextDeviceSeq,
+                serverCursor: serverCursor,
+                hlcWallMs: hlcWallMs,
+                hlcLogical: hlcLogical,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String deviceId,
+                Value<int> nextDeviceSeq = const Value.absent(),
+                Value<int> serverCursor = const Value.absent(),
+                Value<int> hlcWallMs = const Value.absent(),
+                Value<int> hlcLogical = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncStatesCompanion.insert(
+                id: id,
+                deviceId: deviceId,
+                nextDeviceSeq: nextDeviceSeq,
+                serverCursor: serverCursor,
+                hlcWallMs: hlcWallMs,
+                hlcLogical: hlcLogical,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncStatesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncStatesTable,
+      SyncStateEntity,
+      $$SyncStatesTableFilterComposer,
+      $$SyncStatesTableOrderingComposer,
+      $$SyncStatesTableAnnotationComposer,
+      $$SyncStatesTableCreateCompanionBuilder,
+      $$SyncStatesTableUpdateCompanionBuilder,
+      (
+        SyncStateEntity,
+        BaseReferences<_$AppDatabase, $SyncStatesTable, SyncStateEntity>,
+      ),
+      SyncStateEntity,
       PrefetchHooks Function()
     >;
 
@@ -21129,4 +22183,6 @@ class $AppDatabaseManager {
       $$AuditLogsTableTableManager(_db, _db.auditLogs);
   $$SyncQueueTableTableManager get syncQueue =>
       $$SyncQueueTableTableManager(_db, _db.syncQueue);
+  $$SyncStatesTableTableManager get syncStates =>
+      $$SyncStatesTableTableManager(_db, _db.syncStates);
 }
