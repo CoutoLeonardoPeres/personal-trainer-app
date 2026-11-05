@@ -97,9 +97,14 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   }
 
   Future<void> _handleWorkoutAppLink(Uri uri, _LoadedServices s) async {
-    if (uri.scheme != 'apppersonal') return;
+    final isHttps = uri.scheme == 'https' || uri.scheme == 'http';
+    final isAuthCallback =
+        uri.host == 'login-callback' ||
+        uri.path == '/login-callback' ||
+        uri.path == PasswordRecoveryPage.routeName;
+    if (uri.scheme != 'apppersonal' && !(isHttps && isAuthCallback)) return;
     // Supabase OAuth callback (Google/GitHub).
-    if (uri.host == 'login-callback') {
+    if (isAuthCallback) {
       try {
         await SupabaseAuthService.handleAuthCallback(uri);
         if (uri.queryParameters['flow'] == 'recovery') {
@@ -336,7 +341,11 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
         pathOnly == LocalLoginPage.routeName) {
       return false;
     }
-    if (uri.scheme == 'apppersonal') {
+    if (uri.scheme == 'apppersonal' ||
+        ((uri.scheme == 'https' || uri.scheme == 'http') &&
+            (uri.host == 'login-callback' ||
+                uri.path == '/login-callback' ||
+                uri.path == PasswordRecoveryPage.routeName))) {
       final s = _services;
       if (s != null) {
         unawaited(_handleWorkoutAppLink(uri, s));
@@ -345,7 +354,9 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
     }
     if (uri.scheme == 'https' || uri.scheme == 'http') {
       final s = _services;
-      if (s != null && uri.host == 'login-callback') {
+      if (s != null &&
+          (uri.host == 'login-callback' ||
+              uri.path == PasswordRecoveryPage.routeName)) {
         unawaited(_handleWorkoutAppLink(uri, s));
       }
       return true;

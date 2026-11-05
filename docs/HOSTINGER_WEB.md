@@ -46,6 +46,7 @@ No [Dashboard Supabase](https://supabase.com/dashboard) → **Authentication →
 2. **Redirect URLs** (adicione):
    - `https://SEU-DOMINIO.com/**`
    - `https://SEU-DOMINIO.com/`
+   - `https://SEU-DOMINIO.com/reset-password`
    - `apppersonal://login-callback` (app mobile, se já usava)
 
 Sem isso, magic link / reset de senha podem falhar na web.

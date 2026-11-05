@@ -39,7 +39,7 @@ class SupabaseAuthBridge {
   static Future<void> sendPasswordResetEmail(String email) async {
     ensureSupabaseAuthEnabled();
     final redirectTo = kIsWeb
-        ? '${Uri.base.origin}/reset-password'
+        ? SupabaseAuthService.webAuthRedirectUrl
         : '${SupabaseAuthService.authRedirectUrl}?flow=recovery';
     await _client.auth.resetPasswordForEmail(
       normEmail(email),

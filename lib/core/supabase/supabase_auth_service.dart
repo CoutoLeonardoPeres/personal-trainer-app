@@ -3,6 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_bootstrap.dart';
 
 const _authRedirectUrl = String.fromEnvironment('AUTH_REDIRECT_URL');
+const _webAuthRedirectUrl = String.fromEnvironment(
+  'WEB_AUTH_REDIRECT_URL',
+  defaultValue: 'https://cliente.leonardopcouto.com/reset-password',
+);
 
 /// Login com JWT por utilizador, necessário quando o Postgres usa RLS com
 /// `auth.uid()`.
@@ -32,6 +36,8 @@ class SupabaseAuthService {
     // Universal/App Links ainda não foi definido no ambiente de produção.
     return 'apppersonal://login-callback';
   }
+
+  static String get webAuthRedirectUrl => _webAuthRedirectUrl;
 
   static Stream<AuthState> get onAuthStateChange {
     final c = _client;

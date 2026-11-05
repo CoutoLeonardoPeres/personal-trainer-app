@@ -1,4 +1,5 @@
 {
   "SUPABASE_URL": "false",
-  "SUPABASE_ANON_KEY": "false"
+  "SUPABASE_ANON_KEY": "false",
+  "WEB_AUTH_REDIRECT_URL": "https://cliente.leonardopcouto.com/reset-password"
 }
