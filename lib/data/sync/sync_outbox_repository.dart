@@ -76,6 +76,38 @@ class SyncOutboxRepository {
             payload: _decodePayload(existing.payloadJson),
           );
         }
+
+        // Filas criadas pela fila anterior podem ter a mesma chave de
+        // deduplicacao, mas ainda nao possuir os metadados do RPC. Promover
+        // essa linha evita uma colisao no indice UNIQUE e preserva a ordem
+        // original da fila durante a migracao.
+        if (existing != null) {
+          final opId = const Uuid().v4();
+          final reserved = await _state.reserveOperation(opId: opId);
+          await (_db.update(
+            _db.syncQueue,
+          )..where((row) => row.id.equals(existing.id))).write(
+            SyncQueueCompanion(
+              opId: Value(opId),
+              deviceSeq: Value(reserved.deviceSeq),
+              hlc: Value(reserved.hlc),
+              payloadJson: Value(jsonEncode(payload)),
+              status: const Value('pending'),
+              errorCode: const Value(null),
+              quarantinedAt: const Value(null),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+          return SyncOperation(
+            opId: opId,
+            deviceSeq: reserved.deviceSeq,
+            entity: entity,
+            entityId: entityId,
+            opType: opType,
+            hlc: reserved.hlc,
+            payload: payload,
+          );
+        }
       }
 
       final opId = const Uuid().v4();
