@@ -718,36 +718,8 @@ class AppDataRepository {
     if (email.isEmpty) {
       throw ArgumentError('Informe o e-mail.');
     }
-    final personals = await _db.select(_db.personals).get();
-    PersonalEntity? personal;
-    for (final p in personals) {
-      if (p.email.trim().toLowerCase() == email) {
-        personal = p;
-        break;
-      }
-    }
-    final students = await (_db.select(
-      _db.students,
-    )..where((s) => s.isArchived.equals(false))).get();
-    StudentEntity? student;
-    for (final s in students) {
-      final em = s.email?.trim();
-      if (em == null || em.isEmpty) continue;
-      if (em.toLowerCase() == email) {
-        student = s;
-        break;
-      }
-    }
-    if (personal != null && student != null) {
-      throw ArgumentError(
-        'Conflito de e-mail no cadastro. Contacte o administrador.',
-      );
-    }
-    if (personal == null && student == null) {
-      throw ArgumentError(
-        'Não encontrámos personal nem aluno ativo com este e-mail.',
-      );
-    }
+    // O Auth remoto é a fonte de verdade. O SQLite pode ainda não conter o
+    // snapshot do perfil no primeiro acesso ao dispositivo.
     await SupabaseAuthBridge.sendPasswordResetEmail(email);
     return (emailSent: true);
   }
