@@ -25,6 +25,7 @@ import '../models/programmable_bundle.dart';
 import '../models/week_schedule_row.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../sync/performed_sets_merge.dart';
+import '../sync/modern_remote_sync_service.dart';
 import '../sync/remote_sync_service.dart';
 
 const _uuid = Uuid();
@@ -233,7 +234,7 @@ List<DayWorkoutEntity> _dedupeDayWorkoutsByStudentAndDay(
 
 /// Repositório central: toda mutação relevante grava primeiro no SQLite e em seguida
 /// regista em [audit_logs] + [RemoteSyncService.enqueueAudit], que dispara o envio
-/// incremental ao Supabase em segundo plano ([SupabaseRemoteSyncService]).
+/// incremental ao Supabase em segundo plano ([ModernRemoteSyncService]).
 class AppDataRepository {
   AppDataRepository(
     this._db,
