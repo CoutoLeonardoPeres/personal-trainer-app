@@ -13,7 +13,10 @@ class PullApplier {
     final entity = change['entity'] as String?;
     final raw = change['payload'];
     if (entity == null || raw is! Map) return;
-    final payload = _normalisePayload(Map<String, dynamic>.from(raw));
+    final payload = _normalisePayload(
+      entity,
+      Map<String, dynamic>.from(raw),
+    );
 
     await _db.transaction(() async {
       switch (entity) {
@@ -130,7 +133,10 @@ class PullApplier {
         );
   }
 
-  static Map<String, dynamic> _normalisePayload(Map<String, dynamic> source) {
+  static Map<String, dynamic> _normalisePayload(
+    String entity,
+    Map<String, dynamic> source,
+  ) {
     final out = <String, dynamic>{};
     for (final entry in source.entries) {
       final key = _snakeToCamel(entry.key);
@@ -145,6 +151,13 @@ class PullApplier {
         'cancelado' => 'cancelled',
         _ => status,
       };
+    }
+    if (entity == 'day_workouts') {
+      out['activeDurationSeconds'] ??= 0;
+      out['createdAt'] ??= DateTime.now().toUtc().toIso8601String();
+      out['updatedAt'] ??= out['createdAt'];
+      out['revision'] ??= 0;
+      out['syncStatus'] ??= 'synced';
     }
     return out;
   }
