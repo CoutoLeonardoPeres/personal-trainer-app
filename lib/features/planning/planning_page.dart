@@ -875,31 +875,12 @@ class _PlanningPageState extends State<PlanningPage> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.cadastroCardBorder.withValues(alpha: 0.12),
-              Colors.black.withValues(alpha: 0.45),
-              AppColors.accentGreen.withValues(alpha: 0.06),
-            ],
-          ),
-          border: Border.all(
-            color: AppColors.cadastroCardBorder.withValues(alpha: 0.65),
-            width: 1.25,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.accentGreen.withValues(alpha: 0.12),
-              blurRadius: 18,
-              spreadRadius: 0,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(12),
+          color: AppColors.barBackground,
+          border: Border.all(color: const Color(0xFF38383A), width: 1),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(12),
           child: Theme(
             data: Theme.of(context).copyWith(
               dividerColor: Colors.transparent,
@@ -925,7 +906,7 @@ class _PlanningPageState extends State<PlanningPage> {
                         }
                       });
                     },
-                    borderRadius: BorderRadius.circular(17),
+                    borderRadius: BorderRadius.circular(11),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -1035,7 +1016,7 @@ class _PlanningPageState extends State<PlanningPage> {
                                         ),
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
-                                            14,
+                                            10,
                                           ),
                                           side: BorderSide(
                                             color: AppColors.danger.withValues(
