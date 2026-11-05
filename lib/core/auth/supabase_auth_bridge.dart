@@ -31,7 +31,7 @@ class SupabaseAuthBridge {
     ensureSupabaseAuthEnabled();
     await SupabaseAuthService.signInWithOtp(
       email: normEmail(email),
-      redirectTo: 'apppersonal://login-callback',
+      redirectTo: SupabaseAuthService.authRedirectUrl,
     );
   }
 
@@ -40,7 +40,7 @@ class SupabaseAuthBridge {
     ensureSupabaseAuthEnabled();
     final redirectTo = kIsWeb
         ? '${Uri.base.origin}/reset-password'
-        : 'apppersonal://login-callback?flow=recovery';
+        : '${SupabaseAuthService.authRedirectUrl}?flow=recovery';
     await _client.auth.resetPasswordForEmail(
       normEmail(email),
       redirectTo: redirectTo,

@@ -2,6 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'supabase_bootstrap.dart';
 
+const _authRedirectUrl = String.fromEnvironment('AUTH_REDIRECT_URL');
+
 /// Login com JWT por utilizador, necessário quando o Postgres usa RLS com
 /// `auth.uid()`.
 class SupabaseAuthService {
@@ -13,6 +15,18 @@ class SupabaseAuthService {
   static User? get currentUser => _client?.auth.currentUser;
 
   static Session? get currentSession => _client?.auth.currentSession;
+
+  /// Universal/App Link configurado no build. O app não usa scheme privado
+  /// como retorno de autenticação.
+  static String get authRedirectUrl {
+    final value = _authRedirectUrl.trim();
+    if (value.isEmpty || !value.startsWith('https://')) {
+      throw StateError(
+        'AUTH_REDIRECT_URL deve ser um Universal/App Link HTTPS configurado.',
+      );
+    }
+    return value;
+  }
 
   static Stream<AuthState> get onAuthStateChange {
     final c = _client;
@@ -31,27 +45,29 @@ class SupabaseAuthService {
     return c.auth.signInWithPassword(email: email.trim(), password: password);
   }
 
-  static Future<void> signInWithGoogle({
-    String redirectTo = 'apppersonal://login-callback',
-  }) async {
+  static Future<void> signInWithGoogle({String? redirectTo}) async {
     final c = _client;
     if (c == null) {
       throw StateError('Supabase não está inicializado.');
     }
-    await c.auth.signInWithOAuth(OAuthProvider.google, redirectTo: redirectTo);
+    await c.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: redirectTo ?? authRedirectUrl,
+    );
   }
 
-  static Future<void> signInWithGitHub({
-    String redirectTo = 'apppersonal://login-callback',
-  }) async {
+  static Future<void> signInWithGitHub({String? redirectTo}) async {
     final c = _client;
     if (c == null) {
       throw StateError('Supabase não está inicializado.');
     }
-    await c.auth.signInWithOAuth(OAuthProvider.github, redirectTo: redirectTo);
+    await c.auth.signInWithOAuth(
+      OAuthProvider.github,
+      redirectTo: redirectTo ?? authRedirectUrl,
+    );
   }
 
-  /// Finaliza o login OAuth via deep link (ex.: `apppersonal://login-callback#access_token=...`).
+  /// Finaliza o login OAuth via Universal/App Link HTTPS.
   static Future<void> handleAuthCallback(Uri uri) async {
     final c = _client;
     if (c == null) {
@@ -83,7 +99,7 @@ class SupabaseAuthService {
   /// Magic link seguro — convite ou reentrada sem gerar senha no app.
   static Future<void> signInWithOtp({
     required String email,
-    String redirectTo = 'apppersonal://login-callback',
+    String? redirectTo,
   }) async {
     final c = _client;
     if (c == null) {
@@ -91,7 +107,7 @@ class SupabaseAuthService {
     }
     await c.auth.signInWithOtp(
       email: email.trim(),
-      emailRedirectTo: redirectTo,
+      emailRedirectTo: redirectTo ?? authRedirectUrl,
     );
   }
 }

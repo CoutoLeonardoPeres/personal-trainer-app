@@ -57,7 +57,6 @@ class _SplashPageState extends State<SplashPage> {
       await repo.warmUp();
       bootTrace('Splash._boot', 'bootstrapIfNeeded…');
       await session.bootstrapIfNeeded(db);
-      await session.repairSessionIfInconsistent(db);
       if (!session.requiresLocalRelogin && supabaseAppEnabled) {
         if (SupabaseAuthService.currentSession == null) {
           await session.markLoggedOutRequiresRelogin();

@@ -10,7 +10,7 @@ typedef AppModalContentBuilder =
 
 /// Modal em fração da altura da tela (padrão ~93%), arraste vertical, fundo escuro.
 ///
-/// [futuristicChrome] aplica gradiente, faixa superior e borda azul (calendário / ajustes).
+/// [futuristicChrome] aplica a moldura reforçada usada em calendário e ajustes.
 ///
 /// [initialChildSize] / [maxChildSize] controlam quanto o sheet ocupa (ex.: 0.85 no calendário).
 Future<T?> showAppModalSheet<T>({
@@ -62,27 +62,6 @@ Future<T?> showAppModalSheet<T>({
                         ),
                       ),
                     ),
-                    if (futuristicChrome)
-                      Container(
-                        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                        height: 3,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(2),
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.headerGradientPink.withValues(
-                                alpha: 0.95,
-                              ),
-                              AppColors.cadastroCardBorder.withValues(
-                                alpha: 0.9,
-                              ),
-                              AppColors.headerGradientMint.withValues(
-                                alpha: 0.85,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 14, 4, 8),
                       child: Row(
@@ -95,26 +74,11 @@ Future<T?> showAppModalSheet<T>({
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (futuristicChrome)
-                                      Text(
-                                        'CALENDÁRIO',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 1.35,
-                                          color: AppColors.accentGreen
-                                              .withValues(alpha: 0.78),
-                                        ),
-                                      ),
-                                    if (futuristicChrome)
-                                      const SizedBox(height: 6),
                                     Text(
                                       title,
                                       style: TextStyle(
-                                        fontSize: futuristicChrome ? 19 : 18,
-                                        fontWeight: futuristicChrome
-                                            ? FontWeight.w800
-                                            : FontWeight.bold,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
                                         color: AppColors.textPrimary,
                                         height: 1.2,
                                       ),
@@ -125,9 +89,7 @@ Future<T?> showAppModalSheet<T>({
                                       Text(
                                         subtitle,
                                         style: TextStyle(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.48,
-                                          ),
+                                          color: AppColors.textMuted,
                                           fontSize: 13,
                                           height: 1.35,
                                           fontWeight: FontWeight.w500,
@@ -164,47 +126,13 @@ Future<T?> showAppModalSheet<T>({
 
           final sheetPadded = KeyboardBottomInsetPadding(child: sheetBody);
 
-          if (!futuristicChrome) {
-            return Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF0B0B14).withValues(alpha: 0.99),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(22),
-                ),
-                border: Border.all(
-                  color: AppColors.accentPink.withValues(alpha: 0.4),
-                  width: 1,
-                ),
-              ),
-              child: sheetPadded,
-            );
-          }
-
           return Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  AppColors.barBackground,
-                  AppColors.backgroundDeep,
-                  Colors.black.withValues(alpha: 0.98),
-                ],
-              ),
+              color: AppColors.barBackground,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(22),
               ),
-              border: Border.all(
-                color: AppColors.cadastroCardBorder.withValues(alpha: 0.52),
-                width: 1.15,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.accentGreen.withValues(alpha: 0.1),
-                  blurRadius: 24,
-                  offset: const Offset(0, -4),
-                ),
-              ],
+              border: Border.all(color: const Color(0xFF38383A)),
             ),
             child: sheetPadded,
           );

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Confirmação de exclusão no estilo futurista do app (gradiente, faixa, CTAs).
+/// Confirmação de exclusão com hierarquia clara e ação destrutiva explícita.
 Future<bool?> showFuturisticConfirmDeleteDialog(
   BuildContext context, {
   String? itemName,
@@ -45,43 +45,14 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
           borderRadius: BorderRadius.circular(26),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0E0E18),
-                  Color(0xFF1A1018),
-                  Color(0xFF0A1220),
-                ],
-              ),
-              border: Border.all(
-                color: AppColors.danger.withValues(alpha: 0.38),
-                width: 1.1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.danger.withValues(alpha: 0.16),
-                  blurRadius: 28,
-                  spreadRadius: -4,
-                ),
-              ],
+              color: AppColors.barBackground,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF38383A)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  height: 3,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.headerGradientPink.withValues(alpha: 0.95),
-                        AppColors.cadastroCardBorder.withValues(alpha: 0.88),
-                        AppColors.headerGradientMint.withValues(alpha: 0.75),
-                      ],
-                    ),
-                  ),
-                ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
                   child: Column(
@@ -92,24 +63,9 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
                         children: [
                           DecoratedBox(
                             decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.danger.withValues(alpha: 0.28),
-                                  AppColors.accentPink.withValues(alpha: 0.14),
-                                ],
-                              ),
-                              border: Border.all(
-                                color: AppColors.danger.withValues(alpha: 0.55),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.danger.withValues(
-                                    alpha: 0.22,
-                                  ),
-                                  blurRadius: 14,
-                                ),
-                              ],
+                              color: AppColors.backgroundDeep,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.danger),
                             ),
                             child: const Padding(
                               padding: EdgeInsets.all(11),
@@ -170,7 +126,7 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
                         Text(
                           'Este registro será removido permanentemente.',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
+                            color: AppColors.textMuted,
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                             height: 1.35,
@@ -180,7 +136,7 @@ class _FuturisticConfirmDeletePanel extends StatelessWidget {
                       Text(
                         'Esta ação não pode ser desfeita.',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.46),
+                          color: AppColors.textMuted,
                           fontSize: 13,
                           height: 1.45,
                         ),
@@ -220,18 +176,11 @@ class _FuturisticDeleteDialogCancelCta extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            color: const Color(0xFF1A1424).withValues(alpha: 0.95),
+            color: AppColors.backgroundDeep,
             border: Border.all(
               color: AppColors.splashMint.withValues(alpha: 0.45),
               width: 1.5,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.splashMint.withValues(alpha: 0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           child: Row(
@@ -274,20 +223,7 @@ class _FuturisticDeleteDialogConfirmCta extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              colors: [
-                AppColors.danger,
-                AppColors.danger.withValues(alpha: 0.78),
-                AppColors.accentPink.withValues(alpha: 0.88),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.danger.withValues(alpha: 0.45),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
-              ),
-            ],
+            color: AppColors.danger,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           child: Row(

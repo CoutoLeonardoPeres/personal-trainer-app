@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -273,54 +272,5 @@ class AppSession extends ChangeNotifier {
       return;
     }
     await markLoggedOutRequiresRelogin();
-  }
-
-  /// Corrige prefs incoerentes que deixam a UI “vazia” sem apagar o SQLite:
-  /// ex. papel `personalTrainer` sem [personalId] → [canAccessStudent] falha para todos
-  /// e os streams do calendário/planejamento ficam permanentemente em erro (cache).
-  Future<void> repairSessionIfInconsistent(AppDatabase db) async {
-    if (_requiresLocalRelogin) return;
-    if (_role == SessionRole.personalTrainer && _personalId == null) {
-      final personals = await (db.select(
-        db.personals,
-      )..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
-      if (personals.isEmpty) {
-        await setSession(
-          role: SessionRole.adminPersonal,
-          personalId: null,
-          studentId: _studentId,
-        );
-        return;
-      }
-      PersonalEntity? admin;
-      for (final e in personals) {
-        if (e.isAdmin) {
-          admin = e;
-          break;
-        }
-      }
-      admin ??= personals.first;
-      if (admin.isAdmin) {
-        await setSession(
-          role: SessionRole.adminPersonal,
-          personalId: admin.id,
-          studentId: _studentId,
-        );
-      } else {
-        await setSession(
-          role: SessionRole.personalTrainer,
-          personalId: admin.id,
-          studentId: _studentId,
-        );
-      }
-      return;
-    }
-    if (_role == SessionRole.student && _studentId == null) {
-      await setSession(
-        role: SessionRole.adminPersonal,
-        personalId: _personalId,
-        studentId: null,
-      );
-    }
   }
 }
