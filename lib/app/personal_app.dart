@@ -250,6 +250,13 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       logLaunch('initializeSupabaseApp erro', error: e, stackTrace: st);
     }
     if (!mounted) return;
+    // Não iniciar tarefas nativas ou sincronização remota antes do login.
+    // Além de evitar chamadas anônimas, isso impede que plugins de áudio e
+    // notificações disputem a inicialização da tela de autenticação no iOS.
+    if (SupabaseAuthService.currentSession == null) {
+      bootTrace('cloud', 'sessão ausente; serviços adiados até o login');
+      return;
+    }
     bootTrace('cloud', 'recover queue + startHeartbeat + RPC sync');
     await s.remoteSync.recoverPendingWork();
     s.sync.startHeartbeat();
@@ -340,9 +347,11 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       if (s == null) return;
       if (state == AppLifecycleState.resumed) {
         unawaited(_setKeepScreenOn(true));
-        _modernSync?.startPolling();
-        unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
-        unawaited(RestTimerSound.preload());
+        if (SupabaseAuthService.currentSession != null) {
+          _modernSync?.startPolling();
+          unawaited(WorkoutActivityLocalNotifier.instance.ensureInitialized());
+          unawaited(RestTimerSound.preload());
+        }
         unawaited(s.repo.applyPremiumTierExpiryDowngrades());
       } else if (state == AppLifecycleState.inactive ||
           state == AppLifecycleState.hidden ||
