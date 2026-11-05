@@ -72,7 +72,9 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   bool _loadStarted = false;
   String? _lastBootBuildMode;
   StreamSubscription<Uri>? _appLinkSubscription;
+  StreamSubscription? _authSubscription;
   ModernRemoteSyncService? _modernSync;
+  bool _authenticatedCloudServicesStarted = false;
   bool _keepScreenOnApplied = false;
 
   Future<void> _setKeepScreenOn(bool enabled) async {
@@ -250,6 +252,15 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       logLaunch('initializeSupabaseApp erro', error: e, stackTrace: st);
     }
     if (!mounted) return;
+    _authSubscription ??= SupabaseAuthService.onAuthStateChange.listen((_) {
+      unawaited(_startAuthenticatedCloudServices());
+    });
+    await _startAuthenticatedCloudServices();
+  }
+
+  Future<void> _startAuthenticatedCloudServices() async {
+    final s = _services;
+    if (s == null || !mounted || _authenticatedCloudServicesStarted) return;
     // Não iniciar tarefas nativas ou sincronização remota antes do login.
     // Além de evitar chamadas anônimas, isso impede que plugins de áudio e
     // notificações disputem a inicialização da tela de autenticação no iOS.
@@ -257,6 +268,7 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
       bootTrace('cloud', 'sessão ausente; serviços adiados até o login');
       return;
     }
+    _authenticatedCloudServicesStarted = true;
     bootTrace('cloud', 'recover queue + startHeartbeat + RPC sync');
     await s.remoteSync.recoverPendingWork();
     s.sync.startHeartbeat();
@@ -268,6 +280,9 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   void _retryLoad() {
     final old = _services;
     _cancelAppLinks();
+    _authSubscription?.cancel();
+    _authSubscription = null;
+    _authenticatedCloudServicesStarted = false;
     setState(() {
       _loadError = null;
       _services = null;
@@ -292,6 +307,8 @@ class _PersonalTrainerAppState extends State<PersonalTrainerApp>
   void dispose() {
     logLaunch('PersonalTrainerApp.dispose — DB será fechado');
     _cancelAppLinks();
+    _authSubscription?.cancel();
+    _authSubscription = null;
     unawaited(_setKeepScreenOn(false));
     WidgetsBinding.instance.removeObserver(this);
     final s = _services;

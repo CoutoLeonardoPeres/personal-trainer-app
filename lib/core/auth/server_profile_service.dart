@@ -9,6 +9,8 @@ class ServerProfileSnapshot {
     required this.profileId,
     required this.isAdmin,
     required this.accessTier,
+    this.name,
+    this.email,
     this.maxStudentsCap,
     this.anamneseCompleted = true,
     this.authUserId,
@@ -18,6 +20,8 @@ class ServerProfileSnapshot {
   final String profileId;
   final bool isAdmin;
   final String accessTier;
+  final String? name;
+  final String? email;
   final int? maxStudentsCap;
   final bool anamneseCompleted;
   final String? authUserId;
@@ -42,7 +46,9 @@ class ServerProfileService {
     try {
       final personalRes = await c
           .from('personals')
-          .select('id, is_admin, access_tier, max_students_cap, auth_user_id')
+          .select(
+            'id, name, email, is_admin, access_tier, max_students_cap, auth_user_id',
+          )
           .eq('auth_user_id', authUserId)
           .maybeSingle();
       if (personalRes != null) {
@@ -50,6 +56,8 @@ class ServerProfileService {
         return ServerProfileSnapshot(
           profileKind: 'personal',
           profileId: m['id'] as String,
+          name: m['name'] as String?,
+          email: m['email'] as String?,
           isAdmin: m['is_admin'] == true,
           accessTier: (m['access_tier'] as String?)?.trim().isNotEmpty == true
               ? m['access_tier'] as String
@@ -74,6 +82,8 @@ class ServerProfileService {
         return ServerProfileSnapshot(
           profileKind: 'student',
           profileId: m['id'] as String,
+          name: m['name'] as String?,
+          email: m['email'] as String?,
           isAdmin: false,
           accessTier: (m['access_tier'] as String?)?.trim().isNotEmpty == true
               ? m['access_tier'] as String

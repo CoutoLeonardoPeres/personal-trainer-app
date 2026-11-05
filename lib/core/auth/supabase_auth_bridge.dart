@@ -122,6 +122,27 @@ class SupabaseAuthBridge {
         }
       }
     }
+
+    // O primeiro login pode acontecer antes do snapshot remoto chegar ao
+    // SQLite. Nesse caso, o JWT e o perfil remoto são a fonte de verdade.
+    // Materializamos apenas a linha mínima local; a sincronização completa
+    // será iniciada após o evento de login.
+    if (personal == null && student == null) {
+      final remote = await ServerProfileService.fetchForAuthUser(authUserId);
+      if (remote?.isPersonal == true) {
+        personal = await _ensureLocalPersonal(
+          db: db,
+          snapshot: remote!,
+          authUserId: authUserId,
+        );
+      } else if (remote?.isStudent == true) {
+        student = await _ensureLocalStudent(
+          db: db,
+          snapshot: remote!,
+          authUserId: authUserId,
+        );
+      }
+    }
     if (personal == null && student == null && norm.isNotEmpty) {
       for (final s in await (db.select(
         db.students,
@@ -184,6 +205,56 @@ class SupabaseAuthBridge {
     throw ArgumentError(
       'Conta autenticada, mas nenhum personal/aluno está ligado a este e-mail. '
       'Peça ao administrador para cadastrar o perfil.',
+    );
+  }
+
+  static Future<PersonalEntity> _ensureLocalPersonal({
+    required AppDatabase db,
+    required ServerProfileSnapshot snapshot,
+    required String authUserId,
+  }) async {
+    final existing = await (db.select(
+      db.personals,
+    )..where((row) => row.id.equals(snapshot.profileId))).getSingleOrNull();
+    if (existing != null) return existing;
+    await db
+        .into(db.personals)
+        .insert(
+          PersonalsCompanion.insert(
+            id: snapshot.profileId,
+            name: snapshot.name?.trim().isNotEmpty == true
+                ? snapshot.name!.trim()
+                : 'Personal',
+            cpf: '',
+            professionalRegistry: '',
+            street: '',
+            number: '',
+            city: '',
+            stateUf: '',
+            email: snapshot.email ?? '',
+            authUserId: Value(authUserId),
+            isAdmin: Value(snapshot.isAdmin),
+            accessTier: Value(snapshot.accessTier),
+            maxStudentsCap: Value(snapshot.maxStudentsCap),
+          ),
+        );
+    return (await (db.select(
+      db.personals,
+    )..where((row) => row.id.equals(snapshot.profileId))).getSingle());
+  }
+
+  static Future<StudentEntity> _ensureLocalStudent({
+    required AppDatabase db,
+    required ServerProfileSnapshot snapshot,
+    required String authUserId,
+  }) async {
+    final existing = await (db.select(
+      db.students,
+    )..where((row) => row.id.equals(snapshot.profileId))).getSingleOrNull();
+    if (existing != null) return existing;
+    throw ArgumentError(
+      'Perfil de aluno encontrado na nuvem, mas ainda não existe no banco local. '
+      'Abra o app conectado para concluir a sincronização.',
     );
   }
 
