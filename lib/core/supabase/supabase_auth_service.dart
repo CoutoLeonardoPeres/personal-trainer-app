@@ -20,12 +20,17 @@ class SupabaseAuthService {
   /// como retorno de autenticação.
   static String get authRedirectUrl {
     final value = _authRedirectUrl.trim();
-    if (value.isEmpty || !value.startsWith('https://')) {
-      throw StateError(
-        'AUTH_REDIRECT_URL deve ser um Universal/App Link HTTPS configurado.',
-      );
+    if (value.isNotEmpty) {
+      if (!value.startsWith('https://')) {
+        throw StateError(
+          'AUTH_REDIRECT_URL deve ser um Universal/App Link HTTPS configurado.',
+        );
+      }
+      return value;
     }
-    return value;
+    // Compatibilidade para builds móveis locais enquanto o domínio HTTPS de
+    // Universal/App Links ainda não foi definido no ambiente de produção.
+    return 'apppersonal://login-callback';
   }
 
   static Stream<AuthState> get onAuthStateChange {
