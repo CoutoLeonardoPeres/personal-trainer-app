@@ -7,11 +7,11 @@ import '../../core/auth/app_session.dart';
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
 import '../local/app_database.dart';
-import 'supabase_manual_sync_service.dart';
+import 'modern_remote_sync_service.dart';
 
-/// Envia **todo** o SQLite para o Supabase (backup / consistência), tipicamente após
-/// o app voltar ao primeiro plano. O dia a dia já é coberto pelo envio **incremental**
-/// imediato via [SupabaseRemoteSyncService] (auditoria por gravação).
+/// Retoma a sincronização RPC local-first após o app voltar ao primeiro plano.
+/// O outbox já contém todas as mutações locais; não há mais envio em massa
+/// direto de tabelas, que poderia reintroduzir duplicidades e bloquear a UI.
 ///
 /// Após sucesso: mínimo 30 min até outro envio completo; entre tentativas: 4 min.
 abstract final class SupabaseAutoPushScheduler {
@@ -77,41 +77,22 @@ abstract final class SupabaseAutoPushScheduler {
     await prefs.setInt(_kLastAttemptMs, now);
 
     if (kDebugMode) {
-      debugPrint(
-        'SupabaseAutoPushScheduler: iniciando envio completo SQLite → Supabase…',
-      );
+      debugPrint('SupabaseAutoPushScheduler: retomando outbox RPC…');
     }
 
-    final svc = SupabaseManualSyncService(db, sync);
-    final report = await svc.testConnectionAndPushAll(session: session);
-
-    final allOk =
-        report.connectionTest.ok &&
-        report.tables.isNotEmpty &&
-        report.tables.every((t) => t.ok);
-
-    if (allOk) {
+    try {
+      await ModernRemoteSyncService(db, sync).recoverPendingWork();
       await prefs.setInt(_kLastSuccessMs, now);
       sync.noteConnected();
       sync.noteBackgroundPushSuccess();
       if (kDebugMode) {
-        debugPrint(
-          'SupabaseAutoPushScheduler: concluído — ${report.totalRows} linha(s), '
-          '${report.tables.length} tabela(s).',
-        );
+        debugPrint('SupabaseAutoPushScheduler: outbox RPC concluído.');
       }
-    } else {
+    } catch (error) {
       if (kDebugMode) {
-        debugPrint(
-          'SupabaseAutoPushScheduler: envio incompleto — '
-          'connection=${report.connectionTest.ok} '
-          'tabelas OK=${report.successTableCount}/${report.tables.length}. '
-          'Use Configurações → Enviar tudo para ver o relatório.',
-        );
+        debugPrint('SupabaseAutoPushScheduler: outbox RPC falhou: $error');
       }
-      sync.noteBackgroundPushError(
-        'Envio automático incompleto (${report.successTableCount}/${report.tables.length} tabelas).',
-      );
+      sync.noteBackgroundPushError('Sincronização RPC incompleta: $error');
     }
   }
 }
