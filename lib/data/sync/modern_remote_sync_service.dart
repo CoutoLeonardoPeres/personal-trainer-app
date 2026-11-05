@@ -21,13 +21,14 @@ import 'sync_state_repository.dart';
 /// escrita remota é feita por `.from(...).insert/update/delete`.
 class ModernRemoteSyncService implements RemoteSyncService {
   ModernRemoteSyncService(this._db, this._controller)
-    : _state = SyncStateRepository(_db),
-      _outbox = SyncOutboxRepository(_db, SyncStateRepository(_db));
+    : _state = SyncStateRepository(_db) {
+    _outbox = SyncOutboxRepository(_db, _state);
+  }
 
   final AppDatabase _db;
   final SupabaseSyncController _controller;
   final SyncStateRepository _state;
-  final SyncOutboxRepository _outbox;
+  late final SyncOutboxRepository _outbox;
   Future<void> _serial = Future<void>.value();
 
   @override
@@ -50,7 +51,7 @@ class ModernRemoteSyncService implements RemoteSyncService {
     } else {
       final operation = switch (action) {
         'delete' => 'delete',
-        'create' => 'create',
+        'create' || 'program_day_workout' => 'create',
         _ => 'update',
       };
       final row = operation == 'delete'
