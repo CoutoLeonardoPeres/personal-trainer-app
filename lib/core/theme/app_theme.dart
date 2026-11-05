@@ -41,21 +41,15 @@ ThemeData buildAppTheme() {
       contentPadding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: AppColors.accentPink.withValues(alpha: 0.55),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFF636366)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: AppColors.accentPink.withValues(alpha: 0.55),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFF636366)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: AppColors.splashMint, width: 2.2),
       ),
       errorBorder: OutlineInputBorder(
@@ -84,7 +78,7 @@ ThemeData buildAppTheme() {
         foregroundColor: green,
         side: BorderSide(color: green.withValues(alpha: 0.75)),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
@@ -97,8 +91,8 @@ ThemeData buildAppTheme() {
     cardTheme: CardThemeData(
       color: Colors.white.withValues(alpha: 0.05),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.pinkAccent.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: Color(0xFF38383A)),
       ),
     ),
     snackBarTheme: SnackBarThemeData(

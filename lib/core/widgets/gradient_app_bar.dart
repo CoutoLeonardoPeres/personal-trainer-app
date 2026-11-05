@@ -76,20 +76,17 @@ Widget? _titleWithTrafficIndicator(
 }
 
 const BoxDecoration _kAppBarGradientDecoration = BoxDecoration(
-  gradient: LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
-    colors: [AppColors.headerGradientPink, AppColors.headerGradientMint],
-  ),
+  color: AppColors.barBackground,
+  border: Border(bottom: BorderSide(color: Color(0xFF38383A))),
 );
 
 /// 15% abaixo de [kToolbarHeight] (56 → ~47,6).
 double get kAppBarToolbarHeight => kToolbarHeight * 0.85;
 
-/// Tamanho base do título na AppBar em gradiente; +20% em relação ao 17 anterior.
+/// Tamanho base do título na AppBar.
 double get kGradientAppBarTitleFontSize => 17 * 1.2;
 
-/// Barra superior padrão do app: gradiente rosa → menta, texto e ícones brancos.
+/// Barra superior padrão do app: superfície neutra e ações claras.
 AppBar buildGradientAppBar({
   Key? key,
   Widget? title,

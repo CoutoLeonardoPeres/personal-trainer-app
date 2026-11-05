@@ -20,7 +20,7 @@ class AppBottomNav extends StatelessWidget {
   /// Abas visíveis (ordem na barra). Null = todas.
   final List<MainNavTab>? tabsInOrder;
 
-  static const double barHeight = 39.0 * 1.15 * 1.15;
+  static const double barHeight = 64.0;
 
   static const _items = <({MainNavTab tab, IconData icon, String label})>[
     (
@@ -63,20 +63,8 @@ class AppBottomNav extends StatelessWidget {
     return Container(
       height: barHeight + bottomInset,
       decoration: BoxDecoration(
-        color: AppColors.barBackground.withValues(alpha: 0.94),
-        border: Border(
-          top: BorderSide(
-            color: AppColors.accentGreen.withValues(alpha: 0.35),
-            width: 1,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.accentGreen.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, -4),
-          ),
-        ],
+        color: AppColors.barBackground,
+        border: Border(top: BorderSide(color: Color(0xFF38383A), width: 1)),
       ),
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomInset),
@@ -112,7 +100,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = AppColors.accentGreen.withValues(alpha: selected ? 1 : 0.42);
+    final color = selected ? AppColors.accentGreen : AppColors.textMuted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
