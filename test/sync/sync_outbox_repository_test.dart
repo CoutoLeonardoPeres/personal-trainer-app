@@ -16,12 +16,14 @@ void main() {
   tearDown(() => db.close());
 
   test('promove fila legada sem duplicar a chave de deduplicacao', () async {
-    await db.into(db.syncStates).insert(
-      SyncStatesCompanion.insert(
-        id: 'default',
-        deviceId: '12345678-1234-1234-1234-123456789abc',
-      ),
-    );
+    await db
+        .into(db.syncStates)
+        .insert(
+          SyncStatesCompanion.insert(
+            id: 'default',
+            deviceId: '12345678-1234-1234-1234-123456789abc',
+          ),
+        );
     await db
         .into(db.syncQueue)
         .insert(
@@ -49,5 +51,35 @@ void main() {
     expect(rows.single.opId, operation.opId);
     expect(rows.single.deviceSeq, operation.deviceSeq);
     expect(jsonDecode(rows.single.payloadJson!), {'status': 'completed'});
+  });
+
+  test('promove pendencias legadas antes de montar o lote RPC', () async {
+    await db
+        .into(db.syncStates)
+        .insert(
+          SyncStatesCompanion.insert(
+            id: 'default',
+            deviceId: '12345678-1234-1234-1234-123456789abc',
+          ),
+        );
+    await db
+        .into(db.syncQueue)
+        .insert(
+          SyncQueueCompanion.insert(
+            id: 'legacy-pending',
+            entityType: 'day_workout',
+            entityId: 'workout-2',
+            operation: 'program_day_workout',
+            payloadJson: const Value('{"status":"programado"}'),
+          ),
+        );
+
+    final repository = SyncOutboxRepository(db, SyncStateRepository(db));
+    final pending = await repository.pending();
+
+    expect(pending, hasLength(1));
+    expect(pending.single.entity, 'day_workouts');
+    expect(pending.single.opType, 'create');
+    expect(pending.single.deviceSeq, 1);
   });
 }
