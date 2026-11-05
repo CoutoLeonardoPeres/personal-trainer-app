@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/supabase/supabase_bootstrap.dart';
 import '../../core/supabase/supabase_sync_controller.dart';
@@ -44,6 +45,8 @@ class ModernRemoteSyncService implements RemoteSyncService {
 
     if (_isSetEvent(action, entityType)) {
       await _enqueueSetEvent(id);
+    } else if (_isTimerEvent(action, entityType)) {
+      await _enqueueTimerEvent(id, action);
     } else {
       final operation = switch (action) {
         'delete' => 'delete',
@@ -162,8 +165,37 @@ class ModernRemoteSyncService implements RemoteSyncService {
     );
   }
 
+  Future<void> _enqueueTimerEvent(String workoutId, String action) async {
+    final workout = await (_db.select(
+      _db.dayWorkouts,
+    )..where((row) => row.id.equals(workoutId))).getSingleOrNull();
+    if (workout == null) return;
+    final kind = switch (action) {
+      'complete' => 'finish',
+      'start' => 'start',
+      'pause' => 'pause',
+      'resume' => 'resume',
+      _ => null,
+    };
+    if (kind == null) return;
+    await _outbox.enqueue(
+      entity: 'workout_timer_events',
+      entityId: const Uuid().v4(),
+      opType: kind,
+      coalescible: false,
+      payload: {'day_workout_id': workout.id, 'student_id': workout.studentId},
+    );
+  }
+
   static bool _isSetEvent(String action, String entityType) =>
       entityType == 'day_workout_exercise' && action == 'append_set';
+
+  static bool _isTimerEvent(String action, String entityType) =>
+      entityType == 'day_workout' &&
+      (action == 'start' ||
+          action == 'pause' ||
+          action == 'resume' ||
+          action == 'complete');
 
   static String? _entityName(String value) => switch (value) {
     'muscle_group' => 'muscle_groups',
