@@ -94,8 +94,19 @@ class ModernRemoteSyncService implements RemoteSyncService {
   Future<void> _runOnce() async {
     if (!supabaseAppEnabled) return;
     final client = Supabase.instance.client;
-    final user = client.auth.currentUser;
-    final metadata = user?.appMetadata ?? const <String, dynamic>{};
+    var user = client.auth.currentUser;
+    var metadata = user?.appMetadata ?? const <String, dynamic>{};
+    if (user != null &&
+        (metadata['tenant_id'] == null || metadata['role'] == null)) {
+      try {
+        final refreshed = await client.auth.refreshSession();
+        user = refreshed.user ?? client.auth.currentUser;
+        metadata = user?.appMetadata ?? const <String, dynamic>{};
+      } catch (_) {
+        // A sessão local continua válida para o modo offline; o outbox fica
+        // pendente e será retomado no próximo ciclo.
+      }
+    }
     if (user == null ||
         metadata['tenant_id'] == null ||
         metadata['role'] == null) {
